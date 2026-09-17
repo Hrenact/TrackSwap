@@ -1,0 +1,79 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate version tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v\d{3}$') {
+            throw "Release tags must use the vNNN format, for example v001."
+          }
+
+          [xml]$project = Get-Content "src/TrackSwap/TrackSwap.csproj"
+          $projectVersion = $project.Project.PropertyGroup.InformationalVersion
+          if ($projectVersion -ne $tag) {
+            throw "Tag $tag does not match project version $projectVersion."
+          }
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore TrackSwap.sln
+
+      - name: Build Release
+        run: dotnet build TrackSwap.sln -c Release --no-restore
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $packageName = "TrackSwap-$tag-win-x64"
+          $packageDirectory = Join-Path $env:RUNNER_TEMP $packageName
+          $archivePath = Join-Path $env:GITHUB_WORKSPACE "$packageName.zip"
+          $checksumPath = Join-Path $env:GITHUB_WORKSPACE "$packageName.sha256"
+          $outputDirectory = "src/TrackSwap/bin/Release/net48"
+
+          New-Item -ItemType Directory -Path $packageDirectory | Out-Null
+          Copy-Item -LiteralPath "$outputDirectory/TrackSwap.exe" -Destination $packageDirectory
+          Copy-Item -LiteralPath "$outputDirectory/TrackSwap.exe.config" -Destination $packageDirectory
+          Copy-Item -LiteralPath "$outputDirectory/Newtonsoft.Json.dll" -Destination $packageDirectory
+          Copy-Item -LiteralPath "README.md" -Destination $packageDirectory
+          Copy-Item -LiteralPath "LICENSE" -Destination $packageDirectory
+          Copy-Item -LiteralPath "THIRD-PARTY-NOTICES.md" -Destination $packageDirectory
+
+          Compress-Archive -Path "$packageDirectory/*" -DestinationPath $archivePath
+          $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $packageName.zip" | Set-Content -LiteralPath $checksumPath -Encoding ascii
+
+          "archive=$archivePath" >> $env:GITHUB_OUTPUT
+          "checksum=$checksumPath" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "${{ steps.package.outputs.archive }}" `
+            "${{ steps.package.outputs.checksum }}" `
+            --title "TrackSwap ${{ github.ref_name }}" `
+            --generate-notes

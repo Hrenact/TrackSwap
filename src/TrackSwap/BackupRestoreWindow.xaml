@@ -1,0 +1,109 @@
+<Window x:Class="TrackSwap.BackupRestoreWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="恢复备份 · TrackSwap"
+        Width="720"
+        Height="560"
+        MinWidth="620"
+        MinHeight="440"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource WindowBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Padding="24,20"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="恢复备份" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,5,0,0"
+                               Text="仅恢复位姿映射，保留当前其他 SteamVR 设置。恢复前会再次备份当前配置。"
+                               Foreground="{StaticResource MutedTextBrush}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1"
+                           x:Name="RuntimeWarningText"
+                           Margin="18,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource WarningBrush}"
+                           FontWeight="SemiBold" />
+            </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <Grid Margin="24,20">
+                <TextBlock x:Name="EmptyBackupsText"
+                           Text="还没有找到 TrackSwap 创建的备份。"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+
+                <ItemsControl x:Name="BackupsItemsControl">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="0,0,0,10"
+                                    Padding="16"
+                                    Background="{StaticResource SurfaceBrush}"
+                                    BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding DisplayTime}" FontWeight="SemiBold" FontSize="14" />
+                                            <TextBlock Text="{Binding RuleCountText}"
+                                                       Margin="12,0,0,0"
+                                                       Foreground="{StaticResource AccentBrush}" />
+                                            <TextBlock Text="{Binding DisplaySize}"
+                                                       Margin="12,0,0,0"
+                                                       Foreground="{StaticResource MutedTextBrush}" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Summary}"
+                                                   Margin="0,9,0,0"
+                                                   Foreground="{StaticResource MutedTextBrush}"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+
+                                    <Button Grid.Column="1"
+                                            Content="恢复"
+                                            Tag="{Binding}"
+                                            Margin="18,0,0,0"
+                                            Padding="14,7"
+                                            VerticalAlignment="Center"
+                                            IsEnabled="{Binding IsValid}"
+                                            ToolTip="{Binding ValidationMessage}"
+                                            Click="RestoreButton_Click" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </ScrollViewer>
+
+        <Border Grid.Row="2"
+                Padding="18,12"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="关闭" Padding="18,8" Click="CloseButton_Click" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

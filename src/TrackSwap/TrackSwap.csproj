@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>TrackSwap</AssemblyName>
+    <RootNamespace>TrackSwap</RootNamespace>
+    <AssemblyTitle>TrackSwap</AssemblyTitle>
+    <Product>TrackSwap v001</Product>
+    <Description>SteamVR 位姿映射管理工具</Description>
+    <Authors>Hrenact</Authors>
+    <Copyright>Copyright © 2026 Hrenact</Copyright>
+    <AssemblyVersion>0.0.1.0</AssemblyVersion>
+    <FileVersion>0.0.1.0</FileVersion>
+    <InformationalVersion>v001</InformationalVersion>
+    <ApplicationIcon />
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>
