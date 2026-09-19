@@ -19,10 +19,10 @@ space, align those spaces first with the appropriate external calibration tool.
 ## Safety precondition
 
 The target's original pose must remain visible throughout capture. Disable the
-`TRKSWAP-PROXY-00` `TrackingOverrides` bootstrap rule before starting SteamVR
-for calibration. TrackSwap refuses to start capture while that static rule is
-present. This avoids sampling an already-overridden target and deriving a
-self-referential offset.
+selected route's `TRKSWAP-PROXY-XX` `TrackingOverrides` bootstrap rule before
+starting SteamVR for calibration. TrackSwap refuses to start capture while that
+static rule is present. This avoids sampling an already-overridden target and
+deriving a self-referential offset.
 
 ## Capture and validation
 

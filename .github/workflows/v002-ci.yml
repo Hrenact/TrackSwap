@@ -1,4 +1,4 @@
-name: v002 build
+name: TrackSwap build
 
 on:
   push:
@@ -47,7 +47,7 @@ jobs:
       - name: Build complete release package
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v002' }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v003' }
           .\scripts\Build-Release.ps1 -Version $version
 
       - name: Upload Windows x64 package
