@@ -2,7 +2,7 @@
 
 TrackSwap 是一个轻量的 Windows 工具，用来管理 SteamVR 的设备位姿映射。
 
-当前版本：**TrackSwap v001**
+当前版本：**TrackSwap v002**
 
 简单来说，它可以让一个设备负责提供位置和旋转数据，同时继续使用另一个设备的按键输入。例如：
 
@@ -23,7 +23,10 @@ TrackSwap 只调整定位来源，不会把来源设备的按键映射给目标�
 
 ## 安装与启动
 
-TrackSwap 不需要安装。解压完整程序目录后，直接运行 `TrackSwap.exe` 即可。
+TrackSwap 不需要安装。解压完整程序目录后，先完全退出 SteamVR，以
+PowerShell 运行 `scripts\Install-Driver.ps1` 注册随附驱动，再启动 SteamVR、
+`runtime\TrackSwap.Runtime.exe --run` 和 `TrackSwap.exe`。UI 也能在 Runtime 未运行时
+从程序目录启动它。
 
 请使用 GitHub Release 提供的完整压缩包，不要只复制 EXE。首次启动时，程序会自动寻找本机 SteamVR 的配置文件和运行目录。
 
@@ -103,6 +106,39 @@ steamvr.vrsettings.trackswap-20260917-114817-123.backup
 
 项目使用 WPF、.NET Framework 4.8 和 Newtonsoft.Json。
 
+`main` 保留稳定的 v001 历史。v002 的 Runtime、共享协议和原生 OpenVR
+驱动在 `v002-runtime` 分支开发，架构契约见
+[`docs/v002-architecture.md`](docs/v002-architecture.md)，驱动开发闭环见
+[`docs/driver-development.md`](docs/driver-development.md)。普通构建不会安装或注册驱动。
+
+当前 `v002-runtime` 开发界面把功能明确分为两个页签：
+
+- “运行时路由 v002”通过独立 Runtime 热切换物理来源、编辑局部刚体偏移，
+  并显示 Runtime、驱动连接以及配置 revision 的待应用/已应用状态；
+- “静态覆盖 v001”保留原有 `TrackingOverrides`、备份和恢复流程。静态映射
+  仍然只负责把稳定虚拟代理引导到目标，不提供偏移。
+
+开发环境启动 Runtime：
+
+```powershell
+dotnet run --project src\TrackSwap.Runtime\TrackSwap.Runtime.csproj -c Release -- --run
+```
+
+Runtime 默认把原子配置快照保存在
+`%LOCALAPPDATA%\TrackSwap\runtime-config.json`。UI 也可在离线状态下显式启动
+同目录随附的 `TrackSwap.Runtime.exe`；关闭 UI 不会停止 Runtime。
+
+“自动校准”可同时采集物理来源与原始物理目标，自动计算并保存局部位置和
+旋转偏移档案。它只改变偏移，不会把参考目标切换为新的物理位姿来源；要让
+虚拟设备直接跟随另一设备，请在运行时路由中选择该设备并应用单位偏移。它不
+替代 Space Calibrator 等跨追踪空间对齐工具，而且采集前必须先停用虚拟代理的
+静态覆盖。完整流程和失败恢复见
+[`docs/calibration.md`](docs/calibration.md)。
+
+“实时 3D 位姿预览”以约 30 Hz 显示物理来源、变换后虚拟输出、目标和各自
+坐标轴。遥测读取的是驱动发布的副本，UI 关闭、卡顿或断开不会影响 SteamVR
+位姿提交。详见 [`docs/pose-preview.md`](docs/pose-preview.md)。
+
 Debug 构建：
 
 ```powershell
@@ -114,6 +150,17 @@ Release 构建：
 ```powershell
 dotnet build TrackSwap.sln -c Release
 ```
+
+生成完整的 Windows x64 发布包、ZIP 和 SHA-256 文件：
+
+```powershell
+.\scripts\Build-Release.ps1 -Version v002 -Clean
+```
+
+升级到不同目录中的完整包时，应先完全退出 SteamVR，再运行
+`scripts\Install-Driver.ps1 -ReplaceExisting`；脚本注册失败时会尝试恢复旧路径。
+卸载驱动运行 `scripts\Uninstall-Driver.ps1`。这些脚本只更改 OpenVR 驱动注册，
+不会静默删除用户在 `%LOCALAPPDATA%\TrackSwap` 中保存的配置和校准档案。
 
 生成的程序位于：
 
