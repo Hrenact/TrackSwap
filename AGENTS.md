@@ -1,58 +1,88 @@
 # TrackSwap Repository Guide
 
-This file records the agreed product direction and engineering constraints for future work in this repository. It applies to the entire repository unless a more specific `AGENTS.md` is added below a subdirectory.
+This file records the current product baseline and the engineering constraints for future work in this repository. It applies to the entire repository unless a more specific `AGENTS.md` is added below a subdirectory.
 
-## Product Direction
+## Product Baseline and Direction
 
-TrackSwap v001 is a stable WPF utility that edits SteamVR `TrackingOverrides`. It routes one tracked device's pose to another device while leaving the target device's input handling intact.
+TrackSwap has two deliberately separate workflows:
 
-The v002 goal is a runtime pose-routing system with:
+1. **Legacy static mapping**
+   - The v001-compatible WPF workflow edits SteamVR `TrackingOverrides`.
+   - It substitutes a pose source while leaving the target device's input handling intact.
+   - Static `TrackingOverrides` do not provide a general position or rotation transform. Never describe them as supporting offsets.
 
-- hot switching between physical pose sources without restarting SteamVR;
-- user-defined position and rotation offsets;
-- a future real-time 3D pose and offset preview;
-- the existing v001 configuration workflow retained as a compatible, clearly separated feature.
+2. **Runtime pose routing**
+   - v002 introduced the independent Runtime, native OpenVR driver, live source switching, local rigid offsets, automatic calibration, telemetry, and a real-time 3D preview.
+   - Current post-v002 development adds named route management and up to eight stable virtual proxies.
+   - The current UI uses a configuration sidebar; each selected route owns its source, proxy slot, target, offset, calibration view, status, and always-visible 3D preview.
 
-Do not describe static `TrackingOverrides` as supporting offsets. They substitute a pose source but do not provide a general position or rotation transform.
+The normal runtime data path is:
+
+`physical source -> native driver transform -> TrackSwap virtual proxy -> SteamVR target override`
+
+The virtual-proxy-to-target relationship is a static bootstrap mapping. Changing a route's physical source or offset is a live Runtime operation and must not repeatedly rewrite `steamvr.vrsettings`.
 
 ## Branch and Release Policy
 
-- `main` is the stable v001 line until v002 is ready to merge.
-- Develop the new runtime architecture on `v002-runtime`.
+- `v001` and `v002` are published, immutable release tags. Never move or rewrite them.
+- `main` currently remains the stable v001 line. Do not merge, retarget, or rewrite it without an explicit maintainer decision.
+- Current post-v002 work remains on `v002-runtime` until the maintainer chooses the integration branch for the next release.
+- The next release identifier is `v003`. Releases use one increasing sequence: `v001`, `v002`, `v003`, and so on. Do not introduce semantic-version labels or prerelease suffixes unless the maintainer changes this policy.
 - Do not commit experimental driver/runtime work directly to `main`.
-- Releases use a single increasing sequence: `v001`, `v002`, `v003`, and so on. Do not introduce semantic-version labels or prerelease suffixes unless the maintainer changes this policy.
-- Keep commits focused. Do not rewrite published history or move an existing release tag.
-- The project is MIT licensed under the name Hrenact. Record any added third-party code or binary dependencies in `THIRD-PARTY-NOTICES.md` and preserve their required notices.
+- Keep commits focused. Do not rewrite published history.
+- The project is MIT licensed under the name Hrenact. Record added third-party code or binary dependencies in `THIRD-PARTY-NOTICES.md` and preserve their required notices.
 
-## Intended v002 Architecture
+## Component Responsibilities
 
-Keep the components in this repository but separate their responsibilities:
+Keep the components in this repository separate:
 
 1. **TrackSwap UI**
-   - Windows WPF control surface.
-   - Edits routes and offsets, requests source switches, displays status, and eventually renders preview telemetry.
+   - Windows WPF control surface targeting .NET Framework 4.8.
+   - Edits named routes and offsets, requests source switches, manages calibration profiles, displays status, and renders downsampled telemetry.
+   - Retains the legacy static settings workflow under Settings.
    - Must not participate in the per-frame tracking path.
 
 2. **TrackSwap Runtime**
-   - Independent control/configuration process or service.
-   - Owns persistent runtime configuration, IPC, validation, source discovery, and telemetry fan-out.
+   - Independent configuration and control process.
+   - Owns persistent runtime configuration, IPC, validation, source discovery, calibration profiles, and telemetry fan-out.
+   - Sends versioned, atomic snapshots for every virtual slot.
    - Must recover cleanly if the UI closes or reconnects.
 
 3. **TrackSwap OpenVR Driver**
-   - Minimal native SteamVR server driver exposing one or more stable virtual tracked devices.
-   - Reads raw poses from the selected physical source, applies the transform, and submits the virtual pose.
-   - Keep the per-frame path local and deterministic. Never require a synchronous IPC round trip for every pose update.
+   - Minimal native SteamVR server driver exposing stable virtual GenericTrackers.
+   - Reads raw poses from selected physical sources, applies transforms, and submits virtual poses.
+   - Keeps the last valid configuration if Runtime or UI disconnects.
+   - Keeps the per-frame path local, deterministic, allocation-light, and non-blocking. Never require a synchronous IPC round trip for every pose update.
 
-The normal data path is:
+## Route and Proxy Model
 
-`physical source -> native driver transform -> TrackSwap virtual device -> SteamVR target override`
+- Support at most eight virtual slots, identified by stable serials `TRKSWAP-PROXY-00` through `TRKSWAP-PROXY-07`.
+- Register a proxy on demand when an enabled route first uses its slot. Do not expose unused slots merely because capacity exists.
+- A route's user-facing name is independent from its route id and proxy slot. Names must be unique case-insensitively and remain renameable.
+- New routes use the lowest available slot and a default name such as `新配置`, `新配置 (1)`, and so on.
+- Disabled or missing routes must submit invalid/disconnected tracking rather than a stale healthy pose.
+- Configuration revisions are atomic across all slots. An older snapshot must never replace a newer accepted revision.
+- Reject duplicate slots, conflicting targets, cycles, and other ambiguous routing rules.
+- Reject role self-reference such as a physical right-hand controller routed through a proxy back to `/user/hand/right`. SteamVR can feed the overridden target pose back as the source and freeze the route on a previous frame.
+- A proxy's first target binding, target change, disable cleanup, or deletion cleanup may require editing `TrackingOverrides`; perform that edit only while SteamVR is fully stopped.
+- Hot source and offset changes for an already bootstrapped proxy must work without restarting SteamVR.
 
-Use a stable virtual-device-to-target bootstrap mapping. Hot switching should change the physical source followed by that virtual device through IPC, not repeatedly rewrite `steamvr.vrsettings`.
+## UI Behavior
+
+- Use the sidebar as the primary route navigation and management surface.
+- With no routes, hide route controls and show the centered empty state `暂无配置，请新建。`.
+- Keep the selected route's 3D preview visible; do not make it collapsible.
+- The preview is observational. Closing, freezing, or overloading it must not affect submitted tracking poses.
+- Show physical source, stable virtual proxy, target, connection health, active offset, and pending/applied state distinctly.
+- Keep dangerous operations reversible and explain required SteamVR restarts or stopped-state writes before the user acts.
+- Preserve target input from the original device; TrackSwap replaces pose, not controller input.
+- Keep the legacy v001 settings workflow clearly separated from runtime route management.
 
 ## Pose Math Requirements
 
 - Represent a configurable rigid offset as `T_output = T_source * T_offset`.
-- Define and document the offset coordinate convention before exposing editable numeric fields.
+- Offset translation is expressed in the source device's local coordinate frame and measured in metres.
+- Store quaternion components in `x / y / z / w` order and normalize validated input.
 - Transform orientation and position together; do not implement translation as an unrelated world-space addition.
 - When velocities are submitted, account for the offset lever arm. At minimum:
   `v_output = v_source + omega x (R_source * t_offset)`.
@@ -60,110 +90,48 @@ Use a stable virtual-device-to-target bootstrap mapping. Hot switching should ch
 - Calibration from simultaneously observed source and target poses uses:
   `T_offset = inverse(T_source) * T_target`.
 - Capture calibration data before enabling an override that would hide the target's original pose.
+- Reject unstable, insufficient, disconnected, or non-simultaneous calibration samples.
 
-## Milestones and Acceptance Gates
-
-Work through these stages in order. A later stage may be designed early, but should not complicate the tracking path before its prerequisite is proven.
-
-### Stage 0 - Architecture and Technical Proof
-
-- Add separate project boundaries for UI, runtime/shared protocol, and native driver.
-- Confirm the chosen OpenVR headers/runtime interface and x64 build toolchain.
-- Define virtual device identity, configuration schema, IPC framing, and pose coordinate conventions.
-- Produce a minimal build/install/uninstall development loop for the driver.
-
-Exit gate: the solution builds reproducibly and the component contracts are documented.
-
-### Stage 1 - Minimal Virtual Device
-
-- Register one stable virtual GenericTracker with SteamVR.
-- Read one selected physical device's raw pose.
-- Submit a pass-through pose without offset.
-- Handle source disconnect/reconnect without crashing SteamVR.
-
-Exit gate: the virtual device reliably mirrors a real device for an extended test session.
-
-### Stage 2 - Hot Source Switching
-
-- Switch the virtual device between connected physical sources at runtime.
-- Do not restart SteamVR or rewrite settings for each switch.
-- Define behavior for missing, sleeping, duplicate, and reconnected sources.
-- Avoid discontinuities where practical; make any unavoidable jump explicit in the UI.
-
-Exit gate: repeated source changes work during one SteamVR session without a driver or UI restart.
-
-### Stage 3 - Real-Time Offset
-
-- Apply editable translation and rotation offsets in the driver.
-- Support live updates with validation and an explicit reset-to-identity action.
-- Verify handedness, axes, quaternion order, multiplication order, and velocity behavior.
-
-Exit gate: known offsets produce repeatable measured results across source orientations.
-
-### Stage 4 - Runtime and IPC
-
-- Move configuration ownership and device-selection control into the independent runtime.
-- Use versioned messages and atomic configuration snapshots.
-- Driver keeps the last valid configuration if runtime/UI disconnects.
-- Apply bounds checks, timeouts, and safe defaults to all data crossing IPC.
-
-Exit gate: driver, runtime, and UI can restart independently without corrupting state or crashing SteamVR.
-
-### Stage 5 - UI Integration
-
-- Integrate runtime routes into the existing TrackSwap UI without obscuring the legacy settings feature.
-- Show physical source, virtual proxy, target, connection health, active offset, and pending/applied state distinctly.
-- Keep risky operations reversible and provide useful errors rather than silent failure.
-
-Exit gate: a normal user can configure and hot-switch a route without editing files manually.
-
-### Stage 6 - Calibration
-
-- Capture source and target samples while both original poses are visible.
-- Reject unstable or insufficient samples.
-- Save, name, reapply, and reset calibration profiles.
-
-Exit gate: automatic calibration reaches the same practical result as a manually verified offset.
-
-### Stage 7 - 3D Preview
-
-- Consume downsampled telemetry, normally 30-60 Hz.
-- Render source, output, target, axes, and offset relationship.
-- Preview must be observational: closing, freezing, or overloading it must not affect submitted tracking poses.
-
-Exit gate: the preview accurately explains the active transform while remaining outside the critical path.
-
-### Stage 8 - Hardening and v002 Release
-
-- Test install, upgrade, disable, and uninstall flows.
-- Test SteamVR start/stop, standby, source power cycling, runtime/UI crashes, malformed config, and device reconnection.
-- Review driver and IPC boundaries for memory safety and validate all identifiers and transforms.
-- Update user documentation, third-party notices, CI artifacts, and release metadata.
-
-Exit gate: v002 can be installed and removed without manual residue, and failures degrade to invalid/disconnected tracking instead of crashing SteamVR.
-
-## Existing v001 Safety Invariants
+## SteamVR Configuration Safety
 
 Preserve these behaviors unless a task explicitly replaces them with a safer equivalent:
 
 - Do not write `steamvr.vrsettings` while SteamVR is running.
 - Back up the settings file before applying, removing, or restoring mappings.
 - Restore only `TrackingOverrides`; preserve unrelated SteamVR settings.
-- Use exact OpenVR registered device paths, including any actual prefix returned by OpenVR. Never synthesize `/devices/lighthouse/` or another prefix from a serial number.
-- Prevent self-maps, cycles, and conflicting rules.
+- Use exact OpenVR registered device paths, including the actual prefix returned by OpenVR. Never synthesize `/devices/lighthouse/` or another prefix from a serial number.
+- Prevent self-maps, role self-reference, cycles, duplicate proxy slots, and conflicting target rules.
 - Keep target input separate from the selected pose source.
 - Treat concrete-device overrides as experimental because behavior can depend on the device driver and SteamVR version.
+- Installation and removal of the SteamVR driver must be explicit commands or user actions. An ordinary build must never register a driver silently.
+
+## Current Acceptance Baseline
+
+The following capabilities have been implemented and must not regress:
+
+- UI, Runtime/shared protocol, and native driver have separate project boundaries.
+- The solution and native driver build reproducibly for Windows x64.
+- Runtime, driver, and UI can restart independently without corrupting the saved configuration or crashing SteamVR.
+- Stable virtual proxies mirror connected sources, preserve health state, and recover from source reconnection.
+- Live source and offset updates work through versioned IPC.
+- Automatic calibration profiles can be captured, named, saved, reapplied, and deleted.
+- Downsampled per-route telemetry drives the source/output/target 3D preview outside the tracking-critical path.
+- Multiple proxy slots can be registered in one SteamVR session and receive independent route snapshots.
+- Deleting a route while SteamVR is stopped removes its static proxy mapping without disturbing other routes.
+- Hardware testing has confirmed Tracker-to-hand pose replacement while the original hand controller keeps its input.
+
+Before a v003 release, repeat and document hardening for install, upgrade, disable, uninstall, SteamVR start/stop, standby, source power cycling, runtime/UI crashes, malformed configuration, device reconnection, multiple simultaneous physical sources, and configuration migration.
 
 ## Development Practices
 
-- Target Windows x64 for native driver/runtime integration. The existing UI targets .NET Framework 4.8.
-- Prefer the official OpenVR headers and documentation. Pin or record the exact dependency revision when vendoring or downloading build inputs.
-- Keep real-time code allocation-light, non-blocking, and independent from UI frame rate.
+- Target Windows x64 for native driver/runtime integration. The UI targets .NET Framework 4.8.
+- Prefer official OpenVR headers and documentation. Pin or record the exact dependency revision when vendoring or downloading build inputs.
+- Validate all identifiers, slot indices, message lengths, transforms, and values crossing IPC boundaries.
 - Log state transitions and actionable errors, but do not log high-frequency poses by default.
-- Do not silently install/register a SteamVR driver during an ordinary build. Installation and removal must be explicit commands or user actions.
 - Keep generated binaries, local SteamVR paths, test captures, and machine-specific configuration out of Git.
-- Add focused tests for transform math, configuration migration/validation, IPC parsing, and route conflict handling before relying on hardware-only tests.
-- Verify changes proportionally: build affected projects, run automated tests, and state clearly which SteamVR/hardware checks still require the maintainer.
+- Add focused tests for transform math, configuration migration and validation, IPC parsing, telemetry batching, slot routing, and route conflicts before relying on hardware-only tests.
+- Verify changes proportionally: build affected projects, run automated tests, and state clearly which SteamVR or hardware checks still require the maintainer.
+- Treat successful compilation and automated tests as necessary but insufficient for tracking correctness.
 
 ## Local Testing Notes
 
