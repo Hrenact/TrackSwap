@@ -51,7 +51,7 @@ jobs:
           .\scripts\Build-Release.ps1 -Version $version
 
       - name: Upload Windows x64 package
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: TrackSwap-${{ github.sha }}-win-x64
           path: |

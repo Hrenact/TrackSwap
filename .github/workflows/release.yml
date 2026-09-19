@@ -41,7 +41,7 @@ jobs:
           .\scripts\Build-Release.ps1 -Version "${{ github.ref_name }}"
 
       - name: Upload release artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: TrackSwap-${{ github.ref_name }}-win-x64
           path: |
