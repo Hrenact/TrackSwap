@@ -11,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Media3D;
+using System.Windows.Media.Imaging;
 using System.Windows.Input;
 using System.Windows.Threading;
 using TrackSwap.Models;
@@ -32,12 +33,16 @@ namespace TrackSwap
         private readonly SteamVrStatusService _statusService = new SteamVrStatusService();
         private readonly SteamVrSettingsService _settingsService = new SteamVrSettingsService();
         private readonly OpenVrDeviceService _openVrDeviceService = new OpenVrDeviceService();
+        private readonly OpenVrRenderModelService _openVrRenderModelService = new OpenVrRenderModelService();
         private readonly RuntimeControlService _runtimeControlService = new RuntimeControlService();
         private readonly DispatcherTimer _statusTimer;
         private readonly DispatcherTimer _telemetryTimer;
         private Model3DGroup _sourcePreviewModel;
         private Model3DGroup _outputPreviewModel;
         private Model3DGroup _targetPreviewModel;
+        private readonly Dictionary<string, Task<OpenVrRenderModel>> _previewModelCache =
+            new Dictionary<string, Task<OpenVrRenderModel>>(StringComparer.Ordinal);
+        private int _previewModelRequestVersion;
 
         private string _settingsPath;
         private bool _isLoading;
@@ -92,6 +97,7 @@ namespace TrackSwap
             };
             Closed += (_, __) =>
             {
+                _previewModelRequestVersion++;
                 _statusTimer.Stop();
                 _telemetryTimer.Stop();
             };
@@ -174,6 +180,7 @@ namespace TrackSwap
                 _isLoading = false;
                 UpdateSelectionDetails();
                 UpdateSteamVrStatus();
+                _ = RefreshPreviewDeviceModelsAsync();
             }
         }
 
@@ -621,6 +628,7 @@ namespace TrackSwap
             }
             UpdateRuntimeSelectionDetails();
             UpdateContentVisibility();
+            _ = RefreshPreviewDeviceModelsAsync();
         }
 
         private void UpdateContentVisibility()
@@ -1021,7 +1029,15 @@ namespace TrackSwap
         {
             if (!_isLoading)
             {
+                if (_selectedRoute != null)
+                {
+                    _selectedRoute.SourceDevicePath =
+                        (RuntimeSourceComboBox.SelectedItem as DeviceOption)?.DevicePath;
+                    _selectedRoute.TargetDevicePath =
+                        (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath;
+                }
                 UpdateRuntimeSelectionDetails();
+                _ = RefreshPreviewDeviceModelsAsync();
             }
         }
 
@@ -1571,15 +1587,127 @@ namespace TrackSwap
         private void InitializePosePreview()
         {
             PreviewSceneRoot.Children.Add(CreateAxesModel(0.45, 0.006));
-            _sourcePreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#F5A623"));
-            _outputPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#4D8DFF"));
-            _targetPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#45D483"));
+            _sourcePreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#F5A623"), TrackedDeviceKind.Unknown);
+            _outputPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#4D8DFF"), TrackedDeviceKind.Unknown);
+            _targetPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#45D483"), TrackedDeviceKind.Unknown);
             PreviewSceneRoot.Children.Add(_sourcePreviewModel);
             PreviewSceneRoot.Children.Add(_outputPreviewModel);
             PreviewSceneRoot.Children.Add(_targetPreviewModel);
             HidePreviewModel(_sourcePreviewModel);
             HidePreviewModel(_outputPreviewModel);
             HidePreviewModel(_targetPreviewModel);
+        }
+
+        private async Task RefreshPreviewDeviceModelsAsync()
+        {
+            int requestVersion = ++_previewModelRequestVersion;
+            if (_selectedRoute == null)
+            {
+                return;
+            }
+
+            DeviceOption source = RuntimeSourceComboBox.SelectedItem as DeviceOption ??
+                _onlinePhysicalDevices.FirstOrDefault(device => string.Equals(
+                    device.DevicePath,
+                    _selectedRoute.SourceDevicePath,
+                    StringComparison.Ordinal));
+            string targetPath = (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath ??
+                _selectedRoute.TargetDevicePath;
+            DeviceOption target = _onlinePhysicalDevices.FirstOrDefault(device =>
+                string.Equals(device.DevicePath, targetPath, StringComparison.Ordinal)) ??
+                _onlinePhysicalDevices.FirstOrDefault(device =>
+                    string.Equals(device.RoleTargetPath, targetPath, StringComparison.Ordinal));
+
+            Task<OpenVrRenderModel> sourceTask = GetPreviewRenderModelAsync(source?.RenderModelName);
+            Task<OpenVrRenderModel> targetTask = GetPreviewRenderModelAsync(target?.RenderModelName);
+            OpenVrRenderModel[] models = await Task.WhenAll(sourceTask, targetTask);
+            if (models[0] == null && !string.IsNullOrWhiteSpace(source?.RenderModelName))
+            {
+                _previewModelCache.Remove(source.RenderModelName);
+            }
+            if (models[1] == null && !string.IsNullOrWhiteSpace(target?.RenderModelName))
+            {
+                _previewModelCache.Remove(target.RenderModelName);
+            }
+            if (requestVersion != _previewModelRequestVersion || !IsVisible)
+            {
+                return;
+            }
+
+            TrackedDeviceKind sourceKind = source?.DeviceKind ?? InferDeviceKind(_selectedRoute.SourceDevicePath);
+            TrackedDeviceKind targetKind = target?.DeviceKind ?? InferTargetKind(targetPath);
+            Color sourceColor = (Color)ColorConverter.ConvertFromString("#F5A623");
+            Color outputColor = (Color)ColorConverter.ConvertFromString("#4D8DFF");
+            Color targetColor = (Color)ColorConverter.ConvertFromString("#45D483");
+            SetPreviewDeviceModel(_sourcePreviewModel, models[0], sourceKind, sourceColor);
+            SetPreviewDeviceModel(_outputPreviewModel, models[0], sourceKind, outputColor);
+            SetPreviewDeviceModel(_targetPreviewModel, models[1], targetKind, targetColor);
+
+            string sourceMode = models[0] == null ? "来源：内置回退" : "来源：SteamVR " + models[0].Name;
+            string targetMode = models[1] == null ? "目标：内置回退" : "目标：SteamVR " + models[1].Name;
+            PreviewStatusText.ToolTip = sourceMode + "\n" + targetMode;
+        }
+
+        private Task<OpenVrRenderModel> GetPreviewRenderModelAsync(string renderModelName)
+        {
+            if (string.IsNullOrWhiteSpace(renderModelName) || !_statusService.IsRunning())
+            {
+                return Task.FromResult<OpenVrRenderModel>(null);
+            }
+
+            if (_previewModelCache.TryGetValue(renderModelName, out Task<OpenVrRenderModel> cached))
+            {
+                return cached;
+            }
+
+            string runtimePath = _pathService.FindRuntimePath();
+            Task<OpenVrRenderModel> loadTask = Task.Run(() =>
+            {
+                try
+                {
+                    return _openVrRenderModelService.Load(runtimePath, renderModelName);
+                }
+                catch
+                {
+                    return null;
+                }
+            });
+            _previewModelCache[renderModelName] = loadTask;
+            return loadTask;
+        }
+
+        private static TrackedDeviceKind InferDeviceKind(string devicePath)
+        {
+            string value = devicePath ?? string.Empty;
+            if (value.IndexOf("hmd", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("head", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return TrackedDeviceKind.Hmd;
+            }
+            if (value.IndexOf("controller", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("hand", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return TrackedDeviceKind.Controller;
+            }
+            if (value.IndexOf("tracker", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return TrackedDeviceKind.Tracker;
+            }
+            return TrackedDeviceKind.Unknown;
+        }
+
+        private static TrackedDeviceKind InferTargetKind(string targetPath)
+        {
+            if (string.Equals(targetPath, ProtocolConstants.HeadRolePath, StringComparison.Ordinal))
+            {
+                return TrackedDeviceKind.Hmd;
+            }
+            if (string.Equals(targetPath, ProtocolConstants.LeftHandRolePath, StringComparison.Ordinal) ||
+                string.Equals(targetPath, ProtocolConstants.RightHandRolePath, StringComparison.Ordinal))
+            {
+                return TrackedDeviceKind.Controller;
+            }
+            return InferDeviceKind(targetPath);
         }
 
         private async Task RefreshTelemetryAsync()
@@ -1744,15 +1872,122 @@ namespace TrackSwap
             model.Transform = new TranslateTransform3D(10000, 10000, 10000);
         }
 
-        private static Model3DGroup CreateDeviceModel(Color bodyColor)
+        private static Model3DGroup CreateDeviceModel(Color bodyColor, TrackedDeviceKind deviceKind)
         {
             var group = new Model3DGroup();
-            group.Children.Add(CreateBoxModel(new Point3D(0, 0, 0), new Vector3D(0.065, 0.065, 0.065), bodyColor));
+            AddFallbackDeviceGeometry(group, deviceKind, bodyColor);
             foreach (Model3D axis in CreateAxesModel(0.18, 0.012).Children)
             {
                 group.Children.Add(axis);
             }
             return group;
+        }
+
+        private static void SetPreviewDeviceModel(
+            Model3DGroup group,
+            OpenVrRenderModel renderModel,
+            TrackedDeviceKind fallbackKind,
+            Color bodyColor)
+        {
+            Transform3D transform = group.Transform;
+            group.Children.Clear();
+            if (renderModel == null || renderModel.Vertices.Length == 0 || renderModel.Indices.Length == 0)
+            {
+                AddFallbackDeviceGeometry(group, fallbackKind, bodyColor);
+            }
+            else
+            {
+                group.Children.Add(CreateOpenVrModel(renderModel, bodyColor));
+            }
+            foreach (Model3D axis in CreateAxesModel(0.18, 0.012).Children)
+            {
+                group.Children.Add(axis);
+            }
+            group.Transform = transform;
+        }
+
+        private static GeometryModel3D CreateOpenVrModel(OpenVrRenderModel renderModel, Color tint)
+        {
+            var positions = new Point3DCollection(renderModel.Vertices.Length);
+            var normals = new Vector3DCollection(renderModel.Vertices.Length);
+            var textureCoordinates = new PointCollection(renderModel.Vertices.Length);
+            foreach (OpenVrRenderVertex vertex in renderModel.Vertices)
+            {
+                positions.Add(new Point3D(vertex.PositionX, vertex.PositionY, vertex.PositionZ));
+                normals.Add(new Vector3D(vertex.NormalX, vertex.NormalY, vertex.NormalZ));
+                textureCoordinates.Add(new Point(vertex.TextureU, vertex.TextureV));
+            }
+
+            var triangleIndices = new Int32Collection(renderModel.Indices.Length);
+            foreach (ushort index in renderModel.Indices)
+            {
+                triangleIndices.Add(index);
+            }
+
+            var mesh = new MeshGeometry3D
+            {
+                Positions = positions,
+                Normals = normals,
+                TextureCoordinates = textureCoordinates,
+                TriangleIndices = triangleIndices
+            };
+            var materials = new MaterialGroup();
+            if (renderModel.TextureWidth > 0 && renderModel.TextureHeight > 0 && renderModel.TextureRgba.Length > 0)
+            {
+                byte[] bgra = new byte[renderModel.TextureRgba.Length];
+                for (int index = 0; index < bgra.Length; index += 4)
+                {
+                    bgra[index] = renderModel.TextureRgba[index + 2];
+                    bgra[index + 1] = renderModel.TextureRgba[index + 1];
+                    bgra[index + 2] = renderModel.TextureRgba[index];
+                    bgra[index + 3] = renderModel.TextureRgba[index + 3];
+                }
+                BitmapSource bitmap = BitmapSource.Create(
+                    renderModel.TextureWidth,
+                    renderModel.TextureHeight,
+                    96,
+                    96,
+                    PixelFormats.Bgra32,
+                    null,
+                    bgra,
+                    checked(renderModel.TextureWidth * 4));
+                bitmap.Freeze();
+                var textureBrush = new ImageBrush(bitmap) { Stretch = Stretch.Fill };
+                textureBrush.Freeze();
+                materials.Children.Add(new DiffuseMaterial(textureBrush));
+                Color overlay = Color.FromArgb(52, tint.R, tint.G, tint.B);
+                materials.Children.Add(new EmissiveMaterial(new SolidColorBrush(overlay)));
+            }
+            else
+            {
+                materials.Children.Add(new DiffuseMaterial(new SolidColorBrush(tint)));
+            }
+            return new GeometryModel3D(mesh, materials) { BackMaterial = materials };
+        }
+
+        private static void AddFallbackDeviceGeometry(
+            Model3DGroup group,
+            TrackedDeviceKind deviceKind,
+            Color bodyColor)
+        {
+            switch (deviceKind)
+            {
+                case TrackedDeviceKind.Hmd:
+                    group.Children.Add(CreateBoxModel(new Point3D(0, 0, -0.015), new Vector3D(0.19, 0.09, 0.08), bodyColor));
+                    group.Children.Add(CreateBoxModel(new Point3D(0, 0.01, 0.04), new Vector3D(0.12, 0.035, 0.05), bodyColor));
+                    break;
+                case TrackedDeviceKind.Controller:
+                    group.Children.Add(CreateBoxModel(new Point3D(0, -0.055, 0.015), new Vector3D(0.035, 0.13, 0.04), bodyColor));
+                    group.Children.Add(CreateBoxModel(new Point3D(0, 0.025, -0.005), new Vector3D(0.075, 0.045, 0.075), bodyColor));
+                    break;
+                case TrackedDeviceKind.Tracker:
+                    group.Children.Add(CreateBoxModel(new Point3D(0, 0, 0), new Vector3D(0.085, 0.03, 0.085), bodyColor));
+                    group.Children.Add(CreateBoxModel(new Point3D(0, 0.022, 0), new Vector3D(0.052, 0.014, 0.052), bodyColor));
+                    break;
+                default:
+                    group.Children.Add(CreateBoxModel(new Point3D(0, 0, 0), new Vector3D(0.065, 0.065, 0.065), bodyColor));
+                    break;
+            }
         }
 
         private static Model3DGroup CreateAxesModel(double length, double thickness)

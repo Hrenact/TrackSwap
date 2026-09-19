@@ -73,6 +73,7 @@ Keep the components in this repository separate:
 - Use the sidebar as the primary route navigation and management surface.
 - With no routes, hide route controls and show the centered empty state `暂无配置，请新建。`.
 - Keep the selected route's 3D preview visible; do not make it collapsible.
+- Prefer the device render model registered with OpenVR, but always retain built-in HMD, controller, tracker, and generic fallbacks. Loading or rendering a model must remain UI-only and observational.
 - The preview is observational. Closing, freezing, or overloading it must not affect submitted tracking poses.
 - Show physical source, stable virtual proxy, target, connection health, active offset, and pending/applied state distinctly.
 - Keep dangerous operations reversible and explain required SteamVR restarts or stopped-state writes before the user acts.
@@ -117,6 +118,7 @@ The following capabilities have been implemented and must not regress:
 - Live source and offset updates work through versioned IPC.
 - Automatic calibration profiles can be captured, named, saved, reapplied, and deleted.
 - Downsampled per-route telemetry drives the source/output/target 3D preview outside the tracking-critical path.
+- The preview loads static device meshes and textures through `IVRRenderModels_006`, supports component-based controller models, and falls back to built-in device-class geometry without affecting tracking.
 - Multiple proxy slots can be registered in one SteamVR session and receive independent route snapshots.
 - Deleting a route while SteamVR is stopped removes its static proxy mapping without disturbing other routes.
 - Deleting a route while SteamVR is running marks it pending, preserves live tracking, and automatically removes its static mapping and Runtime route after SteamVR stops.

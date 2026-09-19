@@ -1,5 +1,13 @@
 namespace TrackSwap.Models
 {
+    public enum TrackedDeviceKind
+    {
+        Unknown,
+        Hmd,
+        Controller,
+        Tracker
+    }
+
     public sealed class DeviceOption
     {
         public DeviceOption(
@@ -8,7 +16,9 @@ namespace TrackSwap.Models
             bool isOnline = false,
             uint? deviceIndex = null,
             string serialNumber = null,
-            string roleTargetPath = null)
+            string roleTargetPath = null,
+            string renderModelName = null,
+            TrackedDeviceKind deviceKind = TrackedDeviceKind.Unknown)
         {
             DisplayName = displayName;
             DevicePath = devicePath;
@@ -16,6 +26,8 @@ namespace TrackSwap.Models
             DeviceIndex = deviceIndex;
             SerialNumber = serialNumber;
             RoleTargetPath = roleTargetPath;
+            RenderModelName = renderModelName;
+            DeviceKind = deviceKind;
         }
 
         public string DisplayName { get; }
@@ -29,6 +41,10 @@ namespace TrackSwap.Models
         public string SerialNumber { get; }
 
         public string RoleTargetPath { get; }
+
+        public string RenderModelName { get; }
+
+        public TrackedDeviceKind DeviceKind { get; }
 
         public override string ToString()
         {

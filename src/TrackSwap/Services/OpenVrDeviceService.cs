@@ -16,6 +16,14 @@ namespace TrackSwap.Services
 
         public IReadOnlyList<DeviceOption> EnumerateOnlineDevices(string runtimePath)
         {
+            lock (OpenVrInterop.SyncRoot)
+            {
+                return EnumerateOnlineDevicesCore(runtimePath);
+            }
+        }
+
+        private IReadOnlyList<DeviceOption> EnumerateOnlineDevicesCore(string runtimePath)
+        {
             if (string.IsNullOrWhiteSpace(runtimePath))
             {
                 throw new InvalidOperationException("未找到 SteamVR Runtime 路径。");
@@ -84,6 +92,7 @@ namespace TrackSwap.Services
 
                     string model = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.ModelNumber);
                     string serial = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.SerialNumber);
+                    string renderModel = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.RenderModelName);
                     ETrackedControllerRole role = deviceClass == ETrackedDeviceClass.Controller
                         ? getRole(index)
                         : ETrackedControllerRole.Invalid;
@@ -94,7 +103,9 @@ namespace TrackSwap.Services
                         true,
                         index,
                         serial,
-                        GetRoleTargetPath(deviceClass, role)));
+                        GetRoleTargetPath(deviceClass, role),
+                        renderModel,
+                        GetDeviceKind(deviceClass)));
                 }
 
                 return devices
@@ -177,6 +188,21 @@ namespace TrackSwap.Services
                     return "追踪器";
                 default:
                     return "OpenVR 设备";
+            }
+        }
+
+        private static TrackedDeviceKind GetDeviceKind(ETrackedDeviceClass deviceClass)
+        {
+            switch (deviceClass)
+            {
+                case ETrackedDeviceClass.Hmd:
+                    return TrackedDeviceKind.Hmd;
+                case ETrackedDeviceClass.Controller:
+                    return TrackedDeviceKind.Controller;
+                case ETrackedDeviceClass.GenericTracker:
+                    return TrackedDeviceKind.Tracker;
+                default:
+                    return TrackedDeviceKind.Unknown;
             }
         }
 
@@ -285,6 +311,7 @@ namespace TrackSwap.Services
         {
             ModelNumber = 1001,
             SerialNumber = 1002,
+            RenderModelName = 1003,
             RegisteredDeviceType = 1036
         }
 
