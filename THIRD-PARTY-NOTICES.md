@@ -37,7 +37,9 @@ SOFTWARE.
 Project: https://github.com/ValveSoftware/openvr
 
 TrackSwap uses OpenVR API definitions and dynamically loads the OpenVR library
-from the user's local SteamVR installation. TrackSwap does not redistribute
+from the user's local SteamVR installation. The v002 native driver build and
+runtime bindings use the `IVRSystem_026` snapshot pinned at commit
+`0924064316de3effbcd1acf1e309182a2deb1c05`. TrackSwap does not redistribute
 SteamVR or `openvr_api.dll`.
 
 ```text

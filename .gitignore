@@ -9,3 +9,6 @@ packages/
 *.log
 *.pdb
 publish/
+artifacts/
+.deps/
+CMakeUserPresets.json

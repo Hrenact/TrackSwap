@@ -1,0 +1,6 @@
+{
+  "driver_trackswap": {
+    "enable": true,
+    "sourceDevicePath": ""
+  }
+}

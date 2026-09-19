@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackswap.local/schemas/runtime-config.v1.schema.json",
+  "title": "TrackSwap Runtime Configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "routes"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "revision": { "type": "integer", "minimum": 0 },
+    "routes": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/route" }
+    }
+  },
+  "$defs": {
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["routeId", "enabled", "virtualDeviceSlot", "sourceDevicePath", "targetDevicePath", "offset"],
+      "properties": {
+        "routeId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+        "enabled": { "type": "boolean" },
+        "virtualDeviceSlot": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "sourceDevicePath": { "type": "string", "pattern": "^/devices/[^\\u0000-\\u001F\\u007F]+$" },
+        "targetDevicePath": {
+          "oneOf": [
+            { "type": "string", "pattern": "^/devices/[^\\u0000-\\u001F\\u007F]+$" },
+            { "enum": ["/user/head", "/user/hand/left", "/user/hand/right"] }
+          ]
+        },
+        "offset": { "$ref": "#/$defs/offset" }
+      }
+    },
+    "offset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["translationX", "translationY", "translationZ", "rotationX", "rotationY", "rotationZ", "rotationW"],
+      "properties": {
+        "translationX": { "type": "number", "minimum": -10, "maximum": 10 },
+        "translationY": { "type": "number", "minimum": -10, "maximum": 10 },
+        "translationZ": { "type": "number", "minimum": -10, "maximum": 10 },
+        "rotationX": { "type": "number" },
+        "rotationY": { "type": "number" },
+        "rotationZ": { "type": "number" },
+        "rotationW": { "type": "number" }
+      }
+    }
+  }
+}
