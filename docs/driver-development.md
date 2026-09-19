@@ -48,6 +48,10 @@ mirrors that device's raw pose, and deliberately reports invalid/disconnected
 tracking when the source is missing or invalid. It does not alter
 `TrackingOverrides`.
 
+Virtual proxies use the driver-owned `trackswap_hidden_proxy` render model. It
+contains no renderable components, so SteamVR can use the proxy for routing
+without drawing a misleading GenericTracker fallback model in the headset.
+
 Hardware validation is intentionally separate from build validation. Before a
 test, obtain the exact registered device path from TrackSwap v001 while SteamVR
 is running. Fully exit SteamVR before setting the development value or changing

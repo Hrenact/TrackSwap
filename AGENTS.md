@@ -72,8 +72,12 @@ Keep the components in this repository separate:
 
 - Use the sidebar as the primary route navigation and management surface.
 - With no routes, hide route controls and show the centered empty state `暂无配置，请新建。`.
+- Keep the dark theme explicit across every detached or system-hosted surface. Tooltips, context menus, popups, ComboBox drop-downs, and dialogs must define compatible foreground, background, border, and selection states instead of inheriting Windows theme defaults.
+- Remember that the implicit `TextBlock` style can make text light even inside a system-default white popup. After adding or changing any popup-like UI, inspect the actual rendered state and reject white-on-white, black-on-black, or otherwise low-contrast combinations.
+- Visual UI verification must cover normal, hover, selected, disabled, validation, and popup/tooltip states where applicable. A successful XAML build is not sufficient evidence that themed UI is readable.
 - Keep the selected route's 3D preview visible; do not make it collapsible.
 - Prefer the device render model registered with OpenVR, but always retain built-in HMD, controller, tracker, and generic fallbacks. Loading or rendering a model must remain UI-only and observational.
+- In the preview, render the physical pose source and final target; do not render the virtual proxy as a third user-facing object. The proxy is a compatibility and routing layer.
 - The preview is observational. Closing, freezing, or overloading it must not affect submitted tracking poses.
 - Show physical source, stable virtual proxy, target, connection health, active offset, and pending/applied state distinctly.
 - Keep dangerous operations reversible and explain required SteamVR restarts or stopped-state writes before the user acts.
@@ -119,6 +123,7 @@ The following capabilities have been implemented and must not regress:
 - Automatic calibration profiles can be captured, named, saved, reapplied, and deleted.
 - Downsampled per-route telemetry drives the source/output/target 3D preview outside the tracking-critical path.
 - The preview loads static device meshes and textures through `IVRRenderModels_006`, supports component-based controller models, and falls back to built-in device-class geometry without affecting tracking.
+- Virtual proxies register the driver-owned empty `trackswap_hidden_proxy` render model, preventing SteamVR from drawing a misleading GenericTracker fallback while preserving tracking, routing, and telemetry. This behavior has been hardware-verified.
 - Multiple proxy slots can be registered in one SteamVR session and receive independent route snapshots.
 - Deleting a route while SteamVR is stopped removes its static proxy mapping without disturbing other routes.
 - Deleting a route while SteamVR is running marks it pending, preserves live tracking, and automatically removes its static mapping and Runtime route after SteamVR stops.

@@ -133,6 +133,10 @@ vr::EVRInitError VirtualTracker::Activate(std::uint32_t objectId)
         vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap Virtual Tracker");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_RenderModelName_String,
+        "{trackswap}trackswap_hidden_proxy");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_tracker");
     vr::VRProperties()->SetBoolProperty(properties, vr::Prop_WillDriftInYaw_Bool, false);
