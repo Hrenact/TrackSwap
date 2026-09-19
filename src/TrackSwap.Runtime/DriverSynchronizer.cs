@@ -45,13 +45,20 @@ internal sealed class DriverSynchronizer
                 snapshot = configuration;
             }
 
-            RouteConfiguration? route = snapshot.Routes.SingleOrDefault(
-                candidate => candidate.Enabled && candidate.VirtualDeviceSlot == 0);
-            if (route != null && snapshot.Revision > 0)
+            if (snapshot.Revision > 0)
             {
                 try
                 {
-                    DriverControlClient.ApplySnapshot(route, (ulong)snapshot.Revision, TimeSpan.FromSeconds(1));
+                    for (int slot = 0; slot < ProtocolConstants.MaximumRoutes; slot++)
+                    {
+                        RouteConfiguration? route = snapshot.Routes.SingleOrDefault(
+                            candidate => candidate.Enabled && candidate.VirtualDeviceSlot == slot);
+                        DriverControlClient.ApplySnapshot(
+                            slot,
+                            route,
+                            (ulong)snapshot.Revision,
+                            TimeSpan.FromSeconds(1));
+                    }
                     lock (syncRoot)
                     {
                         isDriverConnected = true;

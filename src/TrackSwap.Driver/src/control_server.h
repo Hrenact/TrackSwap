@@ -5,7 +5,7 @@
 
 namespace trackswap
 {
-class VirtualTracker;
+class TrackerRegistry;
 
 class ControlServer final
 {
@@ -16,14 +16,14 @@ public:
     ControlServer(const ControlServer&) = delete;
     ControlServer& operator=(const ControlServer&) = delete;
 
-    bool Start(VirtualTracker* tracker);
+    bool Start(TrackerRegistry* registry);
     void Stop();
 
 private:
     void Run();
 
     std::atomic<bool> stopping_{false};
-    VirtualTracker* tracker_ = nullptr;
+    TrackerRegistry* registry_ = nullptr;
     std::thread worker_;
 };
 } // namespace trackswap

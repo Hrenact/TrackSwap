@@ -72,6 +72,39 @@ public sealed class CalibrationProfileStoreTests
         Assert.Equal(26, snapshot.Target.RotationW);
     }
 
+    [Fact]
+    public void DriverTelemetryBatchSeparatesVirtualDeviceSlots()
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write((byte)ProtocolConstants.MaximumRoutes);
+            for (int slot = 0; slot < ProtocolConstants.MaximumRoutes; slot++)
+            {
+                writer.Write((ulong)slot);
+                writer.Write((ulong)(100 + slot));
+                for (int poseIndex = 0; poseIndex < 3; poseIndex++)
+                {
+                    writer.Write((byte)1);
+                    writer.Write((byte)1);
+                    writer.Write(200);
+                    for (int valueIndex = 0; valueIndex < 7; valueIndex++)
+                    {
+                        writer.Write((double)slot);
+                    }
+                }
+            }
+        }
+
+        IReadOnlyList<PoseTelemetrySnapshot> snapshots =
+            DriverControlClient.ParseTelemetryBatch(stream.ToArray());
+
+        Assert.Equal(ProtocolConstants.MaximumRoutes, snapshots.Count);
+        Assert.Equal(3, snapshots[3].VirtualDeviceSlot);
+        Assert.Equal(103, snapshots[3].AppliedRevision);
+        Assert.Equal(3, snapshots[3].Output.PositionX);
+    }
+
     private static CalibrationProfile CreateProfile(string id, string name, double translationX)
     {
         return new CalibrationProfile

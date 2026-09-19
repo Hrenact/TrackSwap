@@ -84,7 +84,8 @@ public sealed class ConfigurationValidatorTests
             0x8004,
             DriverControlProtocol.GetTelemetryMessageType | DriverControlProtocol.ResponseFlag);
         Assert.Equal(202, DriverControlProtocol.TelemetrySnapshotBytes);
-        Assert.Equal(443, DriverControlProtocol.MaximumCombinedDevicePathBytes);
+        Assert.Equal(4026, DriverControlProtocol.MaximumCombinedDevicePathBytes);
+        Assert.Equal(1617, DriverControlProtocol.TelemetryBatchBytes);
     }
 
     [Fact]
@@ -92,7 +93,7 @@ public sealed class ConfigurationValidatorTests
     {
         var configuration = CreateConfiguration();
         configuration.Routes[0].RouteId = "bad\nroute";
-        configuration.Routes[0].SourceDevicePath = "/devices/" + new string('\u4F4D', 220);
+        configuration.Routes[0].SourceDevicePath = "/devices/" + new string('\u4F4D', 1400);
         configuration.Routes[0].TargetDevicePath = "/devices/target\r";
 
         IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);

@@ -25,9 +25,11 @@ namespace TrackSwap.Services
             return SendAsync<RuntimeStatusSnapshot>("getStatus", new { });
         }
 
-        public Task<PoseTelemetrySnapshot> GetTelemetryAsync()
+        public Task<PoseTelemetrySnapshot> GetTelemetryAsync(int virtualDeviceSlot)
         {
-            return SendAsync<PoseTelemetrySnapshot>("getTelemetry", new { });
+            return SendAsync<PoseTelemetrySnapshot>(
+                "getTelemetry",
+                new TelemetryRequest { VirtualDeviceSlot = virtualDeviceSlot });
         }
 
         public Task<CalibrationCaptureResponse> CaptureCalibrationAsync(CalibrationCaptureRequest request)

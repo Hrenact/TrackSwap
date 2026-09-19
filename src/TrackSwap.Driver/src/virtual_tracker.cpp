@@ -32,6 +32,18 @@ trackswap::control_protocol::TelemetryPose ToTelemetryPose(const vr::TrackedDevi
 
 namespace trackswap
 {
+VirtualTracker::VirtualTracker(std::uint8_t slot)
+    : slot_(slot),
+      serialNumber_("TRKSWAP-PROXY-" + (slot < 10 ? std::string("0") : std::string()) + std::to_string(slot)),
+      registeredDeviceType_("trackswap/" + serialNumber_)
+{
+}
+
+const char* VirtualTracker::SerialNumber() const
+{
+    return serialNumber_.c_str();
+}
+
 void VirtualTracker::ConfigureSource(const char* sourceDevicePath)
 {
     sourceDevicePath_.fill('\0');
@@ -47,6 +59,8 @@ void VirtualTracker::ConfigureSource(const char* sourceDevicePath)
 void VirtualTracker::QueueSource(const char* sourceDevicePath)
 {
     std::lock_guard<std::mutex> lock(pendingSourceMutex_);
+    pendingEnabled_ = true;
+    hasPendingEnabled_ = true;
     pendingSourceDevicePath_.fill('\0');
     strncpy_s(
         pendingSourceDevicePath_.data(),
@@ -64,6 +78,7 @@ void VirtualTracker::QueueOffset(const pose_math::RigidOffset& offset)
 }
 
 bool VirtualTracker::QueueSnapshot(
+    bool enabled,
     const char* sourceDevicePath,
     const char* targetDevicePath,
     const pose_math::RigidOffset& offset,
@@ -79,18 +94,23 @@ bool VirtualTracker::QueueSnapshot(
         return true;
     }
 
+    pendingEnabled_ = enabled;
+    hasPendingEnabled_ = true;
     pendingSourceDevicePath_.fill('\0');
-    strncpy_s(
-        pendingSourceDevicePath_.data(),
-        pendingSourceDevicePath_.size(),
-        sourceDevicePath,
-        _TRUNCATE);
     pendingTargetDevicePath_.fill('\0');
-    strncpy_s(
-        pendingTargetDevicePath_.data(),
-        pendingTargetDevicePath_.size(),
-        targetDevicePath,
-        _TRUNCATE);
+    if (enabled)
+    {
+        strncpy_s(
+            pendingSourceDevicePath_.data(),
+            pendingSourceDevicePath_.size(),
+            sourceDevicePath,
+            _TRUNCATE);
+        strncpy_s(
+            pendingTargetDevicePath_.data(),
+            pendingTargetDevicePath_.size(),
+            targetDevicePath,
+            _TRUNCATE);
+    }
     pendingOffset_ = offset;
     hasPendingSource_ = true;
     hasPendingOffset_ = true;
@@ -113,7 +133,7 @@ vr::EVRInitError VirtualTracker::Activate(std::uint32_t objectId)
         vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap Virtual Tracker");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, "trackswap/TRKSWAP-PROXY-00");
+    vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_tracker");
     vr::VRProperties()->SetBoolProperty(properties, vr::Prop_WillDriftInYaw_Bool, false);
     vr::VRProperties()->SetBoolProperty(properties, vr::Prop_DeviceIsWireless_Bool, false);
@@ -166,6 +186,15 @@ void VirtualTracker::Update()
     }
 
     ApplyPendingSource();
+
+    if (!activeEnabled_)
+    {
+        lastPose_ = pose_math::MakeInvalidPose();
+        SetHealth(false);
+        PublishTelemetry();
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
+        return;
+    }
 
     vr::VRServerDriverHost()->GetRawTrackedDevicePoses(0.0F, rawPoses_.data(), static_cast<std::uint32_t>(rawPoses_.size()));
 
@@ -237,10 +266,12 @@ void VirtualTracker::ApplyPendingSource()
     bool sourceChanged = false;
     bool offsetChanged = false;
     bool snapshotRevisionChanged = false;
+    bool enabledChanged = false;
+    bool pendingEnabled = false;
     std::uint64_t pendingRevision = 0;
     {
         std::lock_guard<std::mutex> lock(pendingSourceMutex_);
-        if (!hasPendingSource_ && !hasPendingOffset_)
+        if (!hasPendingSource_ && !hasPendingOffset_ && !hasPendingEnabled_)
         {
             return;
         }
@@ -263,6 +294,12 @@ void VirtualTracker::ApplyPendingSource()
             hasPendingSnapshotRevision_ = false;
             snapshotRevisionChanged = true;
         }
+        if (hasPendingEnabled_)
+        {
+            pendingEnabled = pendingEnabled_;
+            hasPendingEnabled_ = false;
+            enabledChanged = true;
+        }
     }
 
     if (sourceChanged)
@@ -283,6 +320,18 @@ void VirtualTracker::ApplyPendingSource()
     if (snapshotRevisionChanged)
     {
         appliedSnapshotRevision_ = pendingRevision;
+    }
+    if (enabledChanged)
+    {
+        activeEnabled_ = pendingEnabled;
+        if (!activeEnabled_)
+        {
+            ConfigureSource(nullptr);
+            targetDevicePath_.fill('\0');
+            targetId_ = vr::k_unTrackedDeviceIndexInvalid;
+            lastPose_ = pose_math::MakeInvalidPose();
+            SetHealth(false);
+        }
     }
 }
 

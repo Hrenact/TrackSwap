@@ -93,7 +93,8 @@ namespace TrackSwap.Services
                         "/devices/" + registeredType,
                         true,
                         index,
-                        serial));
+                        serial,
+                        GetRoleTargetPath(deviceClass, role)));
                 }
 
                 return devices
@@ -143,6 +144,25 @@ namespace TrackSwap.Services
 
             parts.Add("在线");
             return string.Join(" · ", parts);
+        }
+
+        private static string GetRoleTargetPath(
+            ETrackedDeviceClass deviceClass,
+            ETrackedControllerRole role)
+        {
+            if (deviceClass == ETrackedDeviceClass.Hmd)
+            {
+                return "/user/head";
+            }
+            if (role == ETrackedControllerRole.LeftHand)
+            {
+                return "/user/hand/left";
+            }
+            if (role == ETrackedControllerRole.RightHand)
+            {
+                return "/user/hand/right";
+            }
+            return null;
         }
 
         private static string DeviceClassName(ETrackedDeviceClass deviceClass)

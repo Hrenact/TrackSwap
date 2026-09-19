@@ -12,6 +12,7 @@ internal sealed class RuntimePipeServer
     private readonly CalibrationProfileStore profileStore;
     private readonly OpenVrCalibrationService calibrationService;
     private readonly TelemetrySampler telemetrySampler;
+    private readonly string pipeName;
     private RuntimeConfiguration configuration;
 
     public RuntimePipeServer(
@@ -20,13 +21,15 @@ internal sealed class RuntimePipeServer
         RuntimeConfiguration initialConfiguration,
         CalibrationProfileStore profileStore,
         OpenVrCalibrationService calibrationService,
-        TelemetrySampler telemetrySampler)
+        TelemetrySampler telemetrySampler,
+        string? pipeName = null)
     {
         this.store = store;
         this.synchronizer = synchronizer;
         this.profileStore = profileStore;
         this.calibrationService = calibrationService;
         this.telemetrySampler = telemetrySampler;
+        this.pipeName = pipeName ?? ProtocolConstants.PipeName;
         configuration = initialConfiguration;
     }
 
@@ -35,7 +38,7 @@ internal sealed class RuntimePipeServer
         while (!cancellationToken.IsCancellationRequested)
         {
             await using var pipe = new NamedPipeServerStream(
-                ProtocolConstants.PipeName,
+                pipeName,
                 PipeDirection.InOut,
                 1,
                 PipeTransmissionMode.Byte,
@@ -90,7 +93,7 @@ internal sealed class RuntimePipeServer
             {
                 "applyConfiguration" => ApplyConfiguration(request),
                 "getStatus" => CreateStatus(request.RequestId),
-                "getTelemetry" => GetTelemetry(request.RequestId),
+                "getTelemetry" => GetTelemetry(request),
                 "captureCalibration" => CaptureCalibration(request, cancellationToken),
                 "listCalibrationProfiles" => ListCalibrationProfiles(request.RequestId),
                 "deleteCalibrationProfile" => DeleteCalibrationProfile(request),
@@ -149,13 +152,20 @@ internal sealed class RuntimePipeServer
         };
     }
 
-    private MessageEnvelope GetTelemetry(string requestId)
+    private MessageEnvelope GetTelemetry(MessageEnvelope request)
     {
-        PoseTelemetrySnapshot snapshot = telemetrySampler.GetLatest();
+        TelemetryRequest? telemetryRequest =
+            JsonConvert.DeserializeObject<TelemetryRequest>(request.PayloadJson, RuntimeJson.Settings);
+        if (telemetryRequest == null || telemetryRequest.VirtualDeviceSlot < 0 ||
+            telemetryRequest.VirtualDeviceSlot >= ProtocolConstants.MaximumRoutes)
+        {
+            throw new InvalidDataException("A valid virtual device slot is required for telemetry.");
+        }
+        PoseTelemetrySnapshot snapshot = telemetrySampler.GetLatest(telemetryRequest.VirtualDeviceSlot);
         return new MessageEnvelope
         {
             MessageType = "telemetry",
-            RequestId = requestId,
+            RequestId = request.RequestId,
             PayloadJson = JsonConvert.SerializeObject(snapshot, RuntimeJson.Settings)
         };
     }
@@ -194,12 +204,6 @@ internal sealed class RuntimePipeServer
         {
             throw new InvalidDataException("Configuration revision must increase monotonically.");
         }
-        if (candidate.Routes.Count(route => route.Enabled && route.VirtualDeviceSlot == 0) != 1 ||
-            candidate.Routes.Any(route => route.Enabled && route.VirtualDeviceSlot != 0))
-        {
-            throw new InvalidDataException("The current driver milestone supports exactly one enabled route in slot 0.");
-        }
-
         store.Save(candidate);
         configuration = candidate;
         synchronizer.Update(candidate);

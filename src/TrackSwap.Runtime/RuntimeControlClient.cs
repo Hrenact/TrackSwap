@@ -7,17 +7,17 @@ namespace TrackSwap.Runtime;
 
 internal static class RuntimeControlClient
 {
-    public static MessageEnvelope Send(MessageEnvelope request, TimeSpan timeout)
+    public static MessageEnvelope Send(MessageEnvelope request, TimeSpan timeout, string? pipeName = null)
     {
-        return SendAsync(request, timeout).GetAwaiter().GetResult();
+        return SendAsync(request, timeout, pipeName ?? ProtocolConstants.PipeName).GetAwaiter().GetResult();
     }
 
-    private static async Task<MessageEnvelope> SendAsync(MessageEnvelope request, TimeSpan timeout)
+    private static async Task<MessageEnvelope> SendAsync(MessageEnvelope request, TimeSpan timeout, string pipeName)
     {
         using var cancellation = new CancellationTokenSource(timeout);
         using var pipe = new NamedPipeClientStream(
             ".",
-            ProtocolConstants.PipeName,
+            pipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
         try

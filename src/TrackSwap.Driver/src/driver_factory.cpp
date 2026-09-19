@@ -3,7 +3,7 @@
 
 #include <openvr_driver.h>
 
-#include "virtual_tracker.h"
+#include "tracker_registry.h"
 #include "control_server.h"
 
 namespace
@@ -14,39 +14,13 @@ public:
     vr::EVRInitError Init(vr::IVRDriverContext* driverContext) override
     {
         VR_INIT_SERVER_DRIVER_CONTEXT(driverContext);
-        std::array<char, 512> sourceDevicePath{};
-        vr::EVRSettingsError settingsError = vr::VRSettingsError_None;
-        vr::VRSettings()->GetString(
-            "driver_trackswap",
-            "sourceDevicePath",
-            sourceDevicePath.data(),
-            static_cast<std::uint32_t>(sourceDevicePath.size()),
-            &settingsError);
-        if (settingsError != vr::VRSettingsError_None)
-        {
-            vr::VRDriverLog()->Log("TrackSwap could not read driver_trackswap/sourceDevicePath; the virtual tracker will remain disconnected.");
-            sourceDevicePath[0] = '\0';
-        }
-
-        virtualTracker_.ConfigureSource(sourceDevicePath.data());
-        if (!vr::VRServerDriverHost()->TrackedDeviceAdded(
-                trackswap::VirtualTracker::SerialNumber,
-                vr::TrackedDeviceClass_GenericTracker,
-                &virtualTracker_))
-        {
-            vr::VRDriverLog()->Log("TrackSwap failed to register its virtual tracker.");
-            return vr::VRInitError_Driver_Failed;
-        }
-
-        if (!controlServer_.Start(&virtualTracker_))
+        if (!controlServer_.Start(&trackerRegistry_))
         {
             vr::VRDriverLog()->Log("TrackSwap failed to start its driver control endpoint.");
             return vr::VRInitError_Driver_Failed;
         }
 
-        vr::VRDriverLog()->Log(sourceDevicePath[0] == '\0'
-            ? "TrackSwap virtual tracker registered without a sourceDevicePath."
-            : "TrackSwap virtual tracker registered with a configured sourceDevicePath.");
+        vr::VRDriverLog()->Log("TrackSwap multi-route driver initialized; proxies will be registered on demand.");
         return vr::VRInitError_None;
     }
 
@@ -63,7 +37,7 @@ public:
 
     void RunFrame() override
     {
-        virtualTracker_.Update();
+        trackerRegistry_.RunFrame();
     }
 
     bool ShouldBlockStandbyMode() override
@@ -80,7 +54,7 @@ public:
     }
 
 private:
-    trackswap::VirtualTracker virtualTracker_;
+    trackswap::TrackerRegistry trackerRegistry_;
     trackswap::ControlServer controlServer_;
 };
 

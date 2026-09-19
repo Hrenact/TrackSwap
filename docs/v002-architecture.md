@@ -42,9 +42,9 @@ waits for a synchronous IPC response.
 ## Identity and bootstrap mapping
 
 Virtual devices use immutable serials `TRKSWAP-PROXY-00` through
-`TRKSWAP-PROXY-07`. Stage 1 exposes slot 0 only; additional slots are reserved
-by schema so adding them does not change identity rules. A route owns exactly
-one slot, and two routes cannot own the same target.
+`TRKSWAP-PROXY-07`. The driver registers a slot on demand when an enabled route
+first references it, avoiding unused phantom trackers. A route owns exactly one
+slot, and two routes cannot own the same target.
 
 The legacy SteamVR `TrackingOverrides` bootstrap maps a stable TrackSwap
 virtual device to a target. Hot switching changes the physical source followed

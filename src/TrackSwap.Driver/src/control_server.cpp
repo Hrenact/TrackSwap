@@ -1,7 +1,7 @@
 #include "control_server.h"
 
 #include "control_protocol.h"
-#include "virtual_tracker.h"
+#include "tracker_registry.h"
 
 #include <Windows.h>
 
@@ -12,7 +12,7 @@
 
 namespace
 {
-constexpr DWORD BufferBytes = 1024;
+constexpr DWORD BufferBytes = 4096;
 constexpr auto IoTimeout = std::chrono::seconds(2);
 constexpr auto IoPollInterval = std::chrono::milliseconds(20);
 
@@ -197,14 +197,14 @@ ControlServer::~ControlServer()
     Stop();
 }
 
-bool ControlServer::Start(VirtualTracker* tracker)
+bool ControlServer::Start(TrackerRegistry* registry)
 {
-    if (tracker == nullptr || worker_.joinable())
+    if (registry == nullptr || worker_.joinable())
     {
         return false;
     }
 
-    tracker_ = tracker;
+    registry_ = registry;
     stopping_.store(false);
     worker_ = std::thread(&ControlServer::Run, this);
     return true;
@@ -217,7 +217,7 @@ void ControlServer::Stop()
     {
         worker_.join();
     }
-    tracker_ = nullptr;
+    registry_ = nullptr;
 }
 
 void ControlServer::Run()
@@ -245,7 +245,7 @@ void ControlServer::Run()
         {
             control_protocol::Header request{};
             std::array<char, control_protocol::MaximumPayloadBytes + 1> payload{};
-            control_protocol::TelemetrySnapshot telemetry{};
+            control_protocol::TelemetryBatch telemetry{};
             bool telemetryResponse = false;
             bool valid = ReadExactly(pipe, &request, sizeof(request), stopping_) &&
                 request.magic == control_protocol::Magic &&
@@ -259,7 +259,7 @@ void ControlServer::Run()
                 valid = IsValidSourcePath(payload.data(), request.payloadBytes);
                 if (valid)
                 {
-                    tracker_->QueueSource(payload.data());
+                    registry_->QueueSource(0, payload.data());
                 }
             }
             else if (valid && request.messageType == control_protocol::SetOffsetMessageType)
@@ -276,35 +276,44 @@ void ControlServer::Run()
                     valid = pose_math::IsValidOffset(offset);
                     if (valid)
                     {
-                        tracker_->QueueOffset(offset);
+                        registry_->QueueOffset(0, offset);
                     }
                 }
             }
             else if (valid && request.messageType == control_protocol::ApplySnapshotMessageType)
             {
                 constexpr std::size_t FixedBytes =
-                    sizeof(std::uint64_t) + (2 * sizeof(std::uint16_t)) + (7 * sizeof(double));
-                valid = request.payloadBytes > FixedBytes;
+                    (2 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
+                    (2 * sizeof(std::uint16_t)) + (7 * sizeof(double));
+                valid = request.payloadBytes >= FixedBytes;
                 if (valid)
                 {
+                    const std::uint8_t slot = static_cast<std::uint8_t>(payload[0]);
+                    const bool enabled = payload[1] != 0;
                     std::uint64_t revision = 0;
                     std::uint16_t sourcePathBytes = 0;
                     std::uint16_t targetPathBytes = 0;
-                    std::memcpy(&revision, payload.data(), sizeof(revision));
-                    std::memcpy(&sourcePathBytes, payload.data() + sizeof(revision), sizeof(sourcePathBytes));
+                    constexpr std::size_t PrefixBytes = 2 * sizeof(std::uint8_t);
+                    std::memcpy(&revision, payload.data() + PrefixBytes, sizeof(revision));
+                    std::memcpy(
+                        &sourcePathBytes,
+                        payload.data() + PrefixBytes + sizeof(revision),
+                        sizeof(sourcePathBytes));
                     std::memcpy(
                         &targetPathBytes,
-                        payload.data() + sizeof(revision) + sizeof(sourcePathBytes),
+                        payload.data() + PrefixBytes + sizeof(revision) + sizeof(sourcePathBytes),
                         sizeof(targetPathBytes));
-                    valid = sourcePathBytes > 0 && targetPathBytes > 0 &&
+                    valid = slot < control_protocol::MaximumRoutes &&
+                        ((!enabled && sourcePathBytes == 0 && targetPathBytes == 0) ||
+                         (enabled && sourcePathBytes > 0 && targetPathBytes > 0)) &&
                         request.payloadBytes == FixedBytes + sourcePathBytes + targetPathBytes;
                     if (valid)
                     {
-                        const char* sourcePath = payload.data() + sizeof(revision) +
+                        const char* sourcePath = payload.data() + PrefixBytes + sizeof(revision) +
                             sizeof(sourcePathBytes) + sizeof(targetPathBytes);
                         const char* targetPath = sourcePath + sourcePathBytes;
-                        valid = IsValidSourcePath(sourcePath, sourcePathBytes) &&
-                            IsValidTargetPath(targetPath, targetPathBytes);
+                        valid = !enabled || (IsValidSourcePath(sourcePath, sourcePathBytes) &&
+                            IsValidTargetPath(targetPath, targetPathBytes));
                         std::array<double, 7> values{};
                         std::memcpy(values.data(), targetPath + targetPathBytes, sizeof(values));
                         const pose_math::RigidOffset offset{
@@ -317,7 +326,9 @@ void ControlServer::Run()
                             std::array<char, control_protocol::MaximumPayloadBytes + 1> terminatedTarget{};
                             std::memcpy(terminatedSource.data(), sourcePath, sourcePathBytes);
                             std::memcpy(terminatedTarget.data(), targetPath, targetPathBytes);
-                            valid = tracker_->QueueSnapshot(
+                            valid = registry_->QueueSnapshot(
+                                slot,
+                                enabled,
                                 terminatedSource.data(),
                                 terminatedTarget.data(),
                                 offset,
@@ -331,7 +342,7 @@ void ControlServer::Run()
                 valid = request.payloadBytes == 1;
                 if (valid)
                 {
-                    telemetry = tracker_->GetTelemetry();
+                    telemetry = registry_->GetTelemetry();
                     telemetryResponse = true;
                 }
             }

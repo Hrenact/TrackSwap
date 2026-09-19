@@ -6,22 +6,23 @@ internal sealed class TelemetrySampler
 {
     private static readonly TimeSpan MaximumSnapshotAge = TimeSpan.FromMilliseconds(500);
     private readonly object syncRoot = new();
-    private PoseTelemetrySnapshot? latest;
+    private IReadOnlyDictionary<int, PoseTelemetrySnapshot> latest =
+        new Dictionary<int, PoseTelemetrySnapshot>();
     private string? lastError;
 
-    public PoseTelemetrySnapshot GetLatest()
+    public PoseTelemetrySnapshot GetLatest(int virtualDeviceSlot)
     {
         lock (syncRoot)
         {
-            if (latest == null)
+            if (!latest.TryGetValue(virtualDeviceSlot, out PoseTelemetrySnapshot? snapshot))
             {
                 throw new InvalidDataException(lastError ?? "Driver telemetry is not available yet.");
             }
-            if (DateTimeOffset.UtcNow - latest.CapturedAtUtc > MaximumSnapshotAge)
+            if (DateTimeOffset.UtcNow - snapshot.CapturedAtUtc > MaximumSnapshotAge)
             {
                 throw new InvalidDataException(lastError ?? "Driver telemetry is stale.");
             }
-            return latest;
+            return snapshot;
         }
     }
 
@@ -31,10 +32,11 @@ internal sealed class TelemetrySampler
         {
             try
             {
-                PoseTelemetrySnapshot snapshot = DriverControlClient.GetTelemetry(TimeSpan.FromMilliseconds(250));
+                IReadOnlyList<PoseTelemetrySnapshot> snapshots =
+                    DriverControlClient.GetTelemetry(TimeSpan.FromMilliseconds(250));
                 lock (syncRoot)
                 {
-                    latest = snapshot;
+                    latest = snapshots.ToDictionary(snapshot => snapshot.VirtualDeviceSlot);
                     lastError = null;
                 }
             }

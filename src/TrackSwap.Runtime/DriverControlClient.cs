@@ -34,12 +34,14 @@ internal static class DriverControlClient
         return SendAccepted(DriverControlProtocol.SetOffsetMessageType, payloadStream.ToArray(), timeout);
     }
 
-    public static string ApplySnapshot(RouteConfiguration route, ulong revision, TimeSpan timeout)
+    public static string ApplySnapshot(int slot, RouteConfiguration? route, ulong revision, TimeSpan timeout)
     {
-        byte[] sourcePath = Encoding.UTF8.GetBytes(route.SourceDevicePath);
-        byte[] targetPath = Encoding.UTF8.GetBytes(route.TargetDevicePath);
-        if (sourcePath.Length == 0 || sourcePath.Length > ushort.MaxValue ||
-            targetPath.Length == 0 || targetPath.Length > ushort.MaxValue ||
+        bool enabled = route?.Enabled == true;
+        byte[] sourcePath = enabled ? Encoding.UTF8.GetBytes(route!.SourceDevicePath) : Array.Empty<byte>();
+        byte[] targetPath = enabled ? Encoding.UTF8.GetBytes(route!.TargetDevicePath) : Array.Empty<byte>();
+        if (slot < 0 || slot >= ProtocolConstants.MaximumRoutes ||
+            (enabled && (sourcePath.Length == 0 || targetPath.Length == 0)) ||
+            sourcePath.Length > ushort.MaxValue || targetPath.Length > ushort.MaxValue ||
             sourcePath.Length + targetPath.Length > DriverControlProtocol.MaximumCombinedDevicePathBytes)
         {
             throw new IOException("The encoded source or target path is invalid.");
@@ -48,29 +50,60 @@ internal static class DriverControlClient
         using var payloadStream = new MemoryStream();
         using (var writer = new BinaryWriter(payloadStream, Encoding.UTF8, leaveOpen: true))
         {
+            writer.Write((byte)slot);
+            writer.Write(enabled ? (byte)1 : (byte)0);
             writer.Write(revision);
             writer.Write((ushort)sourcePath.Length);
             writer.Write((ushort)targetPath.Length);
             writer.Write(sourcePath);
             writer.Write(targetPath);
-            writer.Write(route.Offset.TranslationX);
-            writer.Write(route.Offset.TranslationY);
-            writer.Write(route.Offset.TranslationZ);
-            writer.Write(route.Offset.RotationX);
-            writer.Write(route.Offset.RotationY);
-            writer.Write(route.Offset.RotationZ);
-            writer.Write(route.Offset.RotationW);
+            PoseOffset offset = route?.Offset ?? PoseOffset.Identity();
+            writer.Write(offset.TranslationX);
+            writer.Write(offset.TranslationY);
+            writer.Write(offset.TranslationZ);
+            writer.Write(offset.RotationX);
+            writer.Write(offset.RotationY);
+            writer.Write(offset.RotationZ);
+            writer.Write(offset.RotationW);
         }
         return SendAccepted(DriverControlProtocol.ApplySnapshotMessageType, payloadStream.ToArray(), timeout);
     }
 
-    public static PoseTelemetrySnapshot GetTelemetry(TimeSpan timeout)
+    public static IReadOnlyList<PoseTelemetrySnapshot> GetTelemetry(TimeSpan timeout)
     {
         byte[] payload = SendBytes(
             DriverControlProtocol.GetTelemetryMessageType,
             new byte[] { 0 },
             timeout);
-        return ParseTelemetry(payload);
+        return ParseTelemetryBatch(payload);
+    }
+
+    internal static IReadOnlyList<PoseTelemetrySnapshot> ParseTelemetryBatch(byte[] payload)
+    {
+        if (payload == null || payload.Length != DriverControlProtocol.TelemetryBatchBytes)
+        {
+            throw new IOException("The driver returned an invalid telemetry batch size.");
+        }
+        int count = payload[0];
+        if (count < 0 || count > ProtocolConstants.MaximumRoutes)
+        {
+            throw new IOException("The driver returned an invalid telemetry route count.");
+        }
+        var snapshots = new List<PoseTelemetrySnapshot>(count);
+        for (int slot = 0; slot < count; slot++)
+        {
+            byte[] snapshotBytes = new byte[DriverControlProtocol.TelemetrySnapshotBytes];
+            Buffer.BlockCopy(
+                payload,
+                1 + (slot * DriverControlProtocol.TelemetrySnapshotBytes),
+                snapshotBytes,
+                0,
+                snapshotBytes.Length);
+            PoseTelemetrySnapshot snapshot = ParseTelemetry(snapshotBytes);
+            snapshot.VirtualDeviceSlot = slot;
+            snapshots.Add(snapshot);
+        }
+        return snapshots;
     }
 
     internal static PoseTelemetrySnapshot ParseTelemetry(byte[] payload)

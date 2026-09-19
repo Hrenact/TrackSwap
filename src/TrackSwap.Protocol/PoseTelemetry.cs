@@ -18,11 +18,17 @@ namespace TrackSwap.Protocol
 
     public sealed class PoseTelemetrySnapshot
     {
+        public int VirtualDeviceSlot { get; set; }
         public ulong Sequence { get; set; }
         public long AppliedRevision { get; set; }
         public DateTimeOffset CapturedAtUtc { get; set; }
         public PoseTelemetry Source { get; set; } = new PoseTelemetry();
         public PoseTelemetry Output { get; set; } = new PoseTelemetry();
         public PoseTelemetry Target { get; set; } = new PoseTelemetry();
+    }
+
+    public sealed class TelemetryRequest
+    {
+        public int VirtualDeviceSlot { get; set; }
     }
 }

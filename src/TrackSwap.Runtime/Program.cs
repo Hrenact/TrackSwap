@@ -27,7 +27,9 @@ internal static class Program
 
         if (args.Length == 1 && string.Equals(args[0], "--runtime-telemetry", StringComparison.Ordinal))
         {
-            return SendRuntimeRequest("getTelemetry", "{}");
+            return SendRuntimeRequest(
+                "getTelemetry",
+                JsonConvert.SerializeObject(new TelemetryRequest { VirtualDeviceSlot = 0 }, RuntimeJson.Settings));
         }
 
         if (args.Length == 2 && string.Equals(args[0], "--apply-single-route", StringComparison.Ordinal))
@@ -84,8 +86,9 @@ internal static class Program
     {
         try
         {
-            PoseTelemetrySnapshot snapshot = DriverControlClient.GetTelemetry(TimeSpan.FromSeconds(2));
-            Console.WriteLine(JsonConvert.SerializeObject(snapshot, RuntimeJson.Settings));
+            IReadOnlyList<PoseTelemetrySnapshot> snapshots =
+                DriverControlClient.GetTelemetry(TimeSpan.FromSeconds(2));
+            Console.WriteLine(JsonConvert.SerializeObject(snapshots, RuntimeJson.Settings));
             return 0;
         }
         catch (Exception exception) when (

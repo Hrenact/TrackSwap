@@ -21,6 +21,7 @@
       "required": ["routeId", "enabled", "virtualDeviceSlot", "sourceDevicePath", "targetDevicePath", "offset"],
       "properties": {
         "routeId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+        "name": { "type": "string", "maxLength": 64, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
         "enabled": { "type": "boolean" },
         "virtualDeviceSlot": { "type": "integer", "minimum": 0, "maximum": 7 },
         "sourceDevicePath": { "type": "string", "pattern": "^/devices/[^\\u0000-\\u001F\\u007F]+$" },

@@ -7,13 +7,15 @@ namespace TrackSwap.Models
             string devicePath,
             bool isOnline = false,
             uint? deviceIndex = null,
-            string serialNumber = null)
+            string serialNumber = null,
+            string roleTargetPath = null)
         {
             DisplayName = displayName;
             DevicePath = devicePath;
             IsOnline = isOnline;
             DeviceIndex = deviceIndex;
             SerialNumber = serialNumber;
+            RoleTargetPath = roleTargetPath;
         }
 
         public string DisplayName { get; }
@@ -25,6 +27,8 @@ namespace TrackSwap.Models
         public uint? DeviceIndex { get; }
 
         public string SerialNumber { get; }
+
+        public string RoleTargetPath { get; }
 
         public override string ToString()
         {

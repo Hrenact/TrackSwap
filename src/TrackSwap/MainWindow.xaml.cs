@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -10,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Media3D;
+using System.Windows.Input;
 using System.Windows.Threading;
 using TrackSwap.Models;
 using TrackSwap.Protocol;
@@ -47,10 +49,18 @@ namespace TrackSwap
         private bool _calibrationBusy;
         private bool _telemetryUpdatePending;
         private IReadOnlyList<DeviceOption> _onlinePhysicalDevices = Array.Empty<DeviceOption>();
+        private readonly ObservableCollection<RouteListItem> _routeItems = new ObservableCollection<RouteListItem>();
+        private readonly List<RouteConfiguration> _workingRoutes = new List<RouteConfiguration>();
+        private RouteConfiguration _selectedRoute;
+        private bool _showingSettings;
+        private long _displayedDriverAppliedRevision = long.MinValue;
+        private bool _displayedDriverConnected;
 
         public MainWindow()
         {
             InitializeComponent();
+
+            RouteListBox.ItemsSource = _routeItems;
 
             TargetComboBox.ItemsSource = BuildTargets(Array.Empty<DeviceOption>(), Array.Empty<TargetOption>());
             TargetComboBox.SelectedIndex = 0;
@@ -58,6 +68,7 @@ namespace TrackSwap
             RuntimeTargetComboBox.SelectedIndex = 0;
             CalibrationNameTextBox.Text = "校准 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
             InitializePosePreview();
+            UpdateContentVisibility();
 
             _statusTimer = new DispatcherTimer
             {
@@ -244,7 +255,7 @@ namespace TrackSwap
         private void UpdateSteamVrStatus()
         {
             bool running = _statusService.IsRunning();
-            SteamVrStatusText.Text = running ? "SteamVR 正在运行" : "SteamVR 已退出";
+            SteamVrStatusText.Text = "SteamVR";
             SteamVrStatusText.Foreground = FindBrush(running ? "SuccessBrush" : "MutedTextBrush");
             SteamVrDot.Fill = FindBrush(running ? "SuccessBrush" : "MutedTextBrush");
             SteamVrBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(running ? "#123225" : "#202A34"));
@@ -292,7 +303,7 @@ namespace TrackSwap
 
         private void ShowRuntimeOnline(RuntimeStatusSnapshot status)
         {
-            RuntimeStatusText.Text = "Runtime 已连接";
+            RuntimeStatusText.Text = "Runtime";
             RuntimeStatusText.Foreground = FindBrush("SuccessBrush");
             RuntimeDot.Fill = FindBrush("SuccessBrush");
             RuntimeBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#123225"));
@@ -321,11 +332,18 @@ namespace TrackSwap
                 _loadedRuntimeRevision = status.Configuration.Revision;
                 _runtimeEditorInitialized = true;
             }
+            else if (_displayedDriverAppliedRevision != status.DriverAppliedRevision ||
+                _displayedDriverConnected != status.DriverConnected)
+            {
+                RefreshRouteList(_selectedRoute?.RouteId);
+            }
+            _displayedDriverAppliedRevision = status.DriverAppliedRevision;
+            _displayedDriverConnected = status.DriverConnected;
         }
 
         private void ShowRuntimeOffline(string error)
         {
-            RuntimeStatusText.Text = "Runtime 未连接";
+            RuntimeStatusText.Text = "Runtime";
             RuntimeStatusText.Foreground = FindBrush("MutedTextBrush");
             RuntimeDot.Fill = FindBrush("MutedTextBrush");
             RuntimeBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#202A34"));
@@ -375,10 +393,10 @@ namespace TrackSwap
             TargetOption target = RuntimeTargetComboBox.SelectedItem as TargetOption;
             RuntimeSourcePathText.Text = source?.DevicePath ?? "未选择物理来源";
             RuntimeTargetPathText.Text = target?.TargetPath ?? "未选择静态目标";
-            ApplyRuntimeButton.IsEnabled = _runtimeStatus != null && source != null && target != null;
+            ApplyRuntimeButton.IsEnabled = _runtimeStatus != null && _selectedRoute != null && source != null && target != null;
 
             RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
-                candidate.Enabled && candidate.VirtualDeviceSlot == 0);
+                _selectedRoute != null && string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
             bool sourceWillChange = activeRoute != null && source != null &&
                 !string.Equals(activeRoute.SourceDevicePath, source.DevicePath, StringComparison.Ordinal);
             RuntimeRouteChangeWarningText.Text = sourceWillChange
@@ -387,6 +405,26 @@ namespace TrackSwap
             RuntimeRouteChangeWarningText.Visibility = sourceWillChange
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+            if (_selectedRoute != null)
+            {
+                bool applied = _runtimeStatus != null && _runtimeStatus.DriverConnected &&
+                    _runtimeStatus.ConfigurationRevision == _runtimeStatus.DriverAppliedRevision &&
+                    activeRoute != null;
+                bool mapped = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath) &&
+                    _settingsService.ReadOverrides(_settingsPath).Any(mapping =>
+                        string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot), StringComparison.Ordinal) &&
+                        string.Equals(mapping.TargetPath, _selectedRoute.TargetDevicePath, StringComparison.Ordinal));
+                bool steamVrRunning = _statusService.IsRunning();
+                string state = !_selectedRoute.Enabled ? "已停用" : !mapped ? "待初始化" : !steamVrRunning ? "已配置" : applied ? "已应用" : "待应用";
+                SelectedRouteStateText.Text = state;
+                bool synchronized = mapped && (!steamVrRunning || applied);
+                SelectedRouteStateText.Foreground = FindBrush(!_selectedRoute.Enabled ? "MutedTextBrush" : synchronized ? "SuccessBrush" : "WarningBrush");
+                RouteSyncText.Text = synchronized ? "配置已同步" : !mapped ? "需要初始化静态映射" : "配置待同步";
+                RouteSyncText.Foreground = FindBrush(synchronized ? "SuccessBrush" : "WarningBrush");
+                SelectedRouteSummaryText.Text = source == null || target == null
+                    ? "选择来源与目标以完成配置。"
+                    : source.DisplayName + " 提供定位，" + target.DisplayName + " 保留输入。";
+            }
             RefreshCalibrationTargets();
             UpdateCalibrationControls();
         }
@@ -444,59 +482,415 @@ namespace TrackSwap
 
         private void LoadRuntimeConfiguration(RuntimeConfiguration configuration)
         {
-            RouteConfiguration route = configuration.Routes?.FirstOrDefault(candidate =>
-                candidate.Enabled && candidate.VirtualDeviceSlot == 0);
+            string selectedRouteId = _selectedRoute?.RouteId;
+            _isLoading = true;
+            try
+            {
+                _workingRoutes.Clear();
+                int unnamedIndex = 0;
+                foreach (RouteConfiguration route in configuration.Routes ?? new List<RouteConfiguration>())
+                {
+                    RouteConfiguration copy = CloneRoute(route);
+                    if (string.IsNullOrWhiteSpace(copy.Name))
+                    {
+                        copy.Name = unnamedIndex == 0 ? "新配置" : "新配置 (" + unnamedIndex + ")";
+                    }
+                    unnamedIndex++;
+                    _workingRoutes.Add(copy);
+                }
+                RefreshRouteList(selectedRouteId);
+            }
+            finally
+            {
+                _isLoading = false;
+                ShowSelectedRoute(_workingRoutes.FirstOrDefault(route =>
+                    string.Equals(route.RouteId, selectedRouteId, StringComparison.Ordinal)) ??
+                    _workingRoutes.FirstOrDefault());
+            }
+        }
+
+        private static RouteConfiguration CloneRoute(RouteConfiguration route)
+        {
+            PoseOffset offset = route.Offset ?? PoseOffset.Identity();
+            return new RouteConfiguration
+            {
+                RouteId = route.RouteId,
+                Name = route.Name,
+                Enabled = route.Enabled,
+                VirtualDeviceSlot = route.VirtualDeviceSlot,
+                SourceDevicePath = route.SourceDevicePath,
+                TargetDevicePath = route.TargetDevicePath,
+                Offset = new PoseOffset
+                {
+                    TranslationX = offset.TranslationX,
+                    TranslationY = offset.TranslationY,
+                    TranslationZ = offset.TranslationZ,
+                    RotationX = offset.RotationX,
+                    RotationY = offset.RotationY,
+                    RotationZ = offset.RotationZ,
+                    RotationW = offset.RotationW
+                }
+            };
+        }
+
+        private void RefreshRouteList(string selectedRouteId = null)
+        {
+            _routeItems.Clear();
+            bool steamVrRunning = _statusService.IsRunning();
+            bool driverApplied = _runtimeStatus != null && _runtimeStatus.DriverConnected &&
+                _runtimeStatus.ConfigurationRevision > 0 &&
+                _runtimeStatus.DriverAppliedRevision == _runtimeStatus.ConfigurationRevision;
+            IReadOnlyList<TrackingOverrideOption> overrides =
+                string.IsNullOrWhiteSpace(_settingsPath) || !File.Exists(_settingsPath)
+                    ? Array.Empty<TrackingOverrideOption>()
+                    : _settingsService.ReadOverrides(_settingsPath);
+            foreach (RouteConfiguration route in _workingRoutes.OrderBy(candidate => candidate.VirtualDeviceSlot))
+            {
+                bool mapped = overrides.Any(mapping =>
+                    string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot), StringComparison.Ordinal) &&
+                    string.Equals(mapping.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
+                string state = !route.Enabled ? "已停用" : !mapped ? "待初始化" : !steamVrRunning ? "已配置" : driverApplied ? "已应用" : "等待驱动";
+                Brush brush = FindBrush(!route.Enabled ? "MutedTextBrush" : mapped && (!steamVrRunning || driverApplied) ? "SuccessBrush" : "WarningBrush");
+                _routeItems.Add(new RouteListItem(route, state, brush));
+            }
+            RouteListItem selection = _routeItems.FirstOrDefault(item =>
+                string.Equals(item.Route.RouteId, selectedRouteId, StringComparison.Ordinal)) ??
+                _routeItems.FirstOrDefault();
+            RouteListBox.SelectedItem = selection;
+            UpdateContentVisibility();
+        }
+
+        private void ShowSelectedRoute(RouteConfiguration route)
+        {
+            _selectedRoute = route;
             if (route == null)
             {
+                UpdateContentVisibility();
                 return;
             }
 
             _isLoading = true;
             try
             {
-                var sources = ((RuntimeSourceComboBox.ItemsSource as IEnumerable<DeviceOption>) ??
-                    Enumerable.Empty<DeviceOption>()).ToList();
-                DeviceOption source = sources.FirstOrDefault(candidate =>
-                    string.Equals(candidate.DevicePath, route.SourceDevicePath, StringComparison.Ordinal));
+                var sources = ((RuntimeSourceComboBox.ItemsSource as IEnumerable<DeviceOption>) ?? Enumerable.Empty<DeviceOption>()).ToList();
+                DeviceOption source = sources.FirstOrDefault(candidate => string.Equals(candidate.DevicePath, route.SourceDevicePath, StringComparison.Ordinal));
                 if (source == null && !string.IsNullOrWhiteSpace(route.SourceDevicePath))
                 {
                     source = new DeviceOption("已配置 · 当前离线", route.SourceDevicePath);
                     sources.Add(source);
                     RuntimeSourceComboBox.ItemsSource = sources;
                 }
-                RuntimeSourceComboBox.SelectedItem = source;
+                RuntimeSourceComboBox.SelectedItem = source ?? sources.FirstOrDefault();
 
-                var targets = ((RuntimeTargetComboBox.ItemsSource as IEnumerable<TargetOption>) ??
-                    Enumerable.Empty<TargetOption>()).ToList();
-                TargetOption target = targets.FirstOrDefault(candidate =>
-                    string.Equals(candidate.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
+                var targets = ((RuntimeTargetComboBox.ItemsSource as IEnumerable<TargetOption>) ?? Enumerable.Empty<TargetOption>()).ToList();
+                TargetOption target = targets.FirstOrDefault(candidate => string.Equals(candidate.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
                 if (target == null && !string.IsNullOrWhiteSpace(route.TargetDevicePath))
                 {
                     target = new TargetOption("已配置目标", route.TargetDevicePath);
                     targets.Add(target);
                     RuntimeTargetComboBox.ItemsSource = targets;
                 }
-                RuntimeTargetComboBox.SelectedItem = target;
-
-                PoseOffset offset = route.Offset ?? PoseOffset.Identity();
-                OffsetTranslationXTextBox.Text = FormatNumber(offset.TranslationX);
-                OffsetTranslationYTextBox.Text = FormatNumber(offset.TranslationY);
-                OffsetTranslationZTextBox.Text = FormatNumber(offset.TranslationZ);
-                OffsetRotationXTextBox.Text = FormatNumber(offset.RotationX);
-                OffsetRotationYTextBox.Text = FormatNumber(offset.RotationY);
-                OffsetRotationZTextBox.Text = FormatNumber(offset.RotationZ);
-                OffsetRotationWTextBox.Text = FormatNumber(offset.RotationW);
+                RuntimeTargetComboBox.SelectedItem = target ?? targets.FirstOrDefault();
+                LoadOffsetFields(route.Offset ?? PoseOffset.Identity());
+                SelectedProxyText.Text = ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
+                RuntimeProxyText.Text = ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
+                SelectedRouteNameText.Text = route.Name;
+                ToggleSelectedRouteButton.Content = route.Enabled ? "停用" : "启用";
             }
             finally
             {
                 _isLoading = false;
-                UpdateRuntimeSelectionDetails();
             }
+            UpdateRuntimeSelectionDetails();
+            UpdateContentVisibility();
+        }
+
+        private void UpdateContentVisibility()
+        {
+            bool hasRoute = _selectedRoute != null;
+            EmptyStateGrid.Visibility = !_showingSettings && !hasRoute ? Visibility.Visible : Visibility.Collapsed;
+            RouteContentScrollViewer.Visibility = !_showingSettings && hasRoute ? Visibility.Visible : Visibility.Collapsed;
+            SettingsContentScrollViewer.Visibility = _showingSettings ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private static string FormatNumber(double value)
         {
             return value.ToString("G9", CultureInfo.InvariantCulture);
+        }
+
+        private void AddRouteButton_Click(object sender, RoutedEventArgs e)
+        {
+            RouteConfiguration incomplete = _workingRoutes.FirstOrDefault(route => !IsRouteComplete(route));
+            if (incomplete != null)
+            {
+                ShowSelectedRoute(incomplete);
+                RouteListBox.SelectedItem = _routeItems.FirstOrDefault(item => item.Route == incomplete);
+                return;
+            }
+            if (_workingRoutes.Count >= ProtocolConstants.MaximumRoutes)
+            {
+                MessageBox.Show(this, "最多支持 " + ProtocolConstants.MaximumRoutes + " 条路由。", "无法新增", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            int slot = Enumerable.Range(0, ProtocolConstants.MaximumRoutes)
+                .First(candidate => _workingRoutes.All(route => route.VirtualDeviceSlot != candidate));
+            var route = new RouteConfiguration
+            {
+                RouteId = Guid.NewGuid().ToString("N"),
+                Name = GetNextRouteName(),
+                Enabled = true,
+                VirtualDeviceSlot = slot,
+                Offset = PoseOffset.Identity()
+            };
+            _workingRoutes.Add(route);
+            RefreshRouteList(route.RouteId);
+            ShowSelectedRoute(route);
+        }
+
+        private string GetNextRouteName()
+        {
+            var names = new HashSet<string>(_workingRoutes.Select(route => route.Name), StringComparer.OrdinalIgnoreCase);
+            if (!names.Contains("新配置"))
+            {
+                return "新配置";
+            }
+            for (int index = 1; ; index++)
+            {
+                string candidate = "新配置 (" + index.ToString(CultureInfo.InvariantCulture) + ")";
+                if (!names.Contains(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        private static bool IsRouteComplete(RouteConfiguration route)
+        {
+            return route != null && !string.IsNullOrWhiteSpace(route.SourceDevicePath) &&
+                !string.IsNullOrWhiteSpace(route.TargetDevicePath);
+        }
+
+        private void RouteListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isLoading || !(RouteListBox.SelectedItem is RouteListItem item))
+            {
+                return;
+            }
+            _showingSettings = false;
+            ShowSelectedRoute(item.Route);
+        }
+
+        private void RouteListBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            DependencyObject current = e.OriginalSource as DependencyObject;
+            while (current != null && !(current is ListBoxItem))
+            {
+                current = VisualTreeHelper.GetParent(current);
+            }
+            if (current is ListBoxItem item)
+            {
+                item.IsSelected = true;
+            }
+        }
+
+        private void SettingsNavigationButton_Click(object sender, RoutedEventArgs e)
+        {
+            _showingSettings = true;
+            RouteListBox.SelectedItem = null;
+            UpdateContentVisibility();
+        }
+
+        private void ManageRoutesButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (RouteListBox.SelectedItem == null)
+            {
+                MessageBox.Show(this, "请先选择一条配置。", "管理配置", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            RouteListBox.ContextMenu.PlacementTarget = RouteListBox;
+            RouteListBox.ContextMenu.IsOpen = true;
+        }
+
+        private void RenameRouteMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(RouteListBox.SelectedItem is RouteListItem item))
+            {
+                return;
+            }
+            string name = PromptForRouteName(item.Route.Name);
+            if (name == null)
+            {
+                return;
+            }
+            if (_workingRoutes.Any(route => route != item.Route && string.Equals(route.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(this, "配置名称不能重复。", "无法重命名", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            item.Route.Name = name;
+            SelectedRouteNameText.Text = name;
+            RefreshRouteList(item.Route.RouteId);
+            if (IsRouteComplete(item.Route))
+            {
+                _ = PersistWorkingRoutesAsync();
+            }
+        }
+
+        private string PromptForRouteName(string currentName)
+        {
+            var input = new TextBox { Text = currentName, MinWidth = 280, FontFamily = new FontFamily("Microsoft YaHei UI") };
+            var ok = new Button { Content = "保存", IsDefault = true, MinWidth = 76, Margin = new Thickness(8, 0, 0, 0) };
+            var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 76 };
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+            buttons.Children.Add(cancel);
+            buttons.Children.Add(ok);
+            var panel = new StackPanel { Margin = new Thickness(20) };
+            panel.Children.Add(new TextBlock { Text = "配置名称", Foreground = FindBrush("MutedTextBrush"), Margin = new Thickness(0, 0, 0, 7) });
+            panel.Children.Add(input);
+            panel.Children.Add(buttons);
+            var dialog = new Window
+            {
+                Title = "重命名配置",
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ResizeMode = ResizeMode.NoResize,
+                Background = FindBrush("SurfaceBrush"),
+                Content = panel
+            };
+            ok.Click += (_, __) =>
+            {
+                string value = input.Text.Trim();
+                if (value.Length == 0 || value.Length > 64)
+                {
+                    MessageBox.Show(dialog, "名称必须包含 1–64 个字符。", "名称无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                dialog.DialogResult = true;
+            };
+            input.SelectAll();
+            input.Focus();
+            return dialog.ShowDialog() == true ? input.Text.Trim() : null;
+        }
+
+        private async void ToggleRouteMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await ToggleSelectedRouteAsync();
+        }
+
+        private async void ToggleSelectedRouteButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ToggleSelectedRouteAsync();
+        }
+
+        private async Task ToggleSelectedRouteAsync()
+        {
+            if (_selectedRoute == null)
+            {
+                return;
+            }
+            bool enabling = !_selectedRoute.Enabled;
+            if (!enabling && _statusService.IsRunning() && MessageBox.Show(
+                    this,
+                    "停用后虚拟代理会立即停止输出，但 SteamVR 静态映射仍然生效，因此对应目标会暂时失去定位。是否继续？",
+                    "确认停用",
+                    MessageBoxButton.OKCancel,
+                    MessageBoxImage.Warning) != MessageBoxResult.OK)
+            {
+                return;
+            }
+            _selectedRoute.Enabled = enabling;
+            ToggleSelectedRouteButton.Content = _selectedRoute.Enabled ? "停用" : "启用";
+            if (!_statusService.IsRunning() && IsRouteComplete(_selectedRoute) && !string.IsNullOrWhiteSpace(_settingsPath))
+            {
+                string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                IReadOnlyList<TrackingOverrideOption> overrides = _settingsService.ReadOverrides(_settingsPath);
+                bool mapped = overrides.Any(mapping => string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal));
+                if (enabling)
+                {
+                    _settingsService.ApplyOverride(_settingsPath, proxyPath, _selectedRoute.TargetDevicePath);
+                }
+                else if (mapped)
+                {
+                    _settingsService.RemoveOverride(_settingsPath, proxyPath);
+                }
+                RefreshOverrideList();
+            }
+            if (IsRouteComplete(_selectedRoute))
+            {
+                await PersistWorkingRoutesAsync();
+            }
+            else
+            {
+                RefreshRouteList(_selectedRoute.RouteId);
+            }
+        }
+
+        private async void DeleteRouteMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedRoute == null || MessageBox.Show(
+                    this,
+                    "确定删除配置 “" + _selectedRoute.Name + "”？已保存的校准档案不会删除。",
+                    "删除配置",
+                    MessageBoxButton.OKCancel,
+                    MessageBoxImage.Warning) != MessageBoxResult.OK)
+            {
+                return;
+            }
+            RouteConfiguration removed = _selectedRoute;
+            _workingRoutes.Remove(removed);
+            _selectedRoute = null;
+            if (!_statusService.IsRunning() && IsRouteComplete(removed) && !string.IsNullOrWhiteSpace(_settingsPath))
+            {
+                string proxyPath = ProtocolConstants.GetVirtualDevicePath(removed.VirtualDeviceSlot);
+                IReadOnlyList<TrackingOverrideOption> overrides = _settingsService.ReadOverrides(_settingsPath);
+                if (overrides.Any(mapping => string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal)))
+                {
+                    _settingsService.RemoveOverride(_settingsPath, proxyPath);
+                    RefreshOverrideList();
+                }
+            }
+            if (IsRouteComplete(removed) && _runtimeStatus != null)
+            {
+                await PersistWorkingRoutesAsync();
+            }
+            else
+            {
+                RefreshRouteList();
+                ShowSelectedRoute(_workingRoutes.FirstOrDefault());
+            }
+        }
+
+        private async Task PersistWorkingRoutesAsync()
+        {
+            if (_runtimeStatus == null)
+            {
+                RefreshRouteList(_selectedRoute?.RouteId);
+                return;
+            }
+            var configuration = new RuntimeConfiguration
+            {
+                Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList()
+            };
+            IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+            if (errors.Count != 0)
+            {
+                MessageBox.Show(this, string.Join(Environment.NewLine, errors), "配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            try
+            {
+                await _runtimeControlService.ApplyConfigurationAsync(configuration);
+                _loadedRuntimeRevision = -1;
+                _runtimeEditorInitialized = false;
+                await RefreshStatusAsync();
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(this, exception.Message, "保存配置失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void RuntimeSelection_Changed(object sender, SelectionChangedEventArgs e)
@@ -528,15 +922,18 @@ namespace TrackSwap
                 string.IsNullOrWhiteSpace(_settingsPath) || !File.Exists(_settingsPath)
                     ? Array.Empty<TrackingOverrideOption>()
                     : _settingsService.ReadOverrides(_settingsPath);
+            string selectedProxyPath = _selectedRoute == null
+                ? string.Empty
+                : ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
             bool virtualOverrideActive = overrides.Any(mapping =>
-                mapping.SourcePath.IndexOf(ProtocolConstants.VirtualSerialPrefix, StringComparison.OrdinalIgnoreCase) >= 0);
+                string.Equals(mapping.SourcePath, selectedProxyPath, StringComparison.Ordinal));
             if (virtualOverrideActive)
             {
                 MessageBox.Show(
                     this,
                     "校准前必须让目标的原始位姿保持可见。请：\n\n" +
                     "1. 完全退出 SteamVR；\n" +
-                    "2. 在“静态覆盖 v001”中移除 TrackSwap 虚拟代理规则；\n" +
+                    "2. 在“设置 → 旧版静态覆盖 v001”中移除该虚拟代理规则；\n" +
                     "3. 重新启动 SteamVR 后再采集。\n\n" +
                     "校准完成并验证重合后，再恢复静态引导映射。",
                     "需要停用静态覆盖",
@@ -715,9 +1112,22 @@ namespace TrackSwap
         {
             DeviceOption source = RuntimeSourceComboBox.SelectedItem as DeviceOption;
             TargetOption target = RuntimeTargetComboBox.SelectedItem as TargetOption;
-            if (_runtimeStatus == null || source == null || target == null)
+            if (_runtimeStatus == null || _selectedRoute == null || source == null || target == null)
             {
                 MessageBox.Show(this, "Runtime 未连接，或尚未选择完整路由。", "无法应用", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(source.RoleTargetPath) &&
+                string.Equals(source.RoleTargetPath, target.TargetPath, StringComparison.Ordinal))
+            {
+                MessageBox.Show(
+                    this,
+                    "不能用目标角色当前绑定的设备替换同一个角色。这样会形成位姿反馈环，使目标停在上一帧。\n\n" +
+                    "请选择 Tracker、其他控制器或其他不会被该路由覆盖的位姿来源。",
+                    "检测到自引用路由",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
                 return;
             }
 
@@ -729,7 +1139,7 @@ namespace TrackSwap
 
             long revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1);
             RouteConfiguration activeRoute = _runtimeStatus.Configuration?.Routes?.FirstOrDefault(candidate =>
-                candidate.Enabled && candidate.VirtualDeviceSlot == 0);
+                string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
             if (activeRoute != null &&
                 !string.Equals(activeRoute.SourceDevicePath, source.DevicePath, StringComparison.Ordinal))
             {
@@ -746,21 +1156,13 @@ namespace TrackSwap
                 }
             }
 
+            _selectedRoute.SourceDevicePath = source.DevicePath;
+            _selectedRoute.TargetDevicePath = target.TargetPath;
+            _selectedRoute.Offset = offset;
             var configuration = new RuntimeConfiguration
             {
                 Revision = revision,
-                Routes = new List<RouteConfiguration>
-                {
-                    new RouteConfiguration
-                    {
-                        RouteId = "primary",
-                        Enabled = true,
-                        VirtualDeviceSlot = 0,
-                        SourceDevicePath = source.DevicePath,
-                        TargetDevicePath = target.TargetPath,
-                        Offset = offset
-                    }
-                }
+                Routes = _workingRoutes.Select(CloneRoute).ToList()
             };
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
             if (errors.Count != 0)
@@ -774,10 +1176,32 @@ namespace TrackSwap
             RuntimeAppliedStateText.Foreground = FindBrush("WarningBrush");
             try
             {
+                if (!_statusService.IsRunning() && !string.IsNullOrWhiteSpace(_settingsPath))
+                {
+                    _settingsService.ApplyOverride(
+                        _settingsPath,
+                        ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot),
+                        target.TargetPath);
+                    RefreshOverrideList();
+                }
                 await _runtimeControlService.ApplyConfigurationAsync(configuration);
                 _loadedRuntimeRevision = -1;
                 _runtimeEditorInitialized = false;
                 await RefreshStatusAsync();
+                if (_statusService.IsRunning())
+                {
+                    IReadOnlyList<TrackingOverrideOption> overrides = string.IsNullOrWhiteSpace(_settingsPath)
+                        ? Array.Empty<TrackingOverrideOption>()
+                        : _settingsService.ReadOverrides(_settingsPath);
+                    bool mapped = overrides.Any(mapping =>
+                        string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot), StringComparison.Ordinal) &&
+                        string.Equals(mapping.TargetPath, target.TargetPath, StringComparison.Ordinal));
+                    if (!mapped)
+                    {
+                        RuntimeRouteChangeWarningText.Text = "运行时配置已保存。要让该代理替换目标，请退出 SteamVR 后再次点击“应用更改”以写入静态引导映射。";
+                        RuntimeRouteChangeWarningText.Visibility = Visibility.Visible;
+                    }
+                }
             }
             catch (Exception exception)
             {
@@ -1036,7 +1460,7 @@ namespace TrackSwap
 
         private async Task RefreshTelemetryAsync()
         {
-            if (_telemetryUpdatePending || !IsVisible || ModeTabs.SelectedIndex != 0)
+            if (_telemetryUpdatePending || !IsVisible || _showingSettings || _selectedRoute == null)
             {
                 return;
             }
@@ -1044,7 +1468,8 @@ namespace TrackSwap
             _telemetryUpdatePending = true;
             try
             {
-                PoseTelemetrySnapshot snapshot = await _runtimeControlService.GetTelemetryAsync();
+                PoseTelemetrySnapshot snapshot = await _runtimeControlService.GetTelemetryAsync(
+                    _selectedRoute.VirtualDeviceSlot);
                 RenderTelemetry(snapshot);
             }
             catch (Exception exception) when (

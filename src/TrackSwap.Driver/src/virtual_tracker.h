@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
+#include <string>
 
 #include <openvr_driver.h>
 
@@ -14,12 +15,15 @@ namespace trackswap
 class VirtualTracker final : public vr::ITrackedDeviceServerDriver
 {
 public:
-    static constexpr const char* SerialNumber = "TRKSWAP-PROXY-00";
+    explicit VirtualTracker(std::uint8_t slot);
+
+    const char* SerialNumber() const;
 
     void ConfigureSource(const char* sourceDevicePath);
     void QueueSource(const char* sourceDevicePath);
     void QueueOffset(const pose_math::RigidOffset& offset);
     bool QueueSnapshot(
+        bool enabled,
         const char* sourceDevicePath,
         const char* targetDevicePath,
         const pose_math::RigidOffset& offset,
@@ -58,6 +62,9 @@ private:
     std::uint32_t searchCountdown_ = 0;
     std::uint32_t targetSearchCountdown_ = 0;
     bool lastHealth_ = false;
+    bool activeEnabled_ = false;
+    bool pendingEnabled_ = false;
+    bool hasPendingEnabled_ = false;
     bool hasPendingSource_ = false;
     bool hasPendingOffset_ = false;
     bool hasPendingSnapshotRevision_ = false;
@@ -68,5 +75,8 @@ private:
     mutable std::mutex telemetryMutex_;
     control_protocol::TelemetrySnapshot telemetry_{};
     vr::DriverPose_t lastPose_{};
+    std::uint8_t slot_ = 0;
+    std::string serialNumber_;
+    std::string registeredDeviceType_;
 };
 } // namespace trackswap

@@ -41,6 +41,7 @@ namespace TrackSwap.Protocol
             }
 
             var routeIds = new HashSet<string>(StringComparer.Ordinal);
+            var routeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var slots = new HashSet<int>();
             var sources = new HashSet<string>(StringComparer.Ordinal);
             var targets = new HashSet<string>(StringComparer.Ordinal);
@@ -66,6 +67,19 @@ namespace TrackSwap.Protocol
                 else if (!routeIds.Add(route.RouteId))
                 {
                     errors.Add($"Duplicate routeId '{route.RouteId}'.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(route.Name))
+                {
+                    string name = route.Name.Trim();
+                    if (name.Length > 64 || name.Any(char.IsControl))
+                    {
+                        errors.Add($"{prefix} name is too long or contains control characters.");
+                    }
+                    else if (!routeNames.Add(name))
+                    {
+                        errors.Add($"Duplicate route name '{name}'.");
+                    }
                 }
 
                 if (route.VirtualDeviceSlot < 0 || route.VirtualDeviceSlot >= ProtocolConstants.MaximumRoutes)

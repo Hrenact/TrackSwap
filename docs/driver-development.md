@@ -42,10 +42,11 @@ To recover/remove the development registration, fully exit SteamVR and run:
 .\scripts\Uninstall-Driver.ps1
 ```
 
-The Stage 1 provider registers `TRKSWAP-PROXY-00`. It reads the exact physical
-OpenVR path from `driver_trackswap/sourceDevicePath`, mirrors that device's raw
-pose, and deliberately reports invalid/disconnected tracking when the source is
-missing or invalid. It does not alter `TrackingOverrides`.
+The provider registers `TRKSWAP-PROXY-00` through `TRKSWAP-PROXY-07` on demand.
+Each proxy reads the exact physical OpenVR path supplied by its runtime route,
+mirrors that device's raw pose, and deliberately reports invalid/disconnected
+tracking when the source is missing or invalid. It does not alter
+`TrackingOverrides`.
 
 Hardware validation is intentionally separate from build validation. Before a
 test, obtain the exact registered device path from TrackSwap v001 while SteamVR
