@@ -14,6 +14,7 @@ TrackSwap has two deliberately separate workflows:
 2. **Runtime pose routing**
    - v002 introduced the independent Runtime, native OpenVR driver, live source switching, local rigid offsets, automatic calibration, telemetry, and a real-time 3D preview.
    - v003 added named route management and up to eight stable virtual proxies.
+   - v004 hardened source reconnection and cross-route validation, migrated runtime targets away from ambiguous SteamVR roles, and refined device-model preview behavior.
    - The current UI uses a configuration sidebar; each selected route owns its source, proxy slot, target, offset, calibration view, status, and always-visible 3D preview.
 
 The normal runtime data path is:
@@ -24,10 +25,10 @@ The virtual-proxy-to-target relationship is a static bootstrap mapping. Changing
 
 ## Branch and Release Policy
 
-- `v001`, `v002`, and `v003` are published, immutable release tags. Never move or rewrite them.
+- `v001`, `v002`, `v003`, and `v004` are published, immutable release tags. Never move or rewrite them.
 - `main` currently remains the stable v001 line. Do not merge, retarget, or rewrite it without an explicit maintainer decision.
-- Current post-v003 work remains on `v002-runtime` until the maintainer chooses the integration branch for the next release.
-- The next release identifier is `v004`. Releases use one increasing sequence: `v001`, `v002`, `v003`, and so on. Do not introduce semantic-version labels or prerelease suffixes unless the maintainer changes this policy.
+- Current post-v004 work remains on `v002-runtime` until the maintainer chooses the integration branch for the next release.
+- The next release identifier is `v005`. Releases use one increasing sequence: `v001`, `v002`, `v003`, and so on. Do not introduce semantic-version labels or prerelease suffixes unless the maintainer changes this policy.
 - Do not commit experimental driver/runtime work directly to `main`.
 - Keep commits focused. Do not rewrite published history.
 - The project is MIT licensed under the name Hrenact. Record added third-party code or binary dependencies in `THIRD-PARTY-NOTICES.md` and preserve their required notices.
@@ -121,7 +122,7 @@ The following capabilities have been implemented and must not regress:
 - Stable virtual proxies mirror connected sources, preserve health state, and recover from source reconnection.
 - Live source and offset updates work through versioned IPC.
 - Automatic calibration profiles can be captured, named, saved, reapplied, and deleted.
-- Downsampled per-route telemetry drives the source/output/target 3D preview outside the tracking-critical path.
+- Downsampled per-route telemetry drives the source-and-final-target 3D preview outside the tracking-critical path; the virtual output remains available to telemetry but is not rendered as a third user-facing device.
 - The preview loads static device meshes and textures through `IVRRenderModels_006`, supports component-based controller models, and falls back to built-in device-class geometry without affecting tracking.
 - Virtual proxies register the driver-owned empty `trackswap_hidden_proxy` render model, preventing SteamVR from drawing a misleading GenericTracker fallback while preserving tracking, routing, and telemetry. This behavior has been hardware-verified.
 - Multiple proxy slots can be registered in one SteamVR session and receive independent route snapshots.
@@ -129,7 +130,7 @@ The following capabilities have been implemented and must not regress:
 - Deleting a route while SteamVR is running marks it pending, preserves live tracking, and automatically removes its static mapping and Runtime route after SteamVR stops.
 - Hardware testing has confirmed Tracker-to-hand pose replacement while the original hand controller keeps its input.
 
-Before a v004 release, repeat and document hardening for install, upgrade, disable, uninstall, SteamVR start/stop, standby, source power cycling, runtime/UI crashes, malformed configuration, device reconnection, multiple simultaneous physical sources, and configuration migration.
+Before the next release, repeat and document hardening for install, upgrade, disable, uninstall, SteamVR start/stop, standby, source power cycling, runtime/UI crashes, malformed configuration, device reconnection, multiple simultaneous physical sources, and configuration migration.
 
 ## Development Practices
 

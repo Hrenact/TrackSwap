@@ -2,7 +2,7 @@
 
 TrackSwap 是一个轻量的 Windows 工具，用来管理 SteamVR 的设备位姿映射。
 
-当前版本：**TrackSwap v003**
+当前版本：**TrackSwap v004**
 
 简单来说，它可以让一个设备负责提供位置和旋转数据，同时继续使用另一个设备的按键输入。例如：
 
@@ -46,13 +46,15 @@ PowerShell 运行 `scripts\Install-Driver.ps1` 注册随附驱动，再启动 St
 
 “追踪来源”是提供位置和旋转数据的设备。
 
-“替换目标”是使用这份定位数据的设备。目标可以是：
+“替换目标”是使用这份定位数据的设备。运行时路由的目标可以是：
 
-- 右手、左手或头显
 - 当前由 SteamVR 枚举到的具体在线设备
-- 配置中曾经保存过的设备
+- 现有配置中已经保存的具体设备
 
-头显、左手和右手是 OpenVR 明确支持的常用目标。具体设备之间的替换属于实验性用法，实际效果可能受到设备驱动和 SteamVR 版本影响。
+运行时路由不再提供 `/user/hand/left`、`/user/hand/right` 等 SteamVR 角色作为新目标，避免多个控制器同时连接时的归属歧义。旧配置中的角色目标仍可读取和删除，但必须改选明确的实体设备后才能再次应用或启用。旧版静态映射页仍保留 SteamVR 角色目标。
+
+> [!WARNING]
+> 具体设备之间的 `TrackingOverrides` 属于实验性用法，实际结果取决于 SteamVR 版本和目标设备驱动。当前硬件测试中，Valve Index Knuckles 的实体设备目标可正常跟随，而 Pico 手柄的实体设备目标可能忽略覆盖或无法跟随。这不代表所有 Pico 驱动版本都会失败，但请在使用前通过 SteamVR 和 TrackSwap 预览确认结果。TrackSwap 不会静默回退到角色目标。
 
 TrackSwap 会阻止来源覆盖自身、循环覆盖、目标冲突，以及“右手柄 → 右手”等角色自引用路由。角色自引用会让 SteamVR 把已覆盖的目标位姿反馈为来源并冻结在上一帧。
 
@@ -63,7 +65,7 @@ TrackSwap 会阻止来源覆盖自身、循环覆盖、目标冲突，以及“�
 - “新增”分配当前最低的空闲代理槽位
 - 右键配置可以重命名、启用或停用，以及删除
 - 每条配置独立保存来源、目标、偏移和校准档案选择
-- 3D 预览始终显示当前配置的来源、虚拟输出与目标；优先采用 SteamVR 设备模型，读取失败时使用内置模型
+- 3D 预览始终显示当前配置的物理来源与最终目标；虚拟代理仅作为兼容层，不渲染为第三个用户设备
 - 多条目标互不冲突的路由可以同时运行
 
 SteamVR 运行时删除配置会先进入“待删除”状态，代理继续输出，避免目标立即失去定位。完全退出 SteamVR 后，TrackSwap 会自动清理静态绑定并最终删除；完成前可通过右键菜单取消删除。首次绑定、目标变更和停用清理仍可能要求 SteamVR 完全退出。
@@ -107,7 +109,7 @@ steamvr.vrsettings.trackswap-20260917-114817-123.backup
 
 项目使用 WPF、.NET Framework 4.8 和 Newtonsoft.Json。
 
-`main` 保留稳定的 v001 历史。v002、v003 已发布；后续开发继续在
+`main` 保留稳定的 v001 历史。v002、v003、v004 已发布；后续开发继续在
 `v002-runtime` 分支进行，架构契约见
 [`docs/v002-architecture.md`](docs/v002-architecture.md)，驱动开发闭环见
 [`docs/driver-development.md`](docs/driver-development.md)。普通构建不会安装或注册驱动。
@@ -133,8 +135,7 @@ Runtime 默认把原子配置快照保存在
 静态覆盖。完整流程和失败恢复见
 [`docs/calibration.md`](docs/calibration.md)。
 
-“实时 3D 位姿预览”以约 30 Hz 显示物理来源、变换后虚拟输出、目标和各自
-坐标轴。界面优先通过 OpenVR 加载设备驱动注册的静态渲染模型与纹理，并为
+“实时 3D 位姿预览”以约 30 Hz 显示物理来源和最终目标。界面优先通过 OpenVR 加载设备驱动注册的静态渲染模型与纹理，并为
 头显、手柄和 Tracker 提供内置回退模型。模型加载和遥测都位于 UI 预览层，
 UI 关闭、卡顿或断开不会影响 SteamVR 位姿提交。详见
 [`docs/pose-preview.md`](docs/pose-preview.md)。
@@ -154,7 +155,7 @@ dotnet build TrackSwap.sln -c Release
 生成完整的 Windows x64 发布包、ZIP 和 SHA-256 文件：
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version v003 -Clean
+.\scripts\Build-Release.ps1 -Version v004 -Clean
 ```
 
 升级到不同目录中的完整包时，应先完全退出 SteamVR，再运行
@@ -170,7 +171,7 @@ src\TrackSwap\bin\Release\net48\TrackSwap.exe
 
 ## 版本规则
 
-TrackSwap 使用连续编号：`v001`、`v002`、`v003`……不区分主版本、次版本或预发布状态。
+TrackSwap 使用连续编号：`v001`、`v002`、`v003`、`v004`……不区分主版本、次版本或预发布状态。
 
 推送与项目版本一致的 `vNNN` Git 标签后，GitHub Actions 会自动构建 Windows x64 Release、生成 ZIP 压缩包和 SHA-256 校验文件，并发布对应的 GitHub Release。
 

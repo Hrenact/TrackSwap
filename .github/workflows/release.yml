@@ -55,8 +55,18 @@ jobs:
         run: |
           $zip = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*.zip" | Select-Object -First 1
           $checksum = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*.sha256" | Select-Object -First 1
-          gh release create "${{ github.ref_name }}" `
-            $zip.FullName `
-            $checksum.FullName `
-            --title "TrackSwap ${{ github.ref_name }}" `
-            --generate-notes
+          $notes = "docs/releases/${{ github.ref_name }}.md"
+          $arguments = @(
+            "release", "create", "${{ github.ref_name }}",
+            $zip.FullName, $checksum.FullName,
+            "--title", "TrackSwap ${{ github.ref_name }}"
+          )
+          if (Test-Path -LiteralPath $notes) {
+            $arguments += @("--notes-file", $notes)
+          } else {
+            $arguments += "--generate-notes"
+          }
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release creation failed with exit code $LASTEXITCODE."
+          }

@@ -1,25 +1,28 @@
 # Real-time pose preview
 
-The Stage 7 preview renders three driver-owned pose snapshots at approximately
-30 Hz:
+The preview polls downsampled route telemetry at approximately 30 Hz and renders
+the two physical devices a user needs to compare:
 
-- physical source (orange);
-- transformed virtual output (blue);
-- physical device represented by the configured target role (green).
+- the selected physical pose source;
+- the final physical target.
+
+The transformed virtual output remains part of telemetry and routing diagnostics,
+but is not rendered as a third user-facing object. The proxy is a compatibility
+layer, not another device the user should have to interpret.
 
 The UI reads `Prop_RenderModelName_String` for connected devices and loads the
-registered static mesh and RGBA texture through `IVRRenderModels_006`. Source
-and virtual output share the source device model. A role target uses the model
-of the physical device currently assigned to that role. Model data is copied,
-cached, and released outside the telemetry path. If a driver does not publish a
-model, SteamVR is stopped, or loading fails, the UI falls back to a simplified
-HMD, controller, tracker, or generic marker.
+registered static mesh and RGBA texture through `IVRRenderModels_006`. Component-
+based controller models are assembled from their registered parts. Model data is
+copied, cached, and released outside the telemetry path. If a driver does not
+publish a usable model, SteamVR is stopped, or loading fails, the UI falls back to
+a simplified HMD, controller, tracker, or generic marker. Only fallback geometry
+uses device coloring and local coordinate axes; normal render models retain their
+own textures.
 
-Each model includes local X/Y/Z axes colored red, green, and blue. The source,
-output, and target retain orange, blue, and green tinting respectively. When
-the target pose is valid, the view uses it as the origin; source and output are
-the fallback anchors if the target is unavailable. The preview reports the
-output-to-target translation distance when both are valid.
+The source and target are framed together around their combined center. The view
+does not inherit device rotation: drag with the left mouse button to pan, drag with
+the right mouse button to orbit, use the wheel to zoom, and choose `重置视图` to
+restore the default camera.
 
 ## Isolation from tracking
 
@@ -32,15 +35,18 @@ No telemetry request is made from `VirtualTracker::Update`, and the driver never
 waits for Runtime or the UI. Closing, freezing, or disconnecting the preview
 therefore cannot stop pose submission. A failed telemetry request only changes
 the preview status to unavailable. Render-model loading also runs outside the
-driver and Runtime, so a missing or malformed model can only trigger the
-built-in visual fallback.
+driver and Runtime, so a missing or malformed model can only trigger the built-in
+visual fallback.
 
 ## Hardware check
 
-1. Start SteamVR, Runtime, and TrackSwap with the Stage 7 driver installed.
-2. Confirm all three markers appear and their local axes rotate with the devices.
-3. Apply a known offset and verify the blue output separates from the orange
-   source as expected.
-4. When source and target are calibrated together, verify the blue and green
-   markers overlap and the displayed distance is small.
-5. Close TrackSwap and confirm SteamVR tracking continues normally.
+1. Start SteamVR, Runtime, and TrackSwap with the packaged driver installed.
+2. Confirm the source and final target models appear and retain their registered
+   textures. Confirm that no third virtual-proxy model is shown.
+3. Drag and zoom across the entire preview viewport, then reset the view and
+   confirm both models are framed around their combined center.
+4. Apply a known local offset and verify the target's relative pose agrees with
+   SteamVR while device motion does not reset the camera.
+5. Power the source off and on. The preview may become unavailable while the pose
+   is invalid, but tracking must recover automatically when the source returns.
+6. Close TrackSwap and confirm SteamVR tracking continues normally.

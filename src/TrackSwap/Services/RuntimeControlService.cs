@@ -93,7 +93,7 @@ namespace TrackSwap.Services
             }
             if (executable == null)
             {
-                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v003 程序包。";
+                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v004 程序包。";
                 return false;
             }
 

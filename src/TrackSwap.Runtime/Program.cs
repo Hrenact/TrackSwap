@@ -66,8 +66,8 @@ internal static class Program
             return ParseAndSetOffset(args);
         }
 
-        Console.WriteLine("TrackSwap Runtime Stage 0 bootstrap is installed.");
-        Console.WriteLine("No tracking loop or IPC listener is enabled at this milestone.");
+        Console.WriteLine("TrackSwap Runtime v004");
+        Console.WriteLine("Use --run [config-path] to start the runtime host and IPC service.");
         Console.WriteLine("Use --print-contract, --validate-config <path>, --switch-source <exact-device-path>,");
         Console.WriteLine("--set-offset <tx> <ty> <tz> <qx> <qy> <qz> <qw>, --reset-offset,");
         Console.WriteLine("--runtime-status, --runtime-telemetry, --driver-telemetry, or --run [config-path].");
