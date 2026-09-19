@@ -14,6 +14,8 @@ namespace TrackSwap.Services
 {
     internal sealed class RuntimeControlService
     {
+        private static readonly SemaphoreSlim RequestGate = new SemaphoreSlim(1, 1);
+
         private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
         {
             ContractResolver = new CamelCasePropertyNamesContractResolver(),
@@ -137,51 +139,59 @@ namespace TrackSwap.Services
 
         private static async Task<MessageEnvelope> SendAsync(string messageType, string payloadJson)
         {
-            string requestId = Guid.NewGuid().ToString("N");
-            var request = new MessageEnvelope
+            await RequestGate.WaitAsync().ConfigureAwait(false);
+            try
             {
-                MessageType = messageType,
-                RequestId = requestId,
-                PayloadJson = payloadJson
-            };
+                string requestId = Guid.NewGuid().ToString("N");
+                var request = new MessageEnvelope
+                {
+                    MessageType = messageType,
+                    RequestId = requestId,
+                    PayloadJson = payloadJson
+                };
 
-            using (var pipe = new NamedPipeClientStream(
-                ".",
-                ProtocolConstants.PipeName,
-                PipeDirection.InOut,
-                PipeOptions.Asynchronous))
-            using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+                using (var pipe = new NamedPipeClientStream(
+                    ".",
+                    ProtocolConstants.PipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous))
+                using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+                {
+                    try
+                    {
+                        await pipe.ConnectAsync(1000, cancellation.Token).ConfigureAwait(false);
+                        byte[] requestBytes = Encoding.UTF8.GetBytes(
+                            JsonConvert.SerializeObject(request, JsonSettings) + "\n");
+                        await pipe.WriteAsync(requestBytes, 0, requestBytes.Length, cancellation.Token).ConfigureAwait(false);
+                        await pipe.FlushAsync(cancellation.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException exception)
+                    {
+                        throw new TimeoutException("Runtime control request timed out.", exception);
+                    }
+
+                    string responseLine;
+                    try
+                    {
+                        responseLine = await ReadBoundedLineAsync(pipe, cancellation.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException exception)
+                    {
+                        throw new TimeoutException("Runtime control response timed out.", exception);
+                    }
+                    MessageEnvelope response = JsonConvert.DeserializeObject<MessageEnvelope>(responseLine, JsonSettings);
+                    if (response == null || response.ProtocolVersion != ProtocolConstants.CurrentProtocolVersion ||
+                        !string.Equals(response.RequestId, requestId, StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException("Runtime returned an invalid control envelope.");
+                    }
+
+                    return response;
+                }
+            }
+            finally
             {
-                try
-                {
-                    await pipe.ConnectAsync(350, cancellation.Token);
-                    byte[] requestBytes = Encoding.UTF8.GetBytes(
-                        JsonConvert.SerializeObject(request, JsonSettings) + "\n");
-                    await pipe.WriteAsync(requestBytes, 0, requestBytes.Length, cancellation.Token);
-                    await pipe.FlushAsync(cancellation.Token);
-                }
-                catch (OperationCanceledException exception)
-                {
-                    throw new TimeoutException("Runtime control request timed out.", exception);
-                }
-
-                string responseLine;
-                try
-                {
-                    responseLine = await ReadBoundedLineAsync(pipe, cancellation.Token);
-                }
-                catch (OperationCanceledException exception)
-                {
-                    throw new TimeoutException("Runtime control response timed out.", exception);
-                }
-                MessageEnvelope response = JsonConvert.DeserializeObject<MessageEnvelope>(responseLine, JsonSettings);
-                if (response == null || response.ProtocolVersion != ProtocolConstants.CurrentProtocolVersion ||
-                    !string.Equals(response.RequestId, requestId, StringComparison.Ordinal))
-                {
-                    throw new InvalidDataException("Runtime returned an invalid control envelope.");
-                }
-
-                return response;
+                RequestGate.Release();
             }
         }
 

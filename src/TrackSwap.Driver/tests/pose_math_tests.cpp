@@ -78,6 +78,18 @@ int main()
         return EXIT_FAILURE;
     }
 
+    const trackswap::pose_math::RigidOffset coordinateDirectionOffset{
+        {1.0, 0.0, 1.0},
+        {1.0, 0.0, 0.0, 0.0}};
+    const vr::DriverPose_t coordinateDirectionOutput =
+        trackswap::pose_math::ApplyOffset(offsetSource, coordinateDirectionOffset);
+    if (!Near(coordinateDirectionOutput.vecPosition[0], 1.0) ||
+        !Near(coordinateDirectionOutput.vecPosition[1], 0.0) ||
+        !Near(coordinateDirectionOutput.vecPosition[2], 1.0))
+    {
+        return EXIT_FAILURE;
+    }
+
     offsetSource.qRotation = {halfSqrtTwo, 0.0, 0.0, halfSqrtTwo};
     const trackswap::pose_math::RigidOffset localTranslation{
         {1.0, 0.0, 0.0},

@@ -38,8 +38,13 @@ namespace TrackSwap
         private readonly DispatcherTimer _statusTimer;
         private readonly DispatcherTimer _telemetryTimer;
         private Model3DGroup _sourcePreviewModel;
-        private Model3DGroup _outputPreviewModel;
         private Model3DGroup _targetPreviewModel;
+        private Point3D _previewCameraTarget = new Point3D(0, 0, 0);
+        private double _previewCameraYaw = 0.694;
+        private double _previewCameraPitch = 0.397;
+        private double _previewCameraDistance = 0.68;
+        private MouseButton? _previewDragButton;
+        private Point _previewLastPointer;
         private readonly Dictionary<string, Task<OpenVrRenderModel>> _previewModelCache =
             new Dictionary<string, Task<OpenVrRenderModel>>(StringComparer.Ordinal);
         private int _previewModelRequestVersion;
@@ -53,6 +58,9 @@ namespace TrackSwap
         private bool _calibrationProfilesLoaded;
         private bool _calibrationBusy;
         private bool _telemetryUpdatePending;
+        private int _runtimeStatusFailureCount;
+        private int _telemetryFailureCount;
+        private string _previewModelDescription;
         private IReadOnlyList<DeviceOption> _onlinePhysicalDevices = Array.Empty<DeviceOption>();
         private readonly ObservableCollection<RouteListItem> _routeItems = new ObservableCollection<RouteListItem>();
         private readonly List<RouteConfiguration> _workingRoutes = new List<RouteConfiguration>();
@@ -287,6 +295,7 @@ namespace TrackSwap
             try
             {
                 RuntimeStatusSnapshot status = await _runtimeControlService.GetStatusAsync();
+                _runtimeStatusFailureCount = 0;
                 _runtimeStatus = status;
                 ShowRuntimeOnline(status);
                 if (!_calibrationProfilesLoaded && !_calibrationBusy)
@@ -306,8 +315,12 @@ namespace TrackSwap
                 exception is UnauthorizedAccessException ||
                 exception is InvalidDataException)
             {
-                _runtimeStatus = null;
-                ShowRuntimeOffline(exception.Message);
+                _runtimeStatusFailureCount++;
+                if (_runtimeStatusFailureCount >= 3)
+                {
+                    _runtimeStatus = null;
+                    ShowRuntimeOffline(exception.Message);
+                }
             }
             finally
             {
@@ -1586,16 +1599,123 @@ namespace TrackSwap
 
         private void InitializePosePreview()
         {
-            PreviewSceneRoot.Children.Add(CreateAxesModel(0.45, 0.006));
             _sourcePreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#F5A623"), TrackedDeviceKind.Unknown);
-            _outputPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#4D8DFF"), TrackedDeviceKind.Unknown);
             _targetPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#45D483"), TrackedDeviceKind.Unknown);
             PreviewSceneRoot.Children.Add(_sourcePreviewModel);
-            PreviewSceneRoot.Children.Add(_outputPreviewModel);
             PreviewSceneRoot.Children.Add(_targetPreviewModel);
             HidePreviewModel(_sourcePreviewModel);
-            HidePreviewModel(_outputPreviewModel);
             HidePreviewModel(_targetPreviewModel);
+            UpdatePreviewCamera();
+        }
+
+        private void PosePreviewViewport_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left && e.ChangedButton != MouseButton.Right)
+            {
+                return;
+            }
+            _previewDragButton = e.ChangedButton;
+            _previewLastPointer = e.GetPosition(PreviewInteractionSurface);
+            PreviewInteractionSurface.CaptureMouse();
+            PreviewInteractionSurface.Cursor = e.ChangedButton == MouseButton.Left
+                ? Cursors.SizeAll
+                : Cursors.ScrollAll;
+            e.Handled = true;
+        }
+
+        private void PosePreviewViewport_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_previewDragButton == null || !PreviewInteractionSurface.IsMouseCaptured)
+            {
+                return;
+            }
+
+            Point current = e.GetPosition(PreviewInteractionSurface);
+            Vector delta = current - _previewLastPointer;
+            _previewLastPointer = current;
+            if (_previewDragButton == MouseButton.Right)
+            {
+                _previewCameraYaw -= delta.X * 0.01;
+                _previewCameraPitch = Math.Max(
+                    -Math.PI * 0.47,
+                    Math.Min(Math.PI * 0.47, _previewCameraPitch + (delta.Y * 0.01)));
+            }
+            else
+            {
+                Vector3D look = _previewCameraTarget - PosePreviewCamera.Position;
+                if (look.LengthSquared > 1e-12)
+                {
+                    look.Normalize();
+                    Vector3D right = Vector3D.CrossProduct(look, PosePreviewCamera.UpDirection);
+                    if (right.LengthSquared > 1e-12)
+                    {
+                        right.Normalize();
+                        Vector3D up = Vector3D.CrossProduct(right, look);
+                        up.Normalize();
+                        double scale = _previewCameraDistance * 0.0017;
+                        _previewCameraTarget -= right * (delta.X * scale);
+                        _previewCameraTarget += up * (delta.Y * scale);
+                    }
+                }
+            }
+            UpdatePreviewCamera();
+            e.Handled = true;
+        }
+
+        private void PosePreviewViewport_MouseUp(object sender, MouseButtonEventArgs e)
+        {
+            if (_previewDragButton != e.ChangedButton)
+            {
+                return;
+            }
+            EndPreviewDrag();
+            e.Handled = true;
+        }
+
+        private void PosePreviewViewport_MouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            _previewCameraDistance *= Math.Pow(0.85, e.Delta / 120.0);
+            _previewCameraDistance = Math.Max(0.12, Math.Min(6.0, _previewCameraDistance));
+            UpdatePreviewCamera();
+            e.Handled = true;
+        }
+
+        private void PosePreviewViewport_LostMouseCapture(object sender, MouseEventArgs e)
+        {
+            _previewDragButton = null;
+            PreviewInteractionSurface.Cursor = Cursors.Arrow;
+        }
+
+        private void EndPreviewDrag()
+        {
+            _previewDragButton = null;
+            PreviewInteractionSurface.Cursor = Cursors.Arrow;
+            if (PreviewInteractionSurface.IsMouseCaptured)
+            {
+                PreviewInteractionSurface.ReleaseMouseCapture();
+            }
+        }
+
+        private void UpdatePreviewCamera()
+        {
+            double horizontalDistance = _previewCameraDistance * Math.Cos(_previewCameraPitch);
+            var offset = new Vector3D(
+                horizontalDistance * Math.Sin(_previewCameraYaw),
+                _previewCameraDistance * Math.Sin(_previewCameraPitch),
+                horizontalDistance * Math.Cos(_previewCameraYaw));
+            PosePreviewCamera.Position = _previewCameraTarget + offset;
+            PosePreviewCamera.LookDirection = _previewCameraTarget - PosePreviewCamera.Position;
+            PosePreviewCamera.UpDirection = new Vector3D(0, 1, 0);
+        }
+
+        private void ResetPreviewViewButton_Click(object sender, RoutedEventArgs e)
+        {
+            EndPreviewDrag();
+            _previewCameraTarget = new Point3D(0, 0, 0);
+            _previewCameraYaw = 0.694;
+            _previewCameraPitch = 0.397;
+            _previewCameraDistance = 0.68;
+            UpdatePreviewCamera();
         }
 
         private async Task RefreshPreviewDeviceModelsAsync()
@@ -1636,16 +1756,18 @@ namespace TrackSwap
 
             TrackedDeviceKind sourceKind = source?.DeviceKind ?? InferDeviceKind(_selectedRoute.SourceDevicePath);
             TrackedDeviceKind targetKind = target?.DeviceKind ?? InferTargetKind(targetPath);
-            Color sourceColor = (Color)ColorConverter.ConvertFromString("#F5A623");
-            Color outputColor = (Color)ColorConverter.ConvertFromString("#4D8DFF");
             Color targetColor = (Color)ColorConverter.ConvertFromString("#45D483");
-            SetPreviewDeviceModel(_sourcePreviewModel, models[0], sourceKind, sourceColor);
-            SetPreviewDeviceModel(_outputPreviewModel, models[0], sourceKind, outputColor);
+            SetPreviewDeviceModel(
+                _sourcePreviewModel,
+                models[0],
+                sourceKind,
+                (Color)ColorConverter.ConvertFromString("#F5A623"));
             SetPreviewDeviceModel(_targetPreviewModel, models[1], targetKind, targetColor);
 
-            string sourceMode = models[0] == null ? "来源：内置回退" : "来源：SteamVR " + models[0].Name;
-            string targetMode = models[1] == null ? "目标：内置回退" : "目标：SteamVR " + models[1].Name;
-            PreviewStatusText.ToolTip = sourceMode + "\n" + targetMode;
+            string sourceMode = models[0] == null ? "来源模型：内置回退" : "来源模型：SteamVR " + models[0].Name;
+            string targetMode = models[1] == null ? "目标模型：内置回退" : "目标模型：SteamVR " + models[1].Name;
+            _previewModelDescription = sourceMode + "\n" + targetMode + "\n虚拟输出仅作为路由代理，不参与渲染。";
+            PreviewStatusText.ToolTip = _previewModelDescription;
         }
 
         private Task<OpenVrRenderModel> GetPreviewRenderModelAsync(string renderModelName)
@@ -1722,6 +1844,7 @@ namespace TrackSwap
             {
                 PoseTelemetrySnapshot snapshot = await _runtimeControlService.GetTelemetryAsync(
                     _selectedRoute.VirtualDeviceSlot);
+                _telemetryFailureCount = 0;
                 RenderTelemetry(snapshot);
             }
             catch (Exception exception) when (
@@ -1730,11 +1853,12 @@ namespace TrackSwap
                 exception is UnauthorizedAccessException ||
                 exception is InvalidDataException)
             {
-                PreviewStatusText.Text = "遥测不可用";
-                PreviewPoseDetailsText.Text = exception.Message;
-                HidePreviewModel(_sourcePreviewModel);
-                HidePreviewModel(_outputPreviewModel);
-                HidePreviewModel(_targetPreviewModel);
+                _telemetryFailureCount++;
+                PreviewStatusText.Text = _telemetryFailureCount < 5
+                    ? "遥测重试…"
+                    : "遥测暂停";
+                PreviewStatusText.Foreground = FindBrush("WarningBrush");
+                PreviewStatusText.ToolTip = "保留最后有效画面：" + exception.Message;
             }
             finally
             {
@@ -1744,78 +1868,182 @@ namespace TrackSwap
 
         private void RenderTelemetry(PoseTelemetrySnapshot snapshot)
         {
-            Point3D center = GetPreviewOrigin(snapshot);
+            ApplySourceAndTargetPreview(snapshot);
 
-            ApplyPreviewPose(_sourcePreviewModel, snapshot.Source, center);
-            ApplyPreviewPose(_outputPreviewModel, snapshot.Output, center);
-            ApplyPreviewPose(_targetPreviewModel, snapshot.Target, center);
-
-            PreviewStatusText.Text = "遥测 #" + snapshot.Sequence.ToString(CultureInfo.InvariantCulture);
-            string healthText =
-                "来源 " + PoseHealth(snapshot.Source) + " · 输出 " + PoseHealth(snapshot.Output) +
-                " · 目标 " + PoseHealth(snapshot.Target);
-            if (IsRenderablePose(snapshot.Output) && IsRenderablePose(snapshot.Target))
+            PreviewStatusText.Text = "实时";
+            PreviewStatusText.Foreground = FindBrush("SuccessBrush");
+            string healthText = "输出 " + PoseHealth(snapshot.Output) +
+                " · 目标 " + PoseHealth(snapshot.Target) + " · 来源局部空间";
+            string diagnosticText = healthText;
+            if (IsRenderablePose(snapshot.Source) && IsRenderablePose(snapshot.Output) &&
+                TryGetRelativePoseMatrix(snapshot.Source, snapshot.Output, out Matrix3D actualOutputMatrix))
             {
-                double dx = snapshot.Output.PositionX - snapshot.Target.PositionX;
-                double dy = snapshot.Output.PositionY - snapshot.Target.PositionY;
-                double dz = snapshot.Output.PositionZ - snapshot.Target.PositionZ;
-                double distance = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-                string overlapText = AreCoincident(snapshot.Source, snapshot.Output) &&
-                    AreCoincident(snapshot.Output, snapshot.Target)
-                    ? " · 三者重合"
-                    : string.Empty;
-                PreviewPoseDetailsText.Text = healthText + overlapText +
-                    " · 输出→目标 " + distance.ToString("F4", CultureInfo.InvariantCulture) + " m";
+                healthText += " · 实际偏移 (" +
+                    actualOutputMatrix.OffsetX.ToString("F3", CultureInfo.InvariantCulture) + ", " +
+                    actualOutputMatrix.OffsetY.ToString("F3", CultureInfo.InvariantCulture) + ", " +
+                    actualOutputMatrix.OffsetZ.ToString("F3", CultureInfo.InvariantCulture) + ") m";
+                string targetDistanceText = string.Empty;
+                if (IsRenderablePose(snapshot.Target))
+                {
+                    double dx = snapshot.Output.PositionX - snapshot.Target.PositionX;
+                    double dy = snapshot.Output.PositionY - snapshot.Target.PositionY;
+                    double dz = snapshot.Output.PositionZ - snapshot.Target.PositionZ;
+                    targetDistanceText = " · 输出→目标 " +
+                        Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz))
+                            .ToString("F4", CultureInfo.InvariantCulture) + " m";
+                }
+                diagnosticText = healthText + targetDistanceText;
+            }
+            PreviewStatusText.ToolTip = string.IsNullOrWhiteSpace(_previewModelDescription)
+                ? diagnosticText
+                : diagnosticText + "\n" + _previewModelDescription;
+        }
+
+        private void ApplySourceAndTargetPreview(PoseTelemetrySnapshot snapshot)
+        {
+            Matrix3D targetMatrix = Matrix3D.Identity;
+            bool targetVisible = IsRenderablePose(snapshot.Source) &&
+                IsRenderablePose(snapshot.Target) &&
+                TryGetRelativePoseMatrix(snapshot.Source, snapshot.Target, out targetMatrix);
+            bool sourceVisible = IsRenderablePose(snapshot.Source);
+            Matrix3D sourceMatrix = Matrix3D.Identity;
+            Rect3D combined = Rect3D.Empty;
+            if (sourceVisible)
+            {
+                AddTransformedBounds(ref combined, _sourcePreviewModel, sourceMatrix);
+            }
+            if (targetVisible)
+            {
+                AddTransformedBounds(ref combined, _targetPreviewModel, targetMatrix);
+            }
+
+            Vector3D centerOffset = new Vector3D();
+            if (!combined.IsEmpty)
+            {
+                centerOffset = new Vector3D(
+                    -(combined.X + (combined.SizeX / 2.0)),
+                    -(combined.Y + (combined.SizeY / 2.0)),
+                    -(combined.Z + (combined.SizeZ / 2.0)));
+            }
+
+            if (sourceVisible)
+            {
+                sourceMatrix.Translate(centerOffset);
+                _sourcePreviewModel.Transform = new MatrixTransform3D(sourceMatrix);
             }
             else
             {
-                PreviewPoseDetailsText.Text = healthText;
+                HidePreviewModel(_sourcePreviewModel);
+            }
+            if (targetVisible)
+            {
+                targetMatrix.Translate(centerOffset);
+                _targetPreviewModel.Transform = new MatrixTransform3D(targetMatrix);
+            }
+            else
+            {
+                HidePreviewModel(_targetPreviewModel);
             }
         }
 
-        private static Point3D GetPreviewOrigin(PoseTelemetrySnapshot snapshot)
+        private static void AddTransformedBounds(
+            ref Rect3D combined,
+            Model3DGroup model,
+            Matrix3D transform)
         {
-            PoseTelemetry anchor = IsRenderablePose(snapshot.Target)
-                ? snapshot.Target
-                : IsRenderablePose(snapshot.Source)
-                    ? snapshot.Source
-                    : snapshot.Output;
-            return IsRenderablePose(anchor)
-                ? new Point3D(anchor.PositionX, anchor.PositionY, anchor.PositionZ)
-                : new Point3D();
+            Rect3D localBounds = GetLocalModelBounds(model);
+            if (!localBounds.IsEmpty)
+            {
+                combined.Union(TransformBounds(localBounds, transform));
+            }
         }
 
-        private static bool AreCoincident(PoseTelemetry left, PoseTelemetry right)
+        private static bool TryGetRelativePoseMatrix(
+            PoseTelemetry source,
+            PoseTelemetry target,
+            out Matrix3D matrix)
         {
-            if (!IsRenderablePose(left) || !IsRenderablePose(right))
+            matrix = Matrix3D.Identity;
+            var sourceRotation = new Quaternion(
+                source.RotationX,
+                source.RotationY,
+                source.RotationZ,
+                source.RotationW);
+            var targetRotation = new Quaternion(
+                target.RotationX,
+                target.RotationY,
+                target.RotationZ,
+                target.RotationW);
+            double sourceLengthSquared =
+                (sourceRotation.X * sourceRotation.X) + (sourceRotation.Y * sourceRotation.Y) +
+                (sourceRotation.Z * sourceRotation.Z) + (sourceRotation.W * sourceRotation.W);
+            double targetLengthSquared =
+                (targetRotation.X * targetRotation.X) + (targetRotation.Y * targetRotation.Y) +
+                (targetRotation.Z * targetRotation.Z) + (targetRotation.W * targetRotation.W);
+            if (sourceLengthSquared < 1e-12 || targetLengthSquared < 1e-12)
             {
                 return false;
             }
+            sourceRotation.Normalize();
+            targetRotation.Normalize();
+            Quaternion inverseSource = sourceRotation;
+            inverseSource.Conjugate();
+            Quaternion relativeRotation = MultiplyQuaternion(inverseSource, targetRotation);
+            relativeRotation.Normalize();
 
-            double dx = left.PositionX - right.PositionX;
-            double dy = left.PositionY - right.PositionY;
-            double dz = left.PositionZ - right.PositionZ;
-            if ((dx * dx) + (dy * dy) + (dz * dz) > 0.001 * 0.001)
+            var worldDelta = new Vector3D(
+                target.PositionX - source.PositionX,
+                target.PositionY - source.PositionY,
+                target.PositionZ - source.PositionZ);
+            Vector3D relativeTranslation = RotateVector(inverseSource, worldDelta);
+            matrix.Rotate(relativeRotation);
+            matrix.Translate(relativeTranslation);
+            return true;
+        }
+
+        private static Quaternion MultiplyQuaternion(Quaternion left, Quaternion right)
+        {
+            return new Quaternion(
+                (left.W * right.X) + (left.X * right.W) + (left.Y * right.Z) - (left.Z * right.Y),
+                (left.W * right.Y) - (left.X * right.Z) + (left.Y * right.W) + (left.Z * right.X),
+                (left.W * right.Z) + (left.X * right.Y) - (left.Y * right.X) + (left.Z * right.W),
+                (left.W * right.W) - (left.X * right.X) - (left.Y * right.Y) - (left.Z * right.Z));
+        }
+
+        private static Vector3D RotateVector(Quaternion rotation, Vector3D value)
+        {
+            var vector = new Vector3D(rotation.X, rotation.Y, rotation.Z);
+            Vector3D twiceCross = 2.0 * Vector3D.CrossProduct(vector, value);
+            return value + (rotation.W * twiceCross) + Vector3D.CrossProduct(vector, twiceCross);
+        }
+
+        private static Rect3D GetLocalModelBounds(Model3DGroup model)
+        {
+            Rect3D bounds = Rect3D.Empty;
+            foreach (Model3D child in model.Children)
             {
-                return false;
+                bounds.Union(child.Bounds);
             }
+            return bounds;
+        }
 
-            double leftLength = Math.Sqrt(
-                (left.RotationX * left.RotationX) + (left.RotationY * left.RotationY) +
-                (left.RotationZ * left.RotationZ) + (left.RotationW * left.RotationW));
-            double rightLength = Math.Sqrt(
-                (right.RotationX * right.RotationX) + (right.RotationY * right.RotationY) +
-                (right.RotationZ * right.RotationZ) + (right.RotationW * right.RotationW));
-            if (leftLength < 1e-12 || rightLength < 1e-12)
+        private static Rect3D TransformBounds(Rect3D bounds, Matrix3D transform)
+        {
+            Rect3D transformed = Rect3D.Empty;
+            double[] xValues = { bounds.X, bounds.X + bounds.SizeX };
+            double[] yValues = { bounds.Y, bounds.Y + bounds.SizeY };
+            double[] zValues = { bounds.Z, bounds.Z + bounds.SizeZ };
+            foreach (double x in xValues)
             {
-                return false;
+                foreach (double y in yValues)
+                {
+                    foreach (double z in zValues)
+                    {
+                        transformed.Union(transform.Transform(new Point3D(x, y, z)));
+                    }
+                }
             }
-
-            double orientationDot = Math.Abs(
-                (left.RotationX * right.RotationX) + (left.RotationY * right.RotationY) +
-                (left.RotationZ * right.RotationZ) + (left.RotationW * right.RotationW)) /
-                (leftLength * rightLength);
-            return orientationDot >= Math.Cos(0.5 * Math.PI / 360.0);
+            return transformed;
         }
 
         private static string PoseHealth(PoseTelemetry pose)
@@ -1836,37 +2064,6 @@ namespace TrackSwap
             return !double.IsNaN(value) && !double.IsInfinity(value);
         }
 
-        private static void ApplyPreviewPose(Model3DGroup model, PoseTelemetry pose, Point3D center)
-        {
-            if (!IsRenderablePose(pose))
-            {
-                HidePreviewModel(model);
-                return;
-            }
-
-            var rotation = new Quaternion(
-                pose.RotationX,
-                pose.RotationY,
-                pose.RotationZ,
-                pose.RotationW);
-            double rotationLengthSquared =
-                (rotation.X * rotation.X) + (rotation.Y * rotation.Y) +
-                (rotation.Z * rotation.Z) + (rotation.W * rotation.W);
-            if (rotationLengthSquared < 1e-12)
-            {
-                HidePreviewModel(model);
-                return;
-            }
-            rotation.Normalize();
-            Matrix3D matrix = Matrix3D.Identity;
-            matrix.Rotate(rotation);
-            matrix.Translate(new Vector3D(
-                pose.PositionX - center.X,
-                pose.PositionY - center.Y,
-                pose.PositionZ - center.Z));
-            model.Transform = new MatrixTransform3D(matrix);
-        }
-
         private static void HidePreviewModel(Model3DGroup model)
         {
             model.Transform = new TranslateTransform3D(10000, 10000, 10000);
@@ -1876,7 +2073,7 @@ namespace TrackSwap
         {
             var group = new Model3DGroup();
             AddFallbackDeviceGeometry(group, deviceKind, bodyColor);
-            foreach (Model3D axis in CreateAxesModel(0.18, 0.012).Children)
+            foreach (Model3D axis in CreateAxesModel(0.12, 0.003).Children)
             {
                 group.Children.Add(axis);
             }
@@ -1894,19 +2091,19 @@ namespace TrackSwap
             if (renderModel == null || renderModel.Vertices.Length == 0 || renderModel.Indices.Length == 0)
             {
                 AddFallbackDeviceGeometry(group, fallbackKind, bodyColor);
+                foreach (Model3D axis in CreateAxesModel(0.12, 0.003).Children)
+                {
+                    group.Children.Add(axis);
+                }
             }
             else
             {
-                group.Children.Add(CreateOpenVrModel(renderModel, bodyColor));
-            }
-            foreach (Model3D axis in CreateAxesModel(0.18, 0.012).Children)
-            {
-                group.Children.Add(axis);
+                group.Children.Add(CreateOpenVrModel(renderModel));
             }
             group.Transform = transform;
         }
 
-        private static GeometryModel3D CreateOpenVrModel(OpenVrRenderModel renderModel, Color tint)
+        private static GeometryModel3D CreateOpenVrModel(OpenVrRenderModel renderModel)
         {
             var positions = new Point3DCollection(renderModel.Vertices.Length);
             var normals = new Vector3DCollection(renderModel.Vertices.Length);
@@ -1955,12 +2152,10 @@ namespace TrackSwap
                 var textureBrush = new ImageBrush(bitmap) { Stretch = Stretch.Fill };
                 textureBrush.Freeze();
                 materials.Children.Add(new DiffuseMaterial(textureBrush));
-                Color overlay = Color.FromArgb(52, tint.R, tint.G, tint.B);
-                materials.Children.Add(new EmissiveMaterial(new SolidColorBrush(overlay)));
             }
             else
             {
-                materials.Children.Add(new DiffuseMaterial(new SolidColorBrush(tint)));
+                materials.Children.Add(new DiffuseMaterial(new SolidColorBrush(Colors.LightGray)));
             }
             return new GeometryModel3D(mesh, materials) { BackMaterial = materials };
         }
