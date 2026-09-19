@@ -119,6 +119,48 @@ namespace TrackSwap.Protocol
             return errors;
         }
 
+        public static IReadOnlyList<string> ValidateSourceRoleDependencies(
+            RuntimeConfiguration? configuration,
+            IReadOnlyDictionary<string, string> sourceRoleTargets)
+        {
+            var errors = new List<string>();
+            if (configuration?.Routes == null || sourceRoleTargets == null)
+            {
+                return errors;
+            }
+
+            List<RouteConfiguration> enabledRoutes = configuration.Routes
+                .Where(route => route != null && route.Enabled && !route.PendingDeletion)
+                .ToList();
+            foreach (RouteConfiguration sourceRoute in enabledRoutes)
+            {
+                if (string.IsNullOrWhiteSpace(sourceRoute.SourceDevicePath) ||
+                    !sourceRoleTargets.TryGetValue(sourceRoute.SourceDevicePath, out string? sourceRoleTarget) ||
+                    string.IsNullOrWhiteSpace(sourceRoleTarget))
+                {
+                    continue;
+                }
+
+                RouteConfiguration? overridingRoute = enabledRoutes.FirstOrDefault(route =>
+                    !ReferenceEquals(route, sourceRoute) &&
+                    string.Equals(route.TargetDevicePath, sourceRoleTarget, StringComparison.Ordinal));
+                if (overridingRoute != null)
+                {
+                    string sourceName = string.IsNullOrWhiteSpace(sourceRoute.Name)
+                        ? sourceRoute.RouteId
+                        : sourceRoute.Name;
+                    string overridingName = string.IsNullOrWhiteSpace(overridingRoute.Name)
+                        ? overridingRoute.RouteId
+                        : overridingRoute.Name;
+                    errors.Add(
+                        $"Route '{sourceName}' uses a device assigned to '{sourceRoleTarget}', " +
+                        $"but route '{overridingName}' replaces that role. This would create a cross-route pose cascade.");
+                }
+            }
+
+            return errors;
+        }
+
         private static void ValidateCycles(IEnumerable<RouteConfiguration> routes, ICollection<string> errors)
         {
             var edges = routes

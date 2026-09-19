@@ -67,6 +67,36 @@ public sealed class ConfigurationValidatorTests
     }
 
     [Fact]
+    public void RejectsSourceWhoseRoleIsOverriddenByAnotherRoute()
+    {
+        var configuration = CreateConfiguration();
+        configuration.Routes[0].Name = "Knuckles to right";
+        configuration.Routes[0].SourceDevicePath = "/devices/valve/index-left";
+        configuration.Routes[0].TargetDevicePath = ProtocolConstants.RightHandRolePath;
+        configuration.Routes.Add(new RouteConfiguration
+        {
+            RouteId = "tracker-to-left",
+            Name = "Tracker to left",
+            VirtualDeviceSlot = 1,
+            SourceDevicePath = "/devices/lighthouse/tracker",
+            TargetDevicePath = ProtocolConstants.LeftHandRolePath,
+            Offset = PoseOffset.Identity()
+        });
+        var sourceRoles = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["/devices/valve/index-left"] = ProtocolConstants.LeftHandRolePath
+        };
+
+        IReadOnlyList<string> errors =
+            ConfigurationValidator.ValidateSourceRoleDependencies(configuration, sourceRoles);
+
+        Assert.Contains(errors, error =>
+            error.Contains("cross-route pose cascade", StringComparison.Ordinal) &&
+            error.Contains("Knuckles to right", StringComparison.Ordinal) &&
+            error.Contains("Tracker to left", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DriverControlHeaderContractIsStable()
     {
         Assert.Equal(0x50575354U, DriverControlProtocol.Magic);

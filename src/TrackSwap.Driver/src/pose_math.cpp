@@ -132,7 +132,7 @@ bool IsValidOffset(const RigidOffset& offset)
         quaternionLengthSquared >= 1e-12;
 }
 
-vr::DriverPose_t MakeInvalidPose()
+vr::DriverPose_t MakeInvalidPose(bool deviceIsConnected)
 {
     vr::DriverPose_t pose{};
     pose.qWorldFromDriverRotation = IdentityQuaternion();
@@ -140,7 +140,7 @@ vr::DriverPose_t MakeInvalidPose()
     pose.qRotation = IdentityQuaternion();
     pose.result = vr::TrackingResult_Uninitialized;
     pose.poseIsValid = false;
-    pose.deviceIsConnected = false;
+    pose.deviceIsConnected = deviceIsConnected;
     return pose;
 }
 

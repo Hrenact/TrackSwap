@@ -15,6 +15,15 @@ bool Near(double left, double right)
 
 int main()
 {
+    const vr::DriverPose_t unavailable = trackswap::pose_math::MakeInvalidPose(true);
+    if (unavailable.poseIsValid || !unavailable.deviceIsConnected ||
+        unavailable.result != vr::TrackingResult_Uninitialized ||
+        !Near(unavailable.qWorldFromDriverRotation.w, 1.0) ||
+        !Near(unavailable.qDriverFromHeadRotation.w, 1.0))
+    {
+        return EXIT_FAILURE;
+    }
+
     vr::TrackedDevicePose_t source{};
     source.bDeviceIsConnected = true;
     source.bPoseIsValid = true;

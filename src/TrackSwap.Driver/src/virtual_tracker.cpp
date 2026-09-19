@@ -243,7 +243,12 @@ void VirtualTracker::Update()
 
     if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid)
     {
-        lastPose_ = pose_math::MakeInvalidPose();
+        // Keep an enabled proxy registered while its physical source is absent.
+        // Reporting the proxy itself as disconnected can make SteamVR discard the
+        // active TrackingOverrides attachment, which does not reliably recover in
+        // the same session when the source returns. The pose remains deliberately
+        // invalid, so consumers cannot mistake the last sample for healthy tracking.
+        lastPose_ = pose_math::MakeInvalidPose(true);
         SetHealth(false);
     }
     else

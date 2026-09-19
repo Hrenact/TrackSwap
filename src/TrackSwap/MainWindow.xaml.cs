@@ -62,6 +62,8 @@ namespace TrackSwap
         private int _telemetryFailureCount;
         private string _previewModelDescription;
         private IReadOnlyList<DeviceOption> _onlinePhysicalDevices = Array.Empty<DeviceOption>();
+        private readonly Dictionary<string, string> _knownSourceRoleTargets =
+            new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly ObservableCollection<RouteListItem> _routeItems = new ObservableCollection<RouteListItem>();
         private readonly List<RouteConfiguration> _workingRoutes = new List<RouteConfiguration>();
         private RouteConfiguration _selectedRoute;
@@ -77,9 +79,17 @@ namespace TrackSwap
 
             RouteListBox.ItemsSource = _routeItems;
 
-            TargetComboBox.ItemsSource = BuildTargets(Array.Empty<DeviceOption>(), Array.Empty<TargetOption>());
+            TargetComboBox.ItemsSource = BuildTargets(
+                Array.Empty<DeviceOption>(),
+                Array.Empty<TargetOption>(),
+                includeRoleTargets: true,
+                includeConcreteDevices: true);
             TargetComboBox.SelectedIndex = 0;
-            RuntimeTargetComboBox.ItemsSource = BuildTargets(Array.Empty<DeviceOption>(), Array.Empty<TargetOption>());
+            RuntimeTargetComboBox.ItemsSource = BuildTargets(
+                Array.Empty<DeviceOption>(),
+                Array.Empty<TargetOption>(),
+                includeRoleTargets: false,
+                includeConcreteDevices: true);
             RuntimeTargetComboBox.SelectedIndex = 0;
             CalibrationNameTextBox.Text = "校准 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
             InitializePosePreview();
@@ -149,7 +159,16 @@ namespace TrackSwap
                 IReadOnlyList<TargetOption> savedDeviceTargets = ViewRawButton.IsEnabled
                     ? _settingsService.ReadKnownDeviceTargets(_settingsPath)
                     : Array.Empty<TargetOption>();
-                IReadOnlyList<TargetOption> targets = BuildTargets(onlineSources, savedDeviceTargets);
+                IReadOnlyList<TargetOption> targets = BuildTargets(
+                    onlineSources,
+                    savedDeviceTargets,
+                    includeRoleTargets: true,
+                    includeConcreteDevices: true);
+                IReadOnlyList<TargetOption> runtimeTargets = BuildTargets(
+                    onlineSources,
+                    savedDeviceTargets,
+                    includeRoleTargets: false,
+                    includeConcreteDevices: true);
                 TargetComboBox.ItemsSource = targets;
                 TargetOption selectedTarget = targets.FirstOrDefault(target =>
                     string.Equals(target.TargetPath, previousTargetPath, StringComparison.Ordinal))
@@ -165,7 +184,7 @@ namespace TrackSwap
                 SourceComboBox.SelectedItem = selectedSource ?? sources.FirstOrDefault();
                 PopulateRuntimeOptions(
                     onlineSources,
-                    targets,
+                    runtimeTargets,
                     previousRuntimeSourcePath,
                     previousRuntimeTargetPath);
                 RefreshOverrideList();
@@ -204,6 +223,12 @@ namespace TrackSwap
                     StringComparison.OrdinalIgnoreCase) < 0)
                 .ToList();
             _onlinePhysicalDevices = physicalSources;
+            foreach (DeviceOption device in physicalSources.Where(device =>
+                !string.IsNullOrWhiteSpace(device.DevicePath) &&
+                !string.IsNullOrWhiteSpace(device.RoleTargetPath)))
+            {
+                _knownSourceRoleTargets[device.DevicePath] = device.RoleTargetPath;
+            }
             RuntimeSourceComboBox.ItemsSource = physicalSources;
             RuntimeSourceComboBox.SelectedItem = physicalSources.FirstOrDefault(device =>
                 string.Equals(device.DevicePath, selectedSourcePath, StringComparison.Ordinal));
@@ -217,14 +242,22 @@ namespace TrackSwap
 
         private static IReadOnlyList<TargetOption> BuildTargets(
             IReadOnlyList<DeviceOption> onlineDevices,
-            IReadOnlyList<TargetOption> savedDeviceTargets)
+            IReadOnlyList<TargetOption> savedDeviceTargets,
+            bool includeRoleTargets,
+            bool includeConcreteDevices)
         {
-            var targets = new List<TargetOption>
+            var targets = new List<TargetOption>();
+            if (includeRoleTargets)
             {
-                new TargetOption("常用角色 · 右手", "/user/hand/right"),
-                new TargetOption("常用角色 · 左手", "/user/hand/left"),
-                new TargetOption("常用角色 · 头显", "/user/head")
-            };
+                targets.Add(new TargetOption("SteamVR 角色 · 右手", "/user/hand/right"));
+                targets.Add(new TargetOption("SteamVR 角色 · 左手", "/user/hand/left"));
+                targets.Add(new TargetOption("SteamVR 角色 · 头显", "/user/head"));
+            }
+
+            if (!includeConcreteDevices)
+            {
+                return targets;
+            }
 
             var knownPaths = new HashSet<string>(
                 targets.Select(target => target.TargetPath),
@@ -422,16 +455,19 @@ namespace TrackSwap
             RuntimeSourcePathText.Text = source?.DevicePath ?? "未选择物理来源";
             RuntimeTargetPathText.Text = target?.TargetPath ?? "未选择静态目标";
             ApplyRuntimeButton.IsEnabled = _runtimeStatus != null && _selectedRoute != null &&
-                !_selectedRoute.PendingDeletion && source != null && target != null;
+                !_selectedRoute.PendingDeletion && source != null && IsConcreteRuntimeTarget(target);
 
             RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
                 _selectedRoute != null && string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
             bool sourceWillChange = activeRoute != null && source != null &&
                 !string.Equals(activeRoute.SourceDevicePath, source.DevicePath, StringComparison.Ordinal);
-            RuntimeRouteChangeWarningText.Text = sourceWillChange
+            bool legacyRoleTarget = target != null && !IsConcreteRuntimeTarget(target);
+            RuntimeRouteChangeWarningText.Text = legacyRoleTarget
+                ? "当前目标来自旧角色配置。请选择一个明确的在线实体设备后再应用。"
+                : sourceWillChange
                 ? "注意：应用后物理来源将从 “" + activeRoute.SourceDevicePath + "” 切换为 “" + source.DevicePath + "”。"
                 : string.Empty;
-            RuntimeRouteChangeWarningText.Visibility = sourceWillChange
+            RuntimeRouteChangeWarningText.Visibility = legacyRoleTarget || sourceWillChange
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             if (_selectedRoute != null)
@@ -454,6 +490,8 @@ namespace TrackSwap
                 RouteSyncText.Foreground = FindBrush(_selectedRoute.PendingDeletion || !synchronized ? "WarningBrush" : "SuccessBrush");
                 SelectedRouteSummaryText.Text = _selectedRoute.PendingDeletion
                     ? "该配置仍保持输出；可通过右键菜单取消删除。"
+                    : legacyRoleTarget
+                    ? "旧配置使用 SteamVR 角色目标；请选择明确的在线实体设备完成迁移。"
                     : source == null || target == null
                     ? "选择来源与目标以完成配置。"
                     : source.DisplayName + " 提供定位，" + target.DisplayName + " 保留输入。";
@@ -621,7 +659,9 @@ namespace TrackSwap
                 TargetOption target = targets.FirstOrDefault(candidate => string.Equals(candidate.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
                 if (target == null && !string.IsNullOrWhiteSpace(route.TargetDevicePath))
                 {
-                    target = new TargetOption("已配置目标", route.TargetDevicePath);
+                    target = new TargetOption(
+                        BuildConfiguredRuntimeTargetName(route.TargetDevicePath),
+                        route.TargetDevicePath);
                     targets.Add(target);
                     RuntimeTargetComboBox.ItemsSource = targets;
                 }
@@ -655,6 +695,30 @@ namespace TrackSwap
         private static string FormatNumber(double value)
         {
             return value.ToString("G9", CultureInfo.InvariantCulture);
+        }
+
+        private static bool IsConcreteRuntimeTarget(TargetOption target)
+        {
+            return target != null &&
+                !string.IsNullOrWhiteSpace(target.TargetPath) &&
+                target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal);
+        }
+
+        private static string BuildConfiguredRuntimeTargetName(string targetPath)
+        {
+            if (string.Equals(targetPath, ProtocolConstants.RightHandRolePath, StringComparison.Ordinal))
+            {
+                return "旧角色目标 · 右手（请改选实体设备）";
+            }
+            if (string.Equals(targetPath, ProtocolConstants.LeftHandRolePath, StringComparison.Ordinal))
+            {
+                return "旧角色目标 · 左手（请改选实体设备）";
+            }
+            if (string.Equals(targetPath, ProtocolConstants.HeadRolePath, StringComparison.Ordinal))
+            {
+                return "旧角色目标 · 头显（请改选实体设备）";
+            }
+            return "已配置目标";
         }
 
         private void AddRouteButton_Click(object sender, RoutedEventArgs e)
@@ -849,6 +913,42 @@ namespace TrackSwap
                 return;
             }
             bool enabling = !_selectedRoute.Enabled;
+            if (enabling)
+            {
+                if (string.IsNullOrWhiteSpace(_selectedRoute.TargetDevicePath) ||
+                    !_selectedRoute.TargetDevicePath.StartsWith("/devices/", StringComparison.Ordinal))
+                {
+                    MessageBox.Show(
+                        this,
+                        "该配置仍使用旧的 SteamVR 角色目标。请先选择一个明确的在线实体设备并应用，再启用配置。",
+                        "需要迁移目标",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
+                _selectedRoute.Enabled = true;
+                var candidate = new RuntimeConfiguration
+                {
+                    Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                    Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList()
+                };
+                IReadOnlyList<string> dependencyErrors =
+                    ConfigurationValidator.ValidateSourceRoleDependencies(
+                        candidate,
+                        _knownSourceRoleTargets);
+                _selectedRoute.Enabled = false;
+                if (dependencyErrors.Count != 0)
+                {
+                    MessageBox.Show(
+                        this,
+                        "无法启用：该配置会让一条路由读取另一条路由已经覆盖的设备角色，形成级联移动。\n\n" +
+                        string.Join(Environment.NewLine, dependencyErrors),
+                        "检测到跨路由位姿级联",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
+            }
             if (!enabling && _statusService.IsRunning() && MessageBox.Show(
                     this,
                     "停用后虚拟代理会立即停止输出，但 SteamVR 静态映射仍然生效，因此对应目标会暂时失去定位。是否继续？",
@@ -1222,6 +1322,10 @@ namespace TrackSwap
         private async void RuntimeRefreshButton_Click(object sender, RoutedEventArgs e)
         {
             RefreshAll();
+            if (_selectedRoute != null)
+            {
+                ShowSelectedRoute(_selectedRoute);
+            }
             await RefreshStatusAsync();
         }
 
@@ -1318,9 +1422,22 @@ namespace TrackSwap
                 Routes = _workingRoutes.Select(CloneRoute).ToList()
             };
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+            errors = errors
+                .Concat(ConfigurationValidator.ValidateSourceRoleDependencies(
+                    configuration,
+                    _knownSourceRoleTargets))
+                .ToList();
             if (errors.Count != 0)
             {
-                MessageBox.Show(this, string.Join(Environment.NewLine, errors), "运行时配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(
+                    this,
+                    errors.Any(error => error.IndexOf("cross-route pose cascade", StringComparison.Ordinal) >= 0)
+                        ? "无法应用：该配置会让一条路由读取另一条路由已经覆盖的设备角色，形成级联移动。\n\n" +
+                            string.Join(Environment.NewLine, errors)
+                        : string.Join(Environment.NewLine, errors),
+                    "运行时配置无效",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
                 return;
             }
 
