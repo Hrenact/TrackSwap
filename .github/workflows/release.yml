@@ -33,47 +33,30 @@ jobs:
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          global-json-file: global.json
 
-      - name: Restore
-        run: dotnet restore TrackSwap.sln
-
-      - name: Build Release
-        run: dotnet build TrackSwap.sln -c Release --no-restore
-
-      - name: Package
-        id: package
+      - name: Build complete release package
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          $packageName = "TrackSwap-$tag-win-x64"
-          $packageDirectory = Join-Path $env:RUNNER_TEMP $packageName
-          $archivePath = Join-Path $env:GITHUB_WORKSPACE "$packageName.zip"
-          $checksumPath = Join-Path $env:GITHUB_WORKSPACE "$packageName.sha256"
-          $outputDirectory = "src/TrackSwap/bin/Release/net48"
+          .\scripts\Build-Release.ps1 -Version "${{ github.ref_name }}"
 
-          New-Item -ItemType Directory -Path $packageDirectory | Out-Null
-          Copy-Item -LiteralPath "$outputDirectory/TrackSwap.exe" -Destination $packageDirectory
-          Copy-Item -LiteralPath "$outputDirectory/TrackSwap.exe.config" -Destination $packageDirectory
-          Copy-Item -LiteralPath "$outputDirectory/Newtonsoft.Json.dll" -Destination $packageDirectory
-          Copy-Item -LiteralPath "README.md" -Destination $packageDirectory
-          Copy-Item -LiteralPath "LICENSE" -Destination $packageDirectory
-          Copy-Item -LiteralPath "THIRD-PARTY-NOTICES.md" -Destination $packageDirectory
-
-          Compress-Archive -Path "$packageDirectory/*" -DestinationPath $archivePath
-          $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $packageName.zip" | Set-Content -LiteralPath $checksumPath -Encoding ascii
-
-          "archive=$archivePath" >> $env:GITHUB_OUTPUT
-          "checksum=$checksumPath" >> $env:GITHUB_OUTPUT
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: TrackSwap-${{ github.ref_name }}-win-x64
+          path: |
+            artifacts/release/${{ github.ref_name }}/*.zip
+            artifacts/release/${{ github.ref_name }}/*.sha256
 
       - name: Publish GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $zip = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*.zip" | Select-Object -First 1
+          $checksum = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*.sha256" | Select-Object -First 1
           gh release create "${{ github.ref_name }}" `
-            "${{ steps.package.outputs.archive }}" `
-            "${{ steps.package.outputs.checksum }}" `
+            $zip.FullName `
+            $checksum.FullName `
             --title "TrackSwap ${{ github.ref_name }}" `
             --generate-notes
