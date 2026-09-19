@@ -66,7 +66,7 @@ TrackSwap 会阻止来源覆盖自身、循环覆盖、目标冲突，以及“�
 - 3D 预览始终显示当前配置的来源、虚拟输出与目标
 - 多条目标互不冲突的路由可以同时运行
 
-首次绑定、目标变更、停用清理和删除清理都可能需要修改静态引导映射，因此应在 SteamVR 完全退出时执行。
+SteamVR 运行时删除配置会先进入“待删除”状态，代理继续输出，避免目标立即失去定位。完全退出 SteamVR 后，TrackSwap 会自动清理静态绑定并最终删除；完成前可通过右键菜单取消删除。首次绑定、目标变更和停用清理仍可能要求 SteamVR 完全退出。
 
 ## 备份与恢复
 
@@ -107,8 +107,8 @@ steamvr.vrsettings.trackswap-20260917-114817-123.backup
 
 项目使用 WPF、.NET Framework 4.8 和 Newtonsoft.Json。
 
-`main` 保留稳定的 v001 历史。v002 已发布；v003 的多路由扩展继续在
-`v002-runtime` 分支开发，架构契约见
+`main` 保留稳定的 v001 历史。v002、v003 已发布；后续开发继续在
+`v002-runtime` 分支进行，架构契约见
 [`docs/v002-architecture.md`](docs/v002-architecture.md)，驱动开发闭环见
 [`docs/driver-development.md`](docs/driver-development.md)。普通构建不会安装或注册驱动。
 

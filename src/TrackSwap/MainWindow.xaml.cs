@@ -53,6 +53,8 @@ namespace TrackSwap
         private readonly List<RouteConfiguration> _workingRoutes = new List<RouteConfiguration>();
         private RouteConfiguration _selectedRoute;
         private bool _showingSettings;
+        private bool _pendingDeletionBusy;
+        private bool _pendingDeletionAutoRetrySuppressed;
         private long _displayedDriverAppliedRevision = long.MinValue;
         private bool _displayedDriverConnected;
 
@@ -284,6 +286,12 @@ namespace TrackSwap
                 {
                     await RefreshCalibrationProfilesAsync();
                 }
+                if (!_statusService.IsRunning() &&
+                    !_pendingDeletionAutoRetrySuppressed &&
+                    status.Configuration?.Routes?.Any(route => route.PendingDeletion) == true)
+                {
+                    await FinalizePendingDeletionsAsync();
+                }
             }
             catch (Exception exception) when (
                 exception is IOException ||
@@ -393,7 +401,8 @@ namespace TrackSwap
             TargetOption target = RuntimeTargetComboBox.SelectedItem as TargetOption;
             RuntimeSourcePathText.Text = source?.DevicePath ?? "未选择物理来源";
             RuntimeTargetPathText.Text = target?.TargetPath ?? "未选择静态目标";
-            ApplyRuntimeButton.IsEnabled = _runtimeStatus != null && _selectedRoute != null && source != null && target != null;
+            ApplyRuntimeButton.IsEnabled = _runtimeStatus != null && _selectedRoute != null &&
+                !_selectedRoute.PendingDeletion && source != null && target != null;
 
             RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
                 _selectedRoute != null && string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
@@ -415,13 +424,17 @@ namespace TrackSwap
                         string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot), StringComparison.Ordinal) &&
                         string.Equals(mapping.TargetPath, _selectedRoute.TargetDevicePath, StringComparison.Ordinal));
                 bool steamVrRunning = _statusService.IsRunning();
-                string state = !_selectedRoute.Enabled ? "已停用" : !mapped ? "待初始化" : !steamVrRunning ? "已配置" : applied ? "已应用" : "待应用";
+                string state = _selectedRoute.PendingDeletion ? "待删除" : !_selectedRoute.Enabled ? "已停用" : !mapped ? "待初始化" : !steamVrRunning ? "已配置" : applied ? "已应用" : "待应用";
                 SelectedRouteStateText.Text = state;
                 bool synchronized = mapped && (!steamVrRunning || applied);
-                SelectedRouteStateText.Foreground = FindBrush(!_selectedRoute.Enabled ? "MutedTextBrush" : synchronized ? "SuccessBrush" : "WarningBrush");
-                RouteSyncText.Text = synchronized ? "配置已同步" : !mapped ? "需要初始化静态映射" : "配置待同步";
-                RouteSyncText.Foreground = FindBrush(synchronized ? "SuccessBrush" : "WarningBrush");
-                SelectedRouteSummaryText.Text = source == null || target == null
+                SelectedRouteStateText.Foreground = FindBrush(_selectedRoute.PendingDeletion ? "WarningBrush" : !_selectedRoute.Enabled ? "MutedTextBrush" : synchronized ? "SuccessBrush" : "WarningBrush");
+                RouteSyncText.Text = _selectedRoute.PendingDeletion
+                    ? "退出 SteamVR 后将自动清理绑定并删除"
+                    : synchronized ? "配置已同步" : !mapped ? "需要初始化静态映射" : "配置待同步";
+                RouteSyncText.Foreground = FindBrush(_selectedRoute.PendingDeletion || !synchronized ? "WarningBrush" : "SuccessBrush");
+                SelectedRouteSummaryText.Text = _selectedRoute.PendingDeletion
+                    ? "该配置仍保持输出；可通过右键菜单取消删除。"
+                    : source == null || target == null
                     ? "选择来源与目标以完成配置。"
                     : source.DisplayName + " 提供定位，" + target.DisplayName + " 保留输入。";
             }
@@ -453,7 +466,8 @@ namespace TrackSwap
         private void UpdateCalibrationControls()
         {
             CalibrationProfile profile = CalibrationProfileComboBox.SelectedItem as CalibrationProfile;
-            bool runtimeReady = _runtimeStatus != null && !_calibrationBusy;
+            bool runtimeReady = _runtimeStatus != null && !_calibrationBusy &&
+                _selectedRoute?.PendingDeletion != true;
             CaptureCalibrationButton.IsEnabled = runtimeReady &&
                 RuntimeSourceComboBox.SelectedItem is DeviceOption &&
                 CalibrationTargetComboBox.SelectedItem is DeviceOption &&
@@ -517,6 +531,7 @@ namespace TrackSwap
                 RouteId = route.RouteId,
                 Name = route.Name,
                 Enabled = route.Enabled,
+                PendingDeletion = route.PendingDeletion,
                 VirtualDeviceSlot = route.VirtualDeviceSlot,
                 SourceDevicePath = route.SourceDevicePath,
                 TargetDevicePath = route.TargetDevicePath,
@@ -549,8 +564,8 @@ namespace TrackSwap
                 bool mapped = overrides.Any(mapping =>
                     string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot), StringComparison.Ordinal) &&
                     string.Equals(mapping.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
-                string state = !route.Enabled ? "已停用" : !mapped ? "待初始化" : !steamVrRunning ? "已配置" : driverApplied ? "已应用" : "等待驱动";
-                Brush brush = FindBrush(!route.Enabled ? "MutedTextBrush" : mapped && (!steamVrRunning || driverApplied) ? "SuccessBrush" : "WarningBrush");
+                string state = route.PendingDeletion ? "待删除" : !route.Enabled ? "已停用" : !mapped ? "待初始化" : !steamVrRunning ? "已配置" : driverApplied ? "已应用" : "等待驱动";
+                Brush brush = FindBrush(route.PendingDeletion ? "WarningBrush" : !route.Enabled ? "MutedTextBrush" : mapped && (!steamVrRunning || driverApplied) ? "SuccessBrush" : "WarningBrush");
                 _routeItems.Add(new RouteListItem(route, state, brush));
             }
             RouteListItem selection = _routeItems.FirstOrDefault(item =>
@@ -596,6 +611,9 @@ namespace TrackSwap
                 RuntimeProxyText.Text = ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
                 SelectedRouteNameText.Text = route.Name;
                 ToggleSelectedRouteButton.Content = route.Enabled ? "停用" : "启用";
+                ToggleSelectedRouteButton.IsEnabled = !route.PendingDeletion;
+                RuntimeSourceComboBox.IsEnabled = !route.PendingDeletion;
+                RuntimeTargetComboBox.IsEnabled = !route.PendingDeletion;
             }
             finally
             {
@@ -679,6 +697,7 @@ namespace TrackSwap
             }
             _showingSettings = false;
             ShowSelectedRoute(item.Route);
+            UpdateRouteContextMenu();
         }
 
         private void RouteListBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -691,6 +710,7 @@ namespace TrackSwap
             if (current is ListBoxItem item)
             {
                 item.IsSelected = true;
+                UpdateRouteContextMenu();
             }
         }
 
@@ -708,8 +728,20 @@ namespace TrackSwap
                 MessageBox.Show(this, "请先选择一条配置。", "管理配置", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
+            UpdateRouteContextMenu();
             RouteListBox.ContextMenu.PlacementTarget = RouteListBox;
             RouteListBox.ContextMenu.IsOpen = true;
+        }
+
+        private void UpdateRouteContextMenu()
+        {
+            bool pendingDeletion = _selectedRoute?.PendingDeletion == true;
+            RenameRouteMenuItem.IsEnabled = _selectedRoute != null && !pendingDeletion;
+            ToggleRouteMenuItem.IsEnabled = _selectedRoute != null && !pendingDeletion;
+            DeleteRouteMenuItem.Header = pendingDeletion ? "取消删除" : "删除配置…";
+            DeleteRouteMenuItem.Foreground = pendingDeletion
+                ? FindBrush("TextBrush")
+                : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF6A73"));
         }
 
         private void RenameRouteMenuItem_Click(object sender, RoutedEventArgs e)
@@ -790,6 +822,11 @@ namespace TrackSwap
             {
                 return;
             }
+            if (_runtimeStatus == null)
+            {
+                MessageBox.Show(this, "Runtime 离线时无法安全记录待删除状态。请先启动 Runtime。", "无法删除", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             bool enabling = !_selectedRoute.Enabled;
             if (!enabling && _statusService.IsRunning() && MessageBox.Show(
                     this,
@@ -829,37 +866,47 @@ namespace TrackSwap
 
         private async void DeleteRouteMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedRoute == null || MessageBox.Show(
+            if (_selectedRoute == null)
+            {
+                return;
+            }
+
+            if (_selectedRoute.PendingDeletion)
+            {
+                if (!_statusService.IsRunning() && !string.IsNullOrWhiteSpace(_settingsPath))
+                {
+                    string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                    bool mapped = _settingsService.ReadOverrides(_settingsPath).Any(mapping =>
+                        string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal));
+                    if (!mapped && IsRouteComplete(_selectedRoute))
+                    {
+                        _settingsService.ApplyOverride(_settingsPath, proxyPath, _selectedRoute.TargetDevicePath);
+                        RefreshOverrideList();
+                    }
+                }
+                _selectedRoute.PendingDeletion = false;
+                _pendingDeletionAutoRetrySuppressed = false;
+                await PersistWorkingRoutesAsync();
+                return;
+            }
+
+            bool steamVrRunning = _statusService.IsRunning();
+            string message = steamVrRunning
+                ? "SteamVR 正在运行。配置会先标记为“待删除”并继续输出，避免目标立即失去定位。完全退出 SteamVR 后，TrackSwap 将自动清理静态绑定并完成删除。\n\n已保存的校准档案不会删除。"
+                : "确定删除配置 “" + _selectedRoute.Name + "”？TrackSwap 将清理对应的静态绑定；已保存的校准档案不会删除。";
+            if (MessageBox.Show(
                     this,
-                    "确定删除配置 “" + _selectedRoute.Name + "”？已保存的校准档案不会删除。",
-                    "删除配置",
+                    message,
+                    steamVrRunning ? "标记为待删除" : "删除配置",
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Warning) != MessageBoxResult.OK)
             {
                 return;
             }
-            RouteConfiguration removed = _selectedRoute;
-            _workingRoutes.Remove(removed);
-            _selectedRoute = null;
-            if (!_statusService.IsRunning() && IsRouteComplete(removed) && !string.IsNullOrWhiteSpace(_settingsPath))
-            {
-                string proxyPath = ProtocolConstants.GetVirtualDevicePath(removed.VirtualDeviceSlot);
-                IReadOnlyList<TrackingOverrideOption> overrides = _settingsService.ReadOverrides(_settingsPath);
-                if (overrides.Any(mapping => string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal)))
-                {
-                    _settingsService.RemoveOverride(_settingsPath, proxyPath);
-                    RefreshOverrideList();
-                }
-            }
-            if (IsRouteComplete(removed) && _runtimeStatus != null)
-            {
-                await PersistWorkingRoutesAsync();
-            }
-            else
-            {
-                RefreshRouteList();
-                ShowSelectedRoute(_workingRoutes.FirstOrDefault());
-            }
+
+            _selectedRoute.PendingDeletion = true;
+            _pendingDeletionAutoRetrySuppressed = false;
+            await PersistWorkingRoutesAsync();
         }
 
         private async Task PersistWorkingRoutesAsync()
@@ -890,6 +937,83 @@ namespace TrackSwap
             catch (Exception exception)
             {
                 MessageBox.Show(this, exception.Message, "保存配置失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task FinalizePendingDeletionsAsync()
+        {
+            if (_pendingDeletionBusy || _statusService.IsRunning() || _runtimeStatus == null)
+            {
+                return;
+            }
+
+            List<RouteConfiguration> pendingRoutes = _workingRoutes
+                .Where(route => route.PendingDeletion)
+                .ToList();
+            if (pendingRoutes.Count == 0)
+            {
+                return;
+            }
+
+            _pendingDeletionBusy = true;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_settingsPath) || !File.Exists(_settingsPath))
+                {
+                    throw new InvalidOperationException("未找到 steamvr.vrsettings，无法清理待删除配置的静态绑定。");
+                }
+
+                IReadOnlyList<TrackingOverrideOption> overrides = _settingsService.ReadOverrides(_settingsPath);
+                foreach (RouteConfiguration route in pendingRoutes)
+                {
+                    string proxyPath = ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot);
+                    if (overrides.Any(mapping => string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal)))
+                    {
+                        _settingsService.RemoveOverride(_settingsPath, proxyPath);
+                    }
+                }
+                RefreshOverrideList();
+
+                var configuration = new RuntimeConfiguration
+                {
+                    Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                    Routes = _workingRoutes
+                        .Where(route => !route.PendingDeletion && IsRouteComplete(route))
+                        .Select(CloneRoute)
+                        .ToList()
+                };
+                IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+                if (errors.Count != 0)
+                {
+                    throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
+                }
+
+                await _runtimeControlService.ApplyConfigurationAsync(configuration);
+                _workingRoutes.RemoveAll(route => route.PendingDeletion);
+                if (_selectedRoute?.PendingDeletion == true)
+                {
+                    _selectedRoute = null;
+                }
+                _loadedRuntimeRevision = -1;
+                _runtimeEditorInitialized = false;
+                RuntimeStatusSnapshot refreshed = await _runtimeControlService.GetStatusAsync();
+                _runtimeStatus = refreshed;
+                ShowRuntimeOnline(refreshed);
+                UpdateRouteContextMenu();
+            }
+            catch (Exception exception)
+            {
+                _pendingDeletionAutoRetrySuppressed = true;
+                MessageBox.Show(
+                    this,
+                    "待删除配置尚未完成，状态已保留，可在修复问题后重新启动 TrackSwap 重试。\n\n" + exception.Message,
+                    "删除尚未完成",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+            finally
+            {
+                _pendingDeletionBusy = false;
             }
         }
 

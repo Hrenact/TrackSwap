@@ -5,6 +5,7 @@ namespace TrackSwap.Protocol
         public string RouteId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public bool Enabled { get; set; } = true;
+        public bool PendingDeletion { get; set; }
         public int VirtualDeviceSlot { get; set; }
 
         /// <summary>Exact registered device path returned by OpenVR.</summary>

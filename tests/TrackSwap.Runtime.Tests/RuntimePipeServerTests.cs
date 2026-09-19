@@ -43,6 +43,7 @@ public sealed class RuntimePipeServerTests
                     {
                         RouteId = "left",
                         Name = "左手定位",
+                        PendingDeletion = true,
                         VirtualDeviceSlot = 1,
                         SourceDevicePath = "/devices/source/left",
                         TargetDevicePath = ProtocolConstants.LeftHandRolePath,
@@ -59,6 +60,15 @@ public sealed class RuntimePipeServerTests
             }, TimeSpan.FromSeconds(2), pipeName);
 
             Assert.Equal("configurationApplied", response.MessageType);
+            MessageEnvelope statusResponse = RuntimeControlClient.Send(new MessageEnvelope
+            {
+                MessageType = "getStatus",
+                RequestId = Guid.NewGuid().ToString("N"),
+                PayloadJson = "{}"
+            }, TimeSpan.FromSeconds(2), pipeName);
+            RuntimeStatusSnapshot? status = JsonConvert.DeserializeObject<RuntimeStatusSnapshot>(statusResponse.PayloadJson);
+            Assert.NotNull(status);
+            Assert.True(status.Configuration.Routes.Single(route => route.RouteId == "left").PendingDeletion);
             cancellation.Cancel();
             try
             {
