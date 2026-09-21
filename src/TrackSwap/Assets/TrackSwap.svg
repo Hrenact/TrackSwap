@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">TrackSwap</title>
+  <desc id="description">A centered triangular tracking device with a pose locator.</desc>
+
+  <rect x="8" y="8" width="496" height="496" rx="28" fill="#121212"/>
+
+  <path
+    d="M256 86 C236 86 221 98 211 116 L98 312 C85 335 85 359 97 379 C109 399 129 410 153 410 H359 C383 410 403 399 415 379 C427 359 427 335 414 312 L301 116 C291 98 276 86 256 86 Z"
+    fill="#121212"
+    stroke="#5B9CFF"
+    stroke-width="30"
+    stroke-linejoin="round"/>
+
+  <g fill="#D6D6D6">
+    <rect x="244" y="139" width="24" height="58" rx="12"/>
+    <rect x="169" y="319" width="24" height="58" rx="12" transform="rotate(56 181 348)"/>
+    <rect x="319" y="319" width="24" height="58" rx="12" transform="rotate(-56 331 348)"/>
+  </g>
+
+  <circle cx="256" cy="263" r="32" fill="#4ED18B"/>
+</svg>

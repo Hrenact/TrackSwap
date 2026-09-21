@@ -9,14 +9,14 @@
     <AssemblyName>TrackSwap</AssemblyName>
     <RootNamespace>TrackSwap</RootNamespace>
     <AssemblyTitle>TrackSwap</AssemblyTitle>
-    <Product>TrackSwap v004</Product>
+    <Product>TrackSwap v005</Product>
     <Description>SteamVR 位姿映射管理工具</Description>
     <Authors>Hrenact</Authors>
     <Copyright>Copyright © 2026 Hrenact</Copyright>
-    <AssemblyVersion>0.0.4.0</AssemblyVersion>
-    <FileVersion>0.0.4.0</FileVersion>
-    <InformationalVersion>v004</InformationalVersion>
-    <ApplicationIcon />
+    <AssemblyVersion>0.0.5.0</AssemblyVersion>
+    <FileVersion>0.0.5.0</FileVersion>
+    <InformationalVersion>v005</InformationalVersion>
+    <ApplicationIcon>Assets\TrackSwap.ico</ApplicationIcon>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
 
@@ -26,5 +26,21 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TrackSwap.Protocol\TrackSwap.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\TrackSwap.ico" />
+    <Content Include="TrackSwap.vrmanifest">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <None Include="Assets\TrackSwap.svg" />
+    <None Include="Assets\TrackSwap-16.png" />
+    <None Include="Assets\TrackSwap-24.png" />
+    <None Include="Assets\TrackSwap-32.png" />
+    <None Include="Assets\TrackSwap-48.png" />
+    <None Include="Assets\TrackSwap-64.png" />
+    <None Include="Assets\TrackSwap-128.png" />
+    <None Include="Assets\TrackSwap-256.png" />
+    <None Include="Assets\TrackSwap-1024.png" />
   </ItemGroup>
 </Project>

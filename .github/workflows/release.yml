@@ -35,10 +35,14 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Build complete release package
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build complete release package and installer
         shell: pwsh
         run: |
-          .\scripts\Build-Release.ps1 -Version "${{ github.ref_name }}"
+          .\scripts\Build-Installer.ps1 -Version "${{ github.ref_name }}"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v6
@@ -46,6 +50,7 @@ jobs:
           name: TrackSwap-${{ github.ref_name }}-win-x64
           path: |
             artifacts/release/${{ github.ref_name }}/*.zip
+            artifacts/release/${{ github.ref_name }}/*.exe
             artifacts/release/${{ github.ref_name }}/*.sha256
 
       - name: Publish GitHub Release
@@ -54,11 +59,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $zip = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*.zip" | Select-Object -First 1
-          $checksum = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*.sha256" | Select-Object -First 1
+          $zipChecksum = Get-Item "$($zip.FullName).sha256"
+          $installer = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*-setup-win-x64.exe" | Select-Object -First 1
+          $installerChecksum = Get-Item "$($installer.FullName).sha256"
           $notes = "docs/releases/${{ github.ref_name }}.md"
           $arguments = @(
             "release", "create", "${{ github.ref_name }}",
-            $zip.FullName, $checksum.FullName,
+            $zip.FullName, $zipChecksum.FullName,
+            $installer.FullName, $installerChecksum.FullName,
             "--title", "TrackSwap ${{ github.ref_name }}"
           )
           if (Test-Path -LiteralPath $notes) {

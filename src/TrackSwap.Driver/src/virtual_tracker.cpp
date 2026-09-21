@@ -139,6 +139,42 @@ vr::EVRInitError VirtualTracker::Activate(std::uint32_t objectId)
         "{trackswap}trackswap_hidden_proxy");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_tracker");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceOff_String,
+        "{trackswap}/icons/trackswap_device_v3_off.png");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceSearching_String,
+        "{trackswap}/icons/trackswap_device_v3_searching.png");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceSearchingAlert_String,
+        "{trackswap}/icons/trackswap_device_v3_searching_alert.png");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceReady_String,
+        "{trackswap}/icons/trackswap_device_v3_ready.png");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceReadyAlert_String,
+        "{trackswap}/icons/trackswap_device_v3_ready_alert.png");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceNotReady_String,
+        "{trackswap}/icons/trackswap_device_v3_not_ready.png");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceStandby_String,
+        "{trackswap}/icons/trackswap_device_v3_standby.png");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceAlertLow_String,
+        "{trackswap}/icons/trackswap_device_v3_alert_low.png");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_NamedIconPathDeviceStandbyAlert_String,
+        "{trackswap}/icons/trackswap_device_v3_standby_alert.png");
     vr::VRProperties()->SetBoolProperty(properties, vr::Prop_WillDriftInYaw_Bool, false);
     vr::VRProperties()->SetBoolProperty(properties, vr::Prop_DeviceIsWireless_Bool, false);
     vr::VRProperties()->SetBoolProperty(properties, vr::Prop_NeverTracked_Bool, false);

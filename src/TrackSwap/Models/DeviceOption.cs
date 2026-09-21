@@ -1,3 +1,5 @@
+using System;
+
 namespace TrackSwap.Models
 {
     public enum TrackedDeviceKind
@@ -45,6 +47,26 @@ namespace TrackSwap.Models
         public string RenderModelName { get; }
 
         public TrackedDeviceKind DeviceKind { get; }
+
+        public static string BaseDisplayName(string displayName)
+        {
+            string value = displayName ?? string.Empty;
+            string[] prefixes = { "当前 · ", "在线 · ", "离线 · ", "历史 · ", "在线设备 · ", "已保存设备 · " };
+            foreach (string prefix in prefixes)
+            {
+                if (value.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    value = value.Substring(prefix.Length);
+                    break;
+                }
+            }
+            const string oldOnlineSuffix = " · 在线";
+            if (value.EndsWith(oldOnlineSuffix, StringComparison.Ordinal))
+            {
+                value = value.Substring(0, value.Length - oldOnlineSuffix.Length);
+            }
+            return value;
+        }
 
         public override string ToString()
         {

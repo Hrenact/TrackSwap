@@ -2,7 +2,7 @@
 
 TrackSwap 是一个轻量的 Windows 工具，用来管理 SteamVR 的设备位姿映射。
 
-当前版本：**TrackSwap v004**
+当前版本：**TrackSwap v005**
 
 简单来说，它可以让一个设备负责提供位置和旋转数据，同时继续使用另一个设备的按键输入。例如：
 
@@ -23,21 +23,27 @@ TrackSwap 只调整定位来源，不会把来源设备的按键映射给目标�
 
 ## 安装与启动
 
-TrackSwap 不需要安装。解压完整程序目录后，先完全退出 SteamVR，以
-PowerShell 运行 `scripts\Install-Driver.ps1` 注册随附驱动，再启动 SteamVR、
-`runtime\TrackSwap.Runtime.exe --run` 和 `TrackSwap.exe`。UI 也能在 Runtime 未运行时
-从程序目录启动它。
+推荐使用 GitHub Release 提供的 Windows 安装程序。安装前先完全退出 SteamVR，安装向导会
+复制完整程序、注册随附驱动，并可按需创建桌面快捷方式。安装完成后可直接打开 TrackSwap。
+Runtime 会按照“设置 → 高级选项 → Runtime 启停行为”自动由 TrackSwap 或 SteamVR
+会话托管，无需日常手动启动。
 
-请使用 GitHub Release 提供的完整压缩包，不要只复制 EXE。首次启动时，程序会自动寻找本机 SteamVR 的配置文件和运行目录。
+如需连同控制界面一起自动管理，可在“设置 → 高级选项”启用
+“TrackSwap 跟随 SteamVR 启停”。TrackSwap 会注册到 SteamVR 的启动应用列表；首次注册
+尚未被当前 SteamVR 会话载入时，驱动与 Runtime 会为本次会话补充启动。
+
+仍需便携使用时，可以下载完整 ZIP；不要只复制 EXE。解压后完全退出 SteamVR，以
+PowerShell 运行 `scripts\Install-Driver.ps1` 注册驱动。首次启动时，程序会自动寻找本机
+SteamVR 的配置文件和运行目录。
 
 ## 使用方法
 
 1. 打开需要使用的手柄、Tracker 和头显。
-2. 启动 SteamVR，等待设备全部连接，然后启动 Runtime 与 TrackSwap。
+2. 启动 SteamVR，等待设备全部连接，然后启动 TrackSwap。
 3. 点击侧边栏“新增”，为路由选择物理位姿来源和替换目标。
 4. 根据需要编辑局部位置、旋转偏移，或在静态覆盖尚未启用时执行自动校准。
 5. 点击“应用更改”。Runtime 会立即保存路由并让对应虚拟代理开始跟随来源。
-6. 如果界面提示代理尚未绑定目标，请完全退出 SteamVR，并对该配置再次点击“应用更改”。
+6. 如果界面提示“待映射”，请保持 TrackSwap 打开并完全退出 SteamVR；程序会自动写入静态映射，无需再次点击“应用更改”。
 7. 重新启动 SteamVR，检查定位与原目标设备的按键输入是否符合预期。
 
 代理与目标完成首次静态绑定后，切换物理来源和修改偏移可以在 SteamVR 运行期间立即生效，不需要重启。写入、移除或更换 `TrackingOverrides` 引导映射仍然要求 SteamVR 完全退出。
@@ -109,7 +115,7 @@ steamvr.vrsettings.trackswap-20260917-114817-123.backup
 
 项目使用 WPF、.NET Framework 4.8 和 Newtonsoft.Json。
 
-`main` 保留稳定的 v001 历史。v002、v003、v004 已发布；后续开发继续在
+`main` 保留稳定的 v001 历史。v002、v003、v004、v005 已发布；后续开发继续在
 `v002-runtime` 分支进行，架构契约见
 [`docs/v002-architecture.md`](docs/v002-architecture.md)，驱动开发闭环见
 [`docs/driver-development.md`](docs/driver-development.md)。普通构建不会安装或注册驱动。
@@ -125,8 +131,13 @@ dotnet run --project src\TrackSwap.Runtime\TrackSwap.Runtime.csproj -c Release -
 ```
 
 Runtime 默认把原子配置快照保存在
-`%LOCALAPPDATA%\TrackSwap\runtime-config.json`。UI 也可在离线状态下显式启动
-同目录随附的 `TrackSwap.Runtime.exe`；关闭 UI 不会停止 Runtime。
+`%LOCALAPPDATA%\TrackSwap\runtime-config.json`。选择“跟随 TrackSwap”时，Runtime
+随 UI 启动和退出；选择“跟随 SteamVR”时，驱动会在 SteamVR 会话初始化时拉起 Runtime，
+并在会话结束后完成待处理配置再退出。即使 SteamVR 与 Runtime 起初都未运行，UI 也会
+临时启动 Runtime 以完成离线配置编辑和静态映射维护。
+“TrackSwap 跟随 SteamVR 启停”是独立选项：启用后 SteamVR 会话启动时打开 UI。
+SteamVR 完全停止后，没有待处理配置时 UI 会立即关闭；有待删除或待映射内容时，会在处理
+完成后关闭。处理失败时保留窗口和待处理状态，避免静默留下未完成配置。
 
 “自动校准”可同时采集物理来源与原始物理目标，自动计算并保存局部位置和
 旋转偏移档案。它只改变偏移，不会把参考目标切换为新的物理位姿来源；要让
@@ -155,8 +166,19 @@ dotnet build TrackSwap.sln -c Release
 生成完整的 Windows x64 发布包、ZIP 和 SHA-256 文件：
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version v004 -Clean
+.\scripts\Build-Release.ps1 -Version v005 -Clean
 ```
+
+安装 Inno Setup 6 后，生成发布包、Windows 安装程序及其 SHA-256 文件：
+
+```powershell
+winget install --id JRSoftware.InnoSetup --exact
+.\scripts\Build-Installer.ps1 -Version v005 -Clean
+```
+
+安装程序采用按用户安装，默认目录为 `%LOCALAPPDATA%\Programs\TrackSwap`。安装与卸载都要求
+SteamVR 完全退出。完整卸载会移除 TrackSwap 驱动、SteamVR 应用清单、虚拟代理静态映射、
+TrackSwap 创建的 SteamVR 配置备份、用户配置、快捷方式和安装目录。
 
 升级到不同目录中的完整包时，应先完全退出 SteamVR，再运行
 `scripts\Install-Driver.ps1 -ReplaceExisting`；脚本注册失败时会尝试恢复旧路径。
@@ -171,7 +193,7 @@ src\TrackSwap\bin\Release\net48\TrackSwap.exe
 
 ## 版本规则
 
-TrackSwap 使用连续编号：`v001`、`v002`、`v003`、`v004`……不区分主版本、次版本或预发布状态。
+TrackSwap 使用连续编号：`v001`、`v002`、`v003`、`v004`、`v005`……不区分主版本、次版本或预发布状态。
 
 推送与项目版本一致的 `vNNN` Git 标签后，GitHub Actions 会自动构建 Windows x64 Release、生成 ZIP 压缩包和 SHA-256 校验文件，并发布对应的 GitHub Release。
 

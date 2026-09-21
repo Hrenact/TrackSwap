@@ -5,6 +5,7 @@
 
 #include "tracker_registry.h"
 #include "control_server.h"
+#include "runtime_launcher.h"
 
 namespace
 {
@@ -18,6 +19,15 @@ public:
         {
             vr::VRDriverLog()->Log("TrackSwap failed to start its driver control endpoint.");
             return vr::VRInitError_Driver_Failed;
+        }
+
+        if (trackswap::LaunchRuntimeForSteamVrSession())
+        {
+            vr::VRDriverLog()->Log("TrackSwap requested its Runtime for this SteamVR session.");
+        }
+        else
+        {
+            vr::VRDriverLog()->Log("TrackSwap Runtime executable was not found beside the installed package.");
         }
 
         vr::VRDriverLog()->Log("TrackSwap multi-route driver initialized; proxies will be registered on demand.");

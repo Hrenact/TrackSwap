@@ -153,7 +153,6 @@ namespace TrackSwap.Services
                 parts.Add(serial);
             }
 
-            parts.Add("在线");
             return string.Join(" · ", parts);
         }
 

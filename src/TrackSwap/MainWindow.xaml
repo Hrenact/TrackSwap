@@ -1,60 +1,619 @@
-<Window x:Class="TrackSwap.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="TrackSwap" Width="1280" Height="820" MinWidth="960" MinHeight="660"
-        WindowStartupLocation="CenterScreen" Background="{StaticResource WindowBrush}">
+<Window x:Class="TrackSwap.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="TrackSwap" Icon="Assets/TrackSwap.ico" Width="1280" Height="820" MinWidth="960" MinHeight="660" WindowStartupLocation="CenterScreen" Background="{StaticResource WindowBrush}">
     <Window.Resources>
         <Style x:Key="SidebarRouteItemStyle" TargetType="ListBoxItem">
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,4"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="ItemBorder" Background="{TemplateBinding Background}" CornerRadius="7" Padding="11,9"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="#182A3A"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="#213B5D"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" Padding="12,9">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource SurfaceRaisedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource AccentBorderMutedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SidebarNavigationButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="NavigationBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="NavigationBorder" Property="Background" Value="{StaticResource SurfaceRaisedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="NavigationBorder" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="NavigationBorder" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="AdvancedOptionCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="CheckBorder" Width="17" Height="17" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2" VerticalAlignment="Center">
+                                <TextBlock x:Name="CheckMark" Text="✓" Foreground="{StaticResource TextBrush}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                            </Border>
+                            <ContentPresenter Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource AccentBorderMutedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckBorder" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource AccentBorderMutedBrush}" />
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
     <Grid>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="240"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-
-        <Border Grid.Column="0" Background="#101A24" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="240" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Border Grid.Column="0" Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
             <Grid Margin="20,24,16,18">
-                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <StackPanel Margin="8,0,0,0"><TextBlock Text="TrackSwap" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="位姿映射" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12"/></StackPanel>
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,24,0,24">
-                    <Border x:Name="SteamVrBadge" Background="Transparent" Padding="0"><StackPanel Orientation="Horizontal"><Ellipse x:Name="SteamVrDot" Width="8" Height="8" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/><TextBlock x:Name="SteamVrStatusText" Text="SteamVR" Margin="7,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12"/></StackPanel></Border>
-                    <Border x:Name="RuntimeBadge" Background="Transparent" Padding="0" Margin="14,0,0,0"><StackPanel Orientation="Horizontal"><Ellipse x:Name="RuntimeDot" Width="8" Height="8" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center"/><TextBlock x:Name="RuntimeStatusText" Text="Runtime" Margin="7,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12"/></StackPanel></Border>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Margin="8,0,0,0">
+                    <TextBlock Text="TrackSwap" FontSize="18" FontWeight="Medium" />
+                    <TextBlock Text="位姿映射" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
                 </StackPanel>
-                <Grid Grid.Row="2" Margin="7,0,1,9"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="配置列表" Foreground="{StaticResource MutedTextBrush}" FontSize="12" VerticalAlignment="Center"/><Button Grid.Column="1" x:Name="ManageRoutesButton" Content="管理" Padding="7,5" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MutedTextBrush}" Click="ManageRoutesButton_Click"/><Button Grid.Column="2" x:Name="AddRouteButton" Content="＋ 新增" Padding="7,5" Background="Transparent" BorderThickness="0" Click="AddRouteButton_Click"/></Grid>
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,24,0,24">
+                    <Border x:Name="SteamVrBadge" Background="Transparent" Padding="0">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="SteamVrDot" Width="8" Height="8" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SteamVrStatusText" Text="SteamVR" Margin="7,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="RuntimeBadge" Background="Transparent" Padding="0" Margin="14,0,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="RuntimeDot" Width="8" Height="8" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="RuntimeStatusText" Text="Runtime" Margin="7,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+                <Grid Grid.Row="2" Margin="7,0,1,9">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="配置列表" Foreground="{StaticResource MutedTextBrush}" FontSize="12" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" x:Name="AddRouteButton" Content="＋ 新增" Padding="7,5" Background="Transparent" BorderThickness="0" Click="AddRouteButton_Click" />
+                </Grid>
                 <ListBox Grid.Row="3" x:Name="RouteListBox" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource SidebarRouteItemStyle}" SelectionChanged="RouteListBox_SelectionChanged" PreviewMouseRightButtonDown="RouteListBox_PreviewMouseRightButtonDown" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                    <ListBox.ItemTemplate><DataTemplate><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Ellipse Width="7" Height="7" Fill="{Binding StatusBrush}" VerticalAlignment="Top" Margin="0,5,0,0"/><StackPanel Grid.Column="1"><TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis"/><StackPanel Orientation="Horizontal" Margin="0,3,0,0"><TextBlock Text="{Binding ProxyName}" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10"/><TextBlock Text=" · " Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/></StackPanel></StackPanel></Grid></DataTemplate></ListBox.ItemTemplate>
-                    <ListBox.ContextMenu><ContextMenu><MenuItem x:Name="RenameRouteMenuItem" Header="重命名" Click="RenameRouteMenuItem_Click"/><MenuItem x:Name="ToggleRouteMenuItem" Header="启用 / 停用" Click="ToggleRouteMenuItem_Click"/><Separator/><MenuItem x:Name="DeleteRouteMenuItem" Header="删除配置…" Foreground="#EF6A73" Click="DeleteRouteMenuItem_Click"/></ContextMenu></ListBox.ContextMenu>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Width="7" Height="7" Fill="{Binding StatusBrush}" VerticalAlignment="Top" Margin="0,5,0,0" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                        <TextBlock Text="{Binding ProxyName}" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10" />
+                                        <TextBlock Text=" · " Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem x:Name="RenameRouteMenuItem" Header="重命名" Click="RenameRouteMenuItem_Click" />
+                            <MenuItem x:Name="ToggleRouteMenuItem" Header="启用 / 停用" Click="ToggleRouteMenuItem_Click" />
+                            <Separator />
+                            <MenuItem x:Name="DeleteRouteMenuItem" Header="删除配置…" Foreground="{StaticResource DestructiveBrush}" Click="DeleteRouteMenuItem_Click" />
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
                 </ListBox>
-                <Button Grid.Row="4" x:Name="SettingsNavigationButton" HorizontalContentAlignment="Left" Padding="11,9" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MutedTextBrush}" Click="SettingsNavigationButton_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="⚙" FontSize="16"/><TextBlock Text="设置" Margin="10,0,0,0" VerticalAlignment="Center"/></StackPanel></Button>
+                <Button Grid.Row="4" x:Name="SettingsNavigationButton" Content="设置" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Center" Click="SettingsNavigationButton_Click" />
             </Grid>
         </Border>
-
         <Grid Grid.Column="1">
-            <Grid x:Name="EmptyStateGrid" Visibility="Collapsed"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="30"><TextBlock Text="暂无配置，请新建。" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="创建第一条路由后，可选择物理来源、替换目标并配置偏移。" Margin="0,8,0,18" Foreground="{StaticResource MutedTextBrush}" TextAlignment="Center"/><Button Content="＋ 新建配置" Style="{StaticResource PrimaryButton}" Padding="18,9" HorizontalAlignment="Center" Click="AddRouteButton_Click"/></StackPanel></Grid>
-
+            <Grid x:Name="EmptyStateGrid" Visibility="Collapsed">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="30">
+                    <TextBlock Text="暂无配置，请新建。" FontSize="20" FontWeight="Medium" HorizontalAlignment="Center" />
+                    <TextBlock Text="创建第一条路由后，可选择物理来源、替换目标并配置偏移。" Margin="0,8,0,18" Foreground="{StaticResource MutedTextBrush}" TextAlignment="Center" />
+                    <Button Content="＋ 新建配置" Style="{StaticResource PrimaryButton}" Padding="18,9" HorizontalAlignment="Center" Click="AddRouteButton_Click" />
+                </StackPanel>
+            </Grid>
             <ScrollViewer x:Name="RouteContentScrollViewer" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="32,26,32,30">
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock x:Name="SelectedProxyText" Text="PROXY-00" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="11"/><TextBlock x:Name="SelectedRouteNameText" Text="新配置" Margin="0,4,0,0" FontSize="24" FontWeight="SemiBold"/><TextBlock x:Name="SelectedRouteSummaryText" Text="选择来源与目标以完成配置。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top"><Border Background="#172431" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="16" Padding="11,7"><TextBlock x:Name="SelectedRouteStateText" Text="待应用" Foreground="{StaticResource WarningBrush}" FontSize="12"/></Border><Button x:Name="ToggleSelectedRouteButton" Content="停用" Margin="9,0,0,0" Padding="13,7" Click="ToggleSelectedRouteButton_Click"/></StackPanel></Grid>
-
-                    <Border Margin="0,22,0,0" Padding="20" Background="#17212B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9"><StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="路由" FontSize="15" FontWeight="SemiBold"/><TextBlock Text="切换物理来源会立即生效，不需要重启 SteamVR。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/></StackPanel><TextBlock Grid.Column="1" x:Name="RouteSyncText" Text="配置待同步" Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" FontSize="11"/></Grid>
-                        <Grid Margin="0,16,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="34"/><ColumnDefinition Width="0.78*"/><ColumnDefinition Width="34"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="物理位姿来源" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><ComboBox x:Name="RuntimeSourceComboBox" Margin="0,7,0,0" MinHeight="40" SelectionChanged="RuntimeSelection_Changed"/><TextBlock x:Name="RuntimeSourcePathText" Margin="2,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis"/></StackPanel><TextBlock Grid.Column="1" Text="→" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}"/><StackPanel Grid.Column="2"><TextBlock Text="稳定虚拟代理" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><Border Margin="0,7,0,0" MinHeight="40" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10"><TextBlock x:Name="RuntimeProxyText" Text="TRKSWAP-PROXY-00" VerticalAlignment="Center" FontFamily="Consolas"/></Border></StackPanel><TextBlock Grid.Column="3" Text="→" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}"/><StackPanel Grid.Column="4"><TextBlock Text="替换目标" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><ComboBox x:Name="RuntimeTargetComboBox" Margin="0,7,0,0" MinHeight="40" SelectionChanged="RuntimeSelection_Changed"/><TextBlock x:Name="RuntimeTargetPathText" Margin="2,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis"/></StackPanel></Grid><TextBlock x:Name="RuntimeRouteChangeWarningText" Margin="0,10,0,0" Foreground="{StaticResource WarningBrush}" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed"/></StackPanel></Border>
-
-                    <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9"><StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="局部位姿偏移" FontSize="15" FontWeight="SemiBold"/><TextBlock Text="T_output = T_source × T_offset；OpenVR 右手系，+X 向右、+Y 向上、-Z 向前；单位为米。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/></StackPanel><Button Grid.Column="1" Content="重置为单位偏移" Background="Transparent" BorderThickness="0" Foreground="{StaticResource AccentBrush}" Click="ResetRuntimeOffsetButton_Click"/></Grid>
-                        <Grid Margin="0,15,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="22"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="位置 X（+右）" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OffsetTranslationXTextBox" Text="0" Margin="0,6,0,0"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="位置 Y（+上）" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OffsetTranslationYTextBox" Text="0" Margin="0,6,0,0"/></StackPanel><StackPanel Grid.Column="4"><TextBlock Text="位置 Z（+后）" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OffsetTranslationZTextBox" Text="0" Margin="0,6,0,0"/></StackPanel><StackPanel Grid.Column="6"><TextBlock Text="旋转 X" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OffsetRotationXTextBox" Text="0" Margin="0,6,0,0"/></StackPanel><StackPanel Grid.Column="8"><TextBlock Text="旋转 Y" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OffsetRotationYTextBox" Text="0" Margin="0,6,0,0"/></StackPanel><StackPanel Grid.Column="10"><TextBlock Text="旋转 Z" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OffsetRotationZTextBox" Text="0" Margin="0,6,0,0"/></StackPanel><StackPanel Grid.Column="12"><TextBlock Text="旋转 W" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OffsetRotationWTextBox" Text="1" Margin="0,6,0,0"/></StackPanel></Grid><StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0"><Button Content="重新读取" Click="RuntimeRefreshButton_Click"/><Button x:Name="ApplyRuntimeButton" Content="应用更改" Style="{StaticResource PrimaryButton}" Margin="9,0,0,0" Click="ApplyRuntimeButton_Click" IsEnabled="False"/></StackPanel></StackPanel></Border>
-
-                    <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="0.85*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="1.15*"/></Grid.ColumnDefinitions>
-                        <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9"><StackPanel><TextBlock Text="自动校准" FontSize="15" FontWeight="SemiBold"/><TextBlock Text="使用参考设备计算安装偏移。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><TextBlock Text="档案名称" Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="CalibrationNameTextBox" Margin="0,6,0,0" FontFamily="Microsoft YaHei UI"/><TextBlock Text="参考目标" Margin="0,12,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><ComboBox x:Name="CalibrationTargetComboBox" Margin="0,6,0,0" SelectionChanged="CalibrationSelection_Changed"/><TextBlock Text="校准档案" Margin="0,12,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><ComboBox x:Name="CalibrationProfileComboBox" Margin="0,6,0,0" SelectionChanged="CalibrationSelection_Changed"/><TextBlock x:Name="CalibrationProfileDetailsText" Margin="0,7,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap"/><TextBlock x:Name="CalibrationStatusText" Margin="0,8,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap"/><WrapPanel HorizontalAlignment="Right" Margin="0,12,0,0"><Button x:Name="DeleteCalibrationProfileButton" Content="删除档案" Click="DeleteCalibrationProfileButton_Click" IsEnabled="False"/><Button x:Name="ApplyCalibrationProfileButton" Content="应用档案" Margin="7,0,0,0" Click="ApplyCalibrationProfileButton_Click" IsEnabled="False"/><Button x:Name="CaptureCalibrationButton" Content="采集并应用" Style="{StaticResource PrimaryButton}" Margin="7,0,0,0" Click="CaptureCalibrationButton_Click" IsEnabled="False"/></WrapPanel></StackPanel></Border>
-                        <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9" ClipToBounds="True"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><Grid Margin="20,14"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="3D 位姿预览" FontSize="15" FontWeight="SemiBold"/><TextBlock Text="左键平移 · 右键旋转 · 滚轮缩放" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"><TextBlock x:Name="PreviewStatusText" Text="实时" Margin="0,0,10,0" Foreground="{StaticResource SuccessBrush}" VerticalAlignment="Center"/><Button Content="重置视图" Padding="9,4" Click="ResetPreviewViewButton_Click"/></StackPanel></Grid><Border Grid.Row="1" x:Name="PreviewInteractionSurface" MinHeight="240" Background="#0B1118" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" MouseDown="PosePreviewViewport_MouseDown" MouseMove="PosePreviewViewport_MouseMove" MouseUp="PosePreviewViewport_MouseUp" MouseWheel="PosePreviewViewport_MouseWheel" LostMouseCapture="PosePreviewViewport_LostMouseCapture"><Viewport3D x:Name="PosePreviewViewport" IsHitTestVisible="False"><Viewport3D.Camera><PerspectiveCamera x:Name="PosePreviewCamera" Position="0.40,0.32,0.48" LookDirection="-0.40,-0.24,-0.48" UpDirection="0,1,0" FieldOfView="42"/></Viewport3D.Camera><ModelVisual3D><ModelVisual3D.Content><Model3DGroup x:Name="PreviewSceneRoot"><AmbientLight Color="#707780"/><DirectionalLight Color="#FFFFFF" Direction="-1,-2,-1"/></Model3DGroup></ModelVisual3D.Content></ModelVisual3D></Viewport3D></Border></Grid></Border>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock x:Name="SelectedProxyText" Text="PROXY-00" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="11" />
+                            <TextBlock x:Name="SelectedRouteNameText" Text="新配置" Margin="0,4,0,0" FontSize="24" FontWeight="Medium" />
+                            <TextBlock x:Name="SelectedRouteSummaryText" Text="选择来源与目标以完成配置。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                            <Border Background="Transparent" Padding="7">
+                                <TextBlock x:Name="SelectedRouteStateText" Text="待应用" Foreground="{StaticResource WarningBrush}" FontSize="12" />
+                            </Border>
+                            <Button x:Name="ToggleSelectedRouteButton" Content="停用" Margin="9,0,0,0" Padding="13,7" Click="ToggleSelectedRouteButton_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <Border Margin="0,22,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="路由" FontSize="15" FontWeight="Medium" />
+                                    <TextBlock Text="切换物理来源会立即生效，不需要重启 SteamVR。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" x:Name="RouteSyncText" Text="配置待同步" Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" FontSize="11" />
+                            </Grid>
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="34" />
+                                    <ColumnDefinition Width="0.78*" />
+                                    <ColumnDefinition Width="34" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="物理位姿来源" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                    <ComboBox x:Name="RuntimeSourceComboBox" Margin="0,7,0,0" MinHeight="40" SelectionChanged="RuntimeSelection_Changed" />
+                                    <TextBlock x:Name="RuntimeSourcePathText" Margin="2,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="→" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="稳定虚拟代理" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                    <Border Margin="0,7,0,0" MinHeight="40" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2" Padding="10">
+                                        <TextBlock x:Name="RuntimeProxyText" Text="TRKSWAP-PROXY-00" VerticalAlignment="Center" FontFamily="Consolas" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Grid.Column="3" Text="→" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                                <StackPanel Grid.Column="4">
+                                    <TextBlock Text="替换目标" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                    <ComboBox x:Name="RuntimeTargetComboBox" Margin="0,7,0,0" MinHeight="40" SelectionChanged="RuntimeSelection_Changed" />
+                                    <TextBlock x:Name="RuntimeTargetPathText" Margin="2,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock x:Name="RuntimeRouteChangeWarningText" Margin="0,10,0,0" Foreground="{StaticResource WarningBrush}" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed" />
+                        </StackPanel>
+                    </Border>
+                    <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="局部位姿偏移" FontSize="15" FontWeight="Medium" />
+                                    <TextBlock Text="T_output = T_source × T_offset；OpenVR 右手系，+X 向右、+Y 向上、-Z 向前；单位为米。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="重置为单位偏移" Background="Transparent" BorderThickness="0" Foreground="{StaticResource AccentBrush}" Click="ResetRuntimeOffsetButton_Click" />
+                            </Grid>
+                            <Grid Margin="0,15,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="22" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="位置 X（+右）" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    <TextBox x:Name="OffsetTranslationXTextBox" Text="0" Margin="0,6,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="位置 Y（+上）" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    <TextBox x:Name="OffsetTranslationYTextBox" Text="0" Margin="0,6,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="4">
+                                    <TextBlock Text="位置 Z（+后）" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    <TextBox x:Name="OffsetTranslationZTextBox" Text="0" Margin="0,6,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="6">
+                                    <TextBlock Text="旋转 X" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    <TextBox x:Name="OffsetRotationXTextBox" Text="0" Margin="0,6,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="8">
+                                    <TextBlock Text="旋转 Y" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    <TextBox x:Name="OffsetRotationYTextBox" Text="0" Margin="0,6,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="10">
+                                    <TextBlock Text="旋转 Z" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    <TextBox x:Name="OffsetRotationZTextBox" Text="0" Margin="0,6,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="12">
+                                    <TextBlock Text="旋转 W" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    <TextBox x:Name="OffsetRotationWTextBox" Text="1" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                                <Button Content="重新读取" Click="RuntimeRefreshButton_Click" />
+                                <Button x:Name="ApplyRuntimeButton" Content="应用更改" Style="{StaticResource PrimaryButton}" Margin="9,0,0,0" Click="ApplyRuntimeButton_Click" IsEnabled="False" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="0.85*" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="1.15*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                            <StackPanel>
+                                <TextBlock Text="自动校准" FontSize="15" FontWeight="Medium" />
+                                <TextBlock Text="使用参考设备计算安装偏移。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <TextBlock Text="档案名称" Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                <TextBox x:Name="CalibrationNameTextBox" Margin="0,6,0,0" FontFamily="Microsoft YaHei UI" />
+                                <TextBlock Text="参考目标" Margin="0,12,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                <ComboBox x:Name="CalibrationTargetComboBox" Margin="0,6,0,0" SelectionChanged="CalibrationSelection_Changed" />
+                                <TextBlock Text="校准档案" Margin="0,12,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                <ComboBox x:Name="CalibrationProfileComboBox" Margin="0,6,0,0" SelectionChanged="CalibrationSelection_Changed" />
+                                <TextBlock x:Name="CalibrationProfileDetailsText" Margin="0,7,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                <TextBlock x:Name="CalibrationStatusText" Margin="0,8,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                <WrapPanel HorizontalAlignment="Right" Margin="0,12,0,0">
+                                    <Button x:Name="DeleteCalibrationProfileButton" Content="删除档案" Click="DeleteCalibrationProfileButton_Click" IsEnabled="False" />
+                                    <Button x:Name="ApplyCalibrationProfileButton" Content="应用档案" Margin="7,0,0,0" Click="ApplyCalibrationProfileButton_Click" IsEnabled="False" />
+                                    <Button x:Name="CaptureCalibrationButton" Content="采集并应用" Style="{StaticResource PrimaryButton}" Margin="7,0,0,0" Click="CaptureCalibrationButton_Click" IsEnabled="False" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <Grid Margin="20,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="3D 位姿预览" FontSize="15" FontWeight="Medium" />
+                                        <TextBlock Text="左键平移 · 右键旋转 · 滚轮缩放" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <TextBlock x:Name="PreviewStatusText" Text="实时" Margin="0,0,10,0" Foreground="{StaticResource SuccessBrush}" VerticalAlignment="Center" />
+                                        <Button Content="重置视图" Padding="9,4" Click="ResetPreviewViewButton_Click" />
+                                    </StackPanel>
+                                </Grid>
+                                <Border Grid.Row="1" x:Name="PreviewInteractionSurface" MinHeight="240" Background="#0F0F0F" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" MouseDown="PosePreviewViewport_MouseDown" MouseMove="PosePreviewViewport_MouseMove" MouseUp="PosePreviewViewport_MouseUp" MouseWheel="PosePreviewViewport_MouseWheel" LostMouseCapture="PosePreviewViewport_LostMouseCapture">
+                                    <Viewport3D x:Name="PosePreviewViewport" IsHitTestVisible="False">
+                                        <Viewport3D.Camera>
+                                            <PerspectiveCamera x:Name="PosePreviewCamera" Position="0.40,0.32,0.48" LookDirection="-0.40,-0.24,-0.48" UpDirection="0,1,0" FieldOfView="42" />
+                                        </Viewport3D.Camera>
+                                        <ModelVisual3D>
+                                            <ModelVisual3D.Content>
+                                                <Model3DGroup x:Name="PreviewSceneRoot">
+                                                    <AmbientLight Color="#707780" />
+                                                    <DirectionalLight Color="#FFFFFF" Direction="-1,-2,-1" />
+                                                </Model3DGroup>
+                                            </ModelVisual3D.Content>
+                                        </ModelVisual3D>
+                                    </Viewport3D>
+                                </Border>
+                            </Grid>
+                        </Border>
                     </Grid>
                 </StackPanel>
             </ScrollViewer>
+            <Grid x:Name="SettingsContentScrollViewer" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Margin="32,26,32,18">
+                    <TextBlock Text="设置" FontSize="24" FontWeight="Medium" />
+                    <TextBlock Text="管理运行环境、SteamVR 工具与本机设备记录。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" />
+                </StackPanel>
+                <Grid Grid.Row="1" Margin="32,0,32,30">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="156" />
+                        <ColumnDefinition Width="1" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,16,0">
+                        <Button x:Name="SettingsRuntimeCategoryButton" Content="运行环境" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Click="SettingsCategoryButton_Click" />
+                        <Button x:Name="SettingsSteamVrCategoryButton" Content="SteamVR" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                        <Button x:Name="SettingsDevicesCategoryButton" Content="设备记录" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                        <Button x:Name="SettingsAdvancedCategoryButton" Content="高级选项" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                    </StackPanel>
+                    <Border Grid.Column="1" Background="{StaticResource BorderBrush}" />
+                    <ScrollViewer Grid.Column="2" Margin="24,0,0,0" VerticalScrollBarVisibility="Auto">
+                        <Grid>
+                            <StackPanel x:Name="RuntimeSettingsPanel">
+                                <TextBlock Text="运行环境" FontSize="18" FontWeight="Medium" />
+                                <TextBlock Text="查看 Runtime、驱动连接与配置应用状态。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Runtime" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock x:Name="RuntimeHealthText" Text="离线" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="驱动连接" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock x:Name="DriverHealthText" Text="未知" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="配置 revision" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock x:Name="RuntimeRevisionText" Text="—" Margin="0,4,0,0" FontFamily="Consolas" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3">
+                                                <TextBlock Text="应用状态" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock x:Name="RuntimeAppliedStateText" Text="未知" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,12,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="RuntimeErrorText" Foreground="{StaticResource WarningBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                            <Button Grid.Column="1" x:Name="StartRuntimeButton" Content="启动 Runtime" Margin="12,0,0,0" Click="StartRuntimeButton_Click" IsEnabled="False" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
 
-            <ScrollViewer x:Name="SettingsContentScrollViewer" VerticalScrollBarVisibility="Auto" Visibility="Collapsed"><StackPanel Margin="32,26,32,30"><TextBlock Text="设置" FontSize="24" FontWeight="SemiBold"/><TextBlock Text="全局 Runtime、驱动与 SteamVR 高级配置。" Margin="0,4,0,18" Foreground="{StaticResource MutedTextBrush}"/>
-                <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9"><StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Runtime" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><TextBlock x:Name="RuntimeHealthText" Text="离线" Margin="0,4,0,0"/></StackPanel><StackPanel Grid.Column="1"><TextBlock Text="驱动连接" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><TextBlock x:Name="DriverHealthText" Text="未知" Margin="0,4,0,0"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="配置 revision" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><TextBlock x:Name="RuntimeRevisionText" Text="—" Margin="0,4,0,0" FontFamily="Consolas"/></StackPanel><StackPanel Grid.Column="3"><TextBlock Text="应用状态" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><TextBlock x:Name="RuntimeAppliedStateText" Text="未知" Margin="0,4,0,0"/></StackPanel></Grid><Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock x:Name="RuntimeErrorText" Foreground="{StaticResource WarningBrush}" TextWrapping="Wrap" Visibility="Collapsed"/><Button Grid.Column="1" x:Name="StartRuntimeButton" Content="启动 Runtime" Margin="12,0,0,0" Click="StartRuntimeButton_Click" IsEnabled="False"/></Grid></StackPanel></Border>
-                <Border x:Name="EditorCardBorder" Margin="0,14,0,0" Padding="20" Background="#17212B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="42"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.ColumnSpan="3"><TextBlock Text="旧版静态覆盖 v001" FontSize="15" FontWeight="SemiBold"/><TextBlock Text="兼容、诊断与手动修复工具；写入前必须退出 SteamVR。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/></StackPanel><StackPanel Grid.Row="1" Margin="0,15,0,0"><TextBlock Text="追踪来源" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><ComboBox x:Name="SourceComboBox" Margin="0,7,0,0" SelectionChanged="Selection_Changed"/><TextBlock x:Name="SourcePathText" Margin="0,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis"/></StackPanel><TextBlock Grid.Row="1" Grid.Column="1" Text="→" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}"/><StackPanel Grid.Row="1" Grid.Column="2" Margin="0,15,0,0"><TextBlock Text="替换目标" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/><ComboBox x:Name="TargetComboBox" Margin="0,7,0,0" SelectionChanged="Selection_Changed"/><TextBlock x:Name="TargetPathText" Margin="0,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis"/></StackPanel><StackPanel Grid.Row="2" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0"><Button x:Name="RefreshButton" Content="刷新" Click="RefreshButton_Click"/><Button x:Name="ApplyButton" Content="应用静态配置" Style="{StaticResource PrimaryButton}" Margin="9,0,0,0" Click="ApplyButton_Click" IsEnabled="False"/></StackPanel></Grid></Border>
-                <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9"><StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="当前静态配置" FontSize="15" FontWeight="SemiBold"/><TextBlock Grid.Column="1" x:Name="OverrideCountText" Foreground="{StaticResource MutedTextBrush}"/></Grid><TextBlock x:Name="EmptyOverridesText" Margin="0,12,0,0" Text="当前没有位姿覆盖规则。" Foreground="{StaticResource MutedTextBrush}"/><ItemsControl x:Name="OverridesItemsControl" Margin="0,10,0,0"><ItemsControl.ItemTemplate><DataTemplate><Border Margin="0,0,0,7" Padding="11" Background="{StaticResource SurfaceRaisedBrush}" CornerRadius="7"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding SourceName}"/><StackPanel Grid.Column="1" Orientation="Horizontal"><TextBlock Text="→" Foreground="{StaticResource AccentBrush}" Margin="10,0"/><TextBlock Text="{Binding TargetName}"/><Button Content="编辑" Tag="{Binding}" Margin="12,0,0,0" Padding="8,4" Click="EditOverrideButton_Click"/><Button Content="移除" Tag="{Binding}" Margin="6,0,0,0" Padding="8,4" Click="RemoveOverrideButton_Click"/></StackPanel></Grid></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></Border>
-                <Border Margin="0,14,0,0" Padding="18" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Orientation="Horizontal"><Button x:Name="ViewRawButton" Content="定位 SteamVR 配置" Click="LocateConfigButton_Click"/><Button x:Name="RestoreBackupButton" Content="恢复配置备份" Margin="8,0,0,0" Click="RestoreBackupButton_Click"/></StackPanel><TextBlock Grid.Column="1" x:Name="SettingsPathText" Margin="16,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis"/></Grid></Border><ScrollViewer x:Name="MainScrollViewer" Height="0" Visibility="Collapsed"/>
-            </StackPanel></ScrollViewer>
+                            <StackPanel x:Name="SteamVrSettingsPanel" Visibility="Collapsed">
+                                <TextBlock Text="SteamVR" FontSize="18" FontWeight="Medium" />
+                                <TextBlock Text="维护旧版静态覆盖及 SteamVR 配置文件。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <Border x:Name="EditorCardBorder" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="42" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.ColumnSpan="3">
+                                            <TextBlock Text="旧版静态覆盖 v001" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Text="兼容、诊断与手动修复工具；新配置使用明确设备路径，写入前必须退出 SteamVR。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Margin="0,15,0,0">
+                                            <TextBlock Text="位姿来源设备" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                            <ComboBox x:Name="SourceComboBox" Margin="0,7,0,0" SelectionChanged="Selection_Changed" />
+                                            <TextBlock x:Name="SourcePathText" Margin="0,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="→" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                                        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,15,0,0">
+                                            <TextBlock Text="明确实体目标" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                            <ComboBox x:Name="TargetComboBox" Margin="0,7,0,0" SelectionChanged="Selection_Changed" />
+                                            <TextBlock x:Name="TargetPathText" Margin="0,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock x:Name="LegacyStaticTargetWarningText" Margin="0,6,0,0" Text="旧角色目标仅用于维护已有规则；新配置请选择明确实体设备。" Foreground="{StaticResource WarningBrush}" FontSize="10" TextWrapping="Wrap" Visibility="Collapsed" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                                            <Button x:Name="RefreshButton" Content="刷新" Click="RefreshButton_Click" />
+                                            <Button x:Name="ApplyButton" Content="应用静态配置" Style="{StaticResource PrimaryButton}" Margin="9,0,0,0" Click="ApplyButton_Click" IsEnabled="False" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="当前静态配置" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Grid.Column="1" x:Name="OverrideCountText" Foreground="{StaticResource MutedTextBrush}" />
+                                        </Grid>
+                                        <TextBlock x:Name="EmptyOverridesText" Margin="0,12,0,0" Text="当前没有位姿覆盖规则。" Foreground="{StaticResource MutedTextBrush}" />
+                                        <ItemsControl x:Name="OverridesItemsControl" Margin="0,10,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,7" Padding="11" Background="{StaticResource SurfaceRaisedBrush}" CornerRadius="2">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="{Binding SourceName}" />
+                                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                                <TextBlock Text="→" Foreground="{StaticResource AccentBrush}" Margin="10,0" />
+                                                                <TextBlock Text="{Binding TargetName}" />
+                                                                <Button Content="编辑" Tag="{Binding}" Margin="12,0,0,0" Padding="8,4" Click="EditOverrideButton_Click" />
+                                                                <Button Content="移除" Tag="{Binding}" Margin="6,0,0,0" Padding="8,4" Click="RemoveOverrideButton_Click" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                                <Border Margin="0,14,0,0" Padding="18" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="ViewRawButton" Content="定位 SteamVR 配置" Click="LocateConfigButton_Click" />
+                                            <Button x:Name="RestoreBackupButton" Content="恢复配置备份" Margin="8,0,0,0" Click="RestoreBackupButton_Click" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" x:Name="SettingsPathText" Margin="16,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel x:Name="DeviceSettingsPanel" Visibility="Collapsed">
+                                <TextBlock Text="设备记录" FontSize="18" FontWeight="Medium" />
+                                <TextBlock Text="管理设备选择器用于识别曾连接设备的本机记录。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="设备记录" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Text="发现过的实体设备会保存在本机；选择器始终按实际连接状态显示为“在线”或“离线”。配置引用不依赖此文件。" Margin="0,4,20,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" x:Name="DeviceHistoryCountText" Foreground="{StaticResource MutedTextBrush}" />
+                                        <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,16,0,0" Padding="12,10" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
+                                            <TextBlock x:Name="DeviceHistoryPathText" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" />
+                                        </Border>
+                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,14,0,0">
+                                            <TextBlock Text="文件中的设备" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                            <TextBlock x:Name="EmptyDeviceHistoryText" Text="设备记录为空。" Margin="0,10,0,0" Foreground="{StaticResource MutedTextBrush}" />
+                                            <ItemsControl x:Name="DeviceHistoryItemsControl" Margin="0,8,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Margin="0,0,0,6" Padding="12,9" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="52" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding StateText}" VerticalAlignment="Center">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding IsOnline}" Value="True">
+                                                                                    <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                                <StackPanel Grid.Column="1">
+                                                                    <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Text="{Binding DevicePath}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                        <Button Grid.Row="3" Grid.ColumnSpan="2" Content="清空设备记录" HorizontalAlignment="Right" Margin="0,8,0,0" Click="ClearDeviceHistoryButton_Click" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel x:Name="AdvancedSettingsPanel" Visibility="Collapsed">
+                                <TextBlock Text="高级选项" FontSize="18" FontWeight="Medium" />
+                                <TextBlock Text="这些选项通常无需修改。需要兼容特殊设备或调整自动启动方式时再使用。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <TextBlock Text="显示头显、左手和右手目标" FontSize="15" FontWeight="Medium" />
+                                        <TextBlock Text="开启后，可以直接把替换目标选为头显、左手或右手。SteamVR 可能把这些名称指向与你预期不同的实体设备。" Margin="0,4,0,16" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        <CheckBox x:Name="ShowSteamVrRoleTargetsCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="在替换目标列表中显示头显、左手和右手" Click="ShowSteamVrRoleTargetsCheckBox_Click" />
+                                        <TextBlock Text="TrackSwap 仍会阻止设备替换自己、循环替换和重复目标。旧配置不受此开关影响。" Margin="26,9,0,0" Foreground="{StaticResource WarningBrush}" FontSize="10" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="260" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,24,0">
+                                            <TextBlock Text="Runtime 启停行为" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Text="决定后台定位服务什么时候运行。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                            <TextBlock Text="跟随 TrackSwap：打开软件时启动，退出软件时停止。&#x0a;跟随 SteamVR：启动 SteamVR 时运行，关闭 SteamVR 后停止；单独打开 TrackSwap 修改配置时也能正常使用。" Margin="0,8,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1" x:Name="RuntimeLifecycleComboBox" VerticalAlignment="Center" SelectionChanged="RuntimeLifecycleComboBox_SelectionChanged" />
+                                    </Grid>
+                                </Border>
+                                <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <TextBlock Text="自动打开和关闭 TrackSwap" FontSize="15" FontWeight="Medium" />
+                                        <TextBlock Text="启动 SteamVR 时自动打开 TrackSwap；关闭 SteamVR 后，完成待处理的配置更新便自动退出。" Margin="0,4,0,16" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        <CheckBox x:Name="FollowSteamVrWithTrackSwapCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="让 TrackSwap 跟随 SteamVR 打开和关闭" Click="FollowSteamVrWithTrackSwapCheckBox_Click" />
+                                        <TextBlock Text="启用后，TrackSwap 会出现在 SteamVR 的启动应用列表中，也可以在那里关闭自动启动。" Margin="26,9,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
+                </Grid>
+                <ScrollViewer x:Name="MainScrollViewer" Height="0" Visibility="Collapsed" />
+            </Grid>
         </Grid>
     </Grid>
 </Window>

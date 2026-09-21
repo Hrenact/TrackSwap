@@ -3,15 +3,18 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-        <SolidColorBrush x:Key="WindowBrush" Color="#0D131A" />
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#17212B" />
-        <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#1D2935" />
-        <SolidColorBrush x:Key="BorderBrush" Color="#2A3744" />
-        <SolidColorBrush x:Key="TextBrush" Color="#EEF4F8" />
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#9AABB8" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#5F93FF" />
-        <SolidColorBrush x:Key="SuccessBrush" Color="#46CF87" />
-        <SolidColorBrush x:Key="WarningBrush" Color="#F2BD52" />
+        <SolidColorBrush x:Key="WindowBrush" Color="#121212" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#1A1A1A" />
+        <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#1F1F1F" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#2C2C2C" />
+        <SolidColorBrush x:Key="TextBrush" Color="#D6D6D6" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#929292" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#5B9CFF" />
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#182538" />
+        <SolidColorBrush x:Key="AccentBorderMutedBrush" Color="#3B5F8A" />
+        <SolidColorBrush x:Key="SuccessBrush" Color="#4ED18B" />
+        <SolidColorBrush x:Key="WarningBrush" Color="#F2B84B" />
+        <SolidColorBrush x:Key="DestructiveBrush" Color="#F07878" />
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
@@ -23,7 +26,7 @@
             <Setter Property="Background" Value="{StaticResource SurfaceRaisedBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Padding" Value="8,6" />
             <Setter Property="MaxWidth" Value="440" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -31,7 +34,7 @@
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6"
+                                CornerRadius="3"
                                 Padding="{TemplateBinding Padding}">
                             <TextBlock Text="{TemplateBinding Content}"
                                        Foreground="{TemplateBinding Foreground}"
@@ -47,10 +50,10 @@
             <Setter Property="Background" Value="{StaticResource SurfaceRaisedBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="16,9" />
+            <Setter Property="Padding" Value="12,7" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
-            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontWeight" Value="Normal" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -58,13 +61,16 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="7"
+                                CornerRadius="3"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.86" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource AccentSoftBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.45" />
@@ -77,7 +83,7 @@
 
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Foreground" Value="#101316" />
             <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
         </Style>
 
@@ -107,7 +113,7 @@
                                                 Background="{TemplateBinding Background}"
                                                 BorderBrush="{TemplateBinding BorderBrush}"
                                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                                CornerRadius="6">
+                                                CornerRadius="3">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -148,15 +154,15 @@
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
                                    AllowsTransparency="True"
                                    Focusable="False"
-                                   PopupAnimation="Fade">
+                                   PopupAnimation="None">
                                 <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
                                         MaxHeight="{TemplateBinding MaxDropDownHeight}"
                                         Margin="0,4,0,0"
-                                        Padding="4"
+                                        Padding="3"
                                         Background="{StaticResource SurfaceRaisedBrush}"
                                         BorderBrush="{StaticResource BorderBrush}"
                                         BorderThickness="1"
-                                        CornerRadius="6">
+                                        CornerRadius="3">
                                     <ScrollViewer VerticalScrollBarVisibility="Auto"
                                                   HorizontalScrollBarVisibility="Disabled"
                                                   CanContentScroll="True">
@@ -178,23 +184,23 @@
         <Style TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Padding" Value="10,7" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBoxItem">
                         <Border x:Name="ItemBorder"
                                 Background="{TemplateBinding Background}"
-                                CornerRadius="4"
+                                CornerRadius="2"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background" Value="#294467" />
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource AccentSoftBrush}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background" Value="#31598C" />
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#24466F" />
                                 <Setter Property="Foreground" Value="White" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
@@ -211,16 +217,16 @@
             <Setter Property="Background" Value="{StaticResource SurfaceRaisedBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="5" />
+            <Setter Property="Padding" Value="3" />
             <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
-            <Setter Property="HasDropShadow" Value="True" />
+            <Setter Property="HasDropShadow" Value="False" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ContextMenu">
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="7"
+                                CornerRadius="3"
                                 Padding="{TemplateBinding Padding}">
                             <StackPanel IsItemsHost="True"
                                         KeyboardNavigation.DirectionalNavigation="Cycle" />
@@ -233,7 +239,7 @@
         <Style TargetType="MenuItem">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Padding" Value="13,8" />
+            <Setter Property="Padding" Value="12,7" />
             <Setter Property="MinWidth" Value="164" />
             <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
             <Setter Property="Cursor" Value="Hand" />
@@ -242,7 +248,7 @@
                     <ControlTemplate TargetType="MenuItem">
                         <Border x:Name="MenuItemBorder"
                                 Background="{TemplateBinding Background}"
-                                CornerRadius="5"
+                                CornerRadius="2"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter ContentSource="Header"
                                               RecognizesAccessKey="True"
@@ -251,7 +257,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="MenuItemBorder" Property="Background" Value="#294467" />
+                                <Setter TargetName="MenuItemBorder" Property="Background" Value="{StaticResource AccentSoftBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="MenuItemBorder" Property="Opacity" Value="0.42" />
@@ -291,7 +297,7 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="18,10" />
             <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
-            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontWeight" Value="Normal" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
@@ -299,7 +305,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{StaticResource BorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="6,6,0,0"
+                                CornerRadius="3,3,0,0"
                                 Padding="{TemplateBinding Padding}"
                                 Margin="0,0,6,0">
                             <ContentPresenter ContentSource="Header"
@@ -343,7 +349,7 @@
         <Style x:Key="VerticalScrollThumbStyle" TargetType="Thumb">
             <Setter Property="MinHeight" Value="30" />
             <Setter Property="Margin" Value="2,0" />
-            <Setter Property="Background" Value="#425466" />
+            <Setter Property="Background" Value="#4B4B4B" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
@@ -355,7 +361,7 @@
                                 <Setter TargetName="ThumbBody" Property="Background" Value="{StaticResource AccentBrush}" />
                             </Trigger>
                             <Trigger Property="IsDragging" Value="True">
-                                <Setter TargetName="ThumbBody" Property="Background" Value="#7AA7FF" />
+                                <Setter TargetName="ThumbBody" Property="Background" Value="#72AAFF" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -366,7 +372,7 @@
         <Style x:Key="HorizontalScrollThumbStyle" TargetType="Thumb">
             <Setter Property="MinWidth" Value="30" />
             <Setter Property="Margin" Value="0,2" />
-            <Setter Property="Background" Value="#425466" />
+            <Setter Property="Background" Value="#4B4B4B" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
@@ -378,7 +384,7 @@
                                 <Setter TargetName="ThumbBody" Property="Background" Value="{StaticResource AccentBrush}" />
                             </Trigger>
                             <Trigger Property="IsDragging" Value="True">
-                                <Setter TargetName="ThumbBody" Property="Background" Value="#7AA7FF" />
+                                <Setter TargetName="ThumbBody" Property="Background" Value="#72AAFF" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -391,7 +397,7 @@
                 <Border Width="6"
                         Margin="0,2"
                         HorizontalAlignment="Center"
-                        Background="#111A23"
+                        Background="#181818"
                         CornerRadius="3" />
                 <Track x:Name="PART_Track"
                        IsDirectionReversed="True"
@@ -419,7 +425,7 @@
                 <Border Height="6"
                         Margin="2,0"
                         VerticalAlignment="Center"
-                        Background="#111A23"
+                        Background="#181818"
                         CornerRadius="3" />
                 <Track x:Name="PART_Track"
                        IsDirectionReversed="False"

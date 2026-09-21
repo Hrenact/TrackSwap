@@ -61,4 +61,4 @@ if ($findExitCode -ne 1) {
 & $vrpathreg adddriver $resolvedDriverPath
 if ($LASTEXITCODE -ne 0) { throw "vrpathreg adddriver failed with exit code $LASTEXITCODE." }
 
-Write-Host "Registered TrackSwap development driver at $resolvedDriverPath"
+Write-Host "Registered TrackSwap driver at $resolvedDriverPath"

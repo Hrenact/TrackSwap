@@ -4,7 +4,11 @@ namespace TrackSwap.Runtime;
 
 internal static class RuntimeHost
 {
-    public static async Task RunAsync(string configurationPath)
+    public static async Task RunAsync(
+        string configurationPath,
+        RuntimeLifecycleMode? lifecycleMode = null,
+        int? ownerProcessId = null,
+        bool ensureTrackSwapUi = false)
     {
         var store = new ConfigurationStore(configurationPath);
         RuntimeConfiguration configuration = store.Load();
@@ -14,14 +18,15 @@ internal static class RuntimeHost
         var profileStore = new CalibrationProfileStore(
             Path.Combine(configurationDirectory, "calibration-profiles.json"));
         var telemetrySampler = new TelemetrySampler();
+        using var cancellation = new CancellationTokenSource();
         var server = new RuntimePipeServer(
             store,
             synchronizer,
             configuration,
             profileStore,
             new OpenVrCalibrationService(),
-            telemetrySampler);
-        using var cancellation = new CancellationTokenSource();
+            telemetrySampler,
+            requestShutdown: cancellation.Cancel);
         Console.CancelKeyPress += (_, eventArgs) =>
         {
             eventArgs.Cancel = true;
@@ -32,10 +37,25 @@ internal static class RuntimeHost
         Console.WriteLine($"Configuration: {store.Path}");
         try
         {
-            await Task.WhenAll(
+            var tasks = new List<Task>
+            {
                 synchronizer.RunAsync(cancellation.Token),
                 telemetrySampler.RunAsync(cancellation.Token),
-                server.RunAsync(cancellation.Token)).ConfigureAwait(false);
+                server.RunAsync(cancellation.Token)
+            };
+            if (lifecycleMode.HasValue)
+            {
+                tasks.Add(RuntimeLifecycleMonitor.RunAsync(
+                    lifecycleMode.Value,
+                    ownerProcessId,
+                    cancellation.Cancel,
+                    cancellation.Token));
+            }
+            if (ensureTrackSwapUi)
+            {
+                tasks.Add(TrackSwapUiLauncher.RunUntilObservedAsync(cancellation.Token));
+            }
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {

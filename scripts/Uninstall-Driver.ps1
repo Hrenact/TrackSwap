@@ -27,4 +27,4 @@ $resolvedDriverPath = [System.IO.Path]::GetFullPath($DriverPath)
 & $vrpathreg removedriver $resolvedDriverPath
 if ($LASTEXITCODE -ne 0) { throw "vrpathreg removedriver failed with exit code $LASTEXITCODE." }
 
-Write-Host "Unregistered TrackSwap development driver at $resolvedDriverPath"
+Write-Host "Unregistered TrackSwap driver at $resolvedDriverPath"

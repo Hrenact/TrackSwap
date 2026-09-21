@@ -70,7 +70,19 @@ namespace TrackSwap.Services
             return payload.Revision;
         }
 
-        public bool TryStartRuntime(out string error)
+        public async Task ShutdownAsync()
+        {
+            MessageEnvelope response = await SendAsync("shutdown", "{}");
+            if (!string.Equals(response.MessageType, "shutdownAccepted", StringComparison.Ordinal))
+            {
+                throw CreateUnexpectedResponseException(response);
+            }
+        }
+
+        public bool TryStartRuntime(
+            RuntimeLifecycleMode lifecycleMode,
+            int ownerProcessId,
+            out string error)
         {
             error = null;
             string applicationDirectory = AppDomain.CurrentDomain.BaseDirectory;
@@ -93,7 +105,7 @@ namespace TrackSwap.Services
             }
             if (executable == null)
             {
-                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v004 程序包。";
+                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v005 程序包。";
                 return false;
             }
 
@@ -102,7 +114,8 @@ namespace TrackSwap.Services
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = executable,
-                    Arguments = "--run",
+                    Arguments = "--run --lifecycle " + lifecycleMode +
+                        " --owner-pid " + ownerProcessId,
                     WorkingDirectory = Path.GetDirectoryName(executable),
                     UseShellExecute = false,
                     CreateNoWindow = true

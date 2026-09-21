@@ -7,6 +7,52 @@ namespace TrackSwap.Runtime.Tests;
 public sealed class RuntimePipeServerTests
 {
     [Fact]
+    public async Task AcceptsGracefulShutdownRequest()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "TrackSwap.Runtime.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string pipeName = "TrackSwap.Runtime.Tests." + Guid.NewGuid().ToString("N");
+            bool shutdownRequested = false;
+            var configuration = new RuntimeConfiguration();
+            var server = new RuntimePipeServer(
+                new ConfigurationStore(Path.Combine(directory, "runtime-config.json")),
+                new DriverSynchronizer(configuration),
+                configuration,
+                new CalibrationProfileStore(Path.Combine(directory, "profiles.json")),
+                new OpenVrCalibrationService(),
+                new TelemetrySampler(),
+                pipeName,
+                () => shutdownRequested = true);
+            using var cancellation = new CancellationTokenSource();
+            Task serverTask = server.RunAsync(cancellation.Token);
+
+            MessageEnvelope response = RuntimeControlClient.Send(new MessageEnvelope
+            {
+                MessageType = "shutdown",
+                RequestId = Guid.NewGuid().ToString("N"),
+                PayloadJson = "{}"
+            }, TimeSpan.FromSeconds(2), pipeName);
+
+            Assert.Equal("shutdownAccepted", response.MessageType);
+            Assert.True(SpinWait.SpinUntil(() => shutdownRequested, TimeSpan.FromSeconds(1)));
+            cancellation.Cancel();
+            try
+            {
+                await serverTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task AcceptsMultipleEnabledRoutesWithStableSlots()
     {
         string directory = Path.Combine(Path.GetTempPath(), "TrackSwap.Runtime.Tests", Guid.NewGuid().ToString("N"));

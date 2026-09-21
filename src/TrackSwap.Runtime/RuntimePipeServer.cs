@@ -13,6 +13,7 @@ internal sealed class RuntimePipeServer
     private readonly OpenVrCalibrationService calibrationService;
     private readonly TelemetrySampler telemetrySampler;
     private readonly string pipeName;
+    private readonly Action? requestShutdown;
     private RuntimeConfiguration configuration;
 
     public RuntimePipeServer(
@@ -22,7 +23,8 @@ internal sealed class RuntimePipeServer
         CalibrationProfileStore profileStore,
         OpenVrCalibrationService calibrationService,
         TelemetrySampler telemetrySampler,
-        string? pipeName = null)
+        string? pipeName = null,
+        Action? requestShutdown = null)
     {
         this.store = store;
         this.synchronizer = synchronizer;
@@ -30,6 +32,7 @@ internal sealed class RuntimePipeServer
         this.calibrationService = calibrationService;
         this.telemetrySampler = telemetrySampler;
         this.pipeName = pipeName ?? ProtocolConstants.PipeName;
+        this.requestShutdown = requestShutdown;
         configuration = initialConfiguration;
     }
 
@@ -97,6 +100,7 @@ internal sealed class RuntimePipeServer
                 "captureCalibration" => CaptureCalibration(request, cancellationToken),
                 "listCalibrationProfiles" => ListCalibrationProfiles(request.RequestId),
                 "deleteCalibrationProfile" => DeleteCalibrationProfile(request),
+                "shutdown" => CreateShutdownAccepted(request.RequestId),
                 _ => throw new InvalidDataException($"Unknown runtime message type '{request.MessageType}'.")
             };
         }
@@ -119,6 +123,10 @@ internal sealed class RuntimePipeServer
         byte[] bytes = Encoding.UTF8.GetBytes(json);
         await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        if (string.Equals(request.MessageType, "shutdown", StringComparison.Ordinal))
+        {
+            requestShutdown?.Invoke();
+        }
     }
 
     private MessageEnvelope CaptureCalibration(
@@ -231,6 +239,16 @@ internal sealed class RuntimePipeServer
             MessageType = "status",
             RequestId = requestId,
             PayloadJson = JsonConvert.SerializeObject(status, RuntimeJson.Settings)
+        };
+    }
+
+    private static MessageEnvelope CreateShutdownAccepted(string requestId)
+    {
+        return new MessageEnvelope
+        {
+            MessageType = "shutdownAccepted",
+            RequestId = requestId,
+            PayloadJson = "{}"
         };
     }
 

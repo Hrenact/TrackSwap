@@ -25,7 +25,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="恢复备份" FontSize="21" FontWeight="SemiBold" />
+                    <TextBlock Text="恢复备份" FontSize="21" FontWeight="Medium" />
                     <TextBlock Margin="0,5,0,0"
                                Text="仅恢复位姿映射，保留当前其他 SteamVR 设置。恢复前会再次备份当前配置。"
                                Foreground="{StaticResource MutedTextBrush}" />
@@ -55,7 +55,7 @@
                                     Background="{StaticResource SurfaceBrush}"
                                     BorderBrush="{StaticResource BorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="8">
+                                    CornerRadius="3">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />

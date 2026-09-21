@@ -8,11 +8,29 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        if ((args.Length == 1 || args.Length == 2) && string.Equals(args[0], "--run", StringComparison.Ordinal))
+        if (args.Length == 0)
         {
-            string configurationPath = args.Length == 2 ? args[1] : GetDefaultConfigurationPath();
-            RuntimeHost.RunAsync(configurationPath).GetAwaiter().GetResult();
-            return 0;
+            RuntimePreferenceReader.RuntimePreferences preferences = RuntimePreferenceReader.Read();
+            bool neededForSteamVrSession =
+                preferences.RuntimeLifecycleMode == RuntimeLifecycleMode.FollowSteamVr ||
+                preferences.FollowSteamVrWithTrackSwap;
+            TrackSwapUiLauncher.WriteDiagnostic(
+                "Runtime no-argument launch; lifecycle=" + preferences.RuntimeLifecycleMode +
+                ", followUi=" + preferences.FollowSteamVrWithTrackSwap +
+                ", needed=" + neededForSteamVrSession +
+                ", localAppData=" + Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+            return neededForSteamVrSession
+                ? RunHost(
+                    GetDefaultConfigurationPath(),
+                    RuntimeLifecycleMode.FollowSteamVr,
+                    null,
+                    preferences.FollowSteamVrWithTrackSwap)
+                : 0;
+        }
+
+        if (string.Equals(args[0], "--run", StringComparison.Ordinal))
+        {
+            return ParseAndRunHost(args);
         }
 
         if (args.Length == 1 && string.Equals(args[0], "--runtime-status", StringComparison.Ordinal))
@@ -66,11 +84,76 @@ internal static class Program
             return ParseAndSetOffset(args);
         }
 
-        Console.WriteLine("TrackSwap Runtime v004");
-        Console.WriteLine("Use --run [config-path] to start the runtime host and IPC service.");
+        Console.WriteLine("TrackSwap Runtime v005");
+        Console.WriteLine("Use --run [config-path] [--lifecycle FollowTrackSwap|FollowSteamVr] [--owner-pid PID]");
+        Console.WriteLine("to start the runtime host and IPC service. A no-argument launch is reserved for SteamVR.");
         Console.WriteLine("Use --print-contract, --validate-config <path>, --switch-source <exact-device-path>,");
         Console.WriteLine("--set-offset <tx> <ty> <tz> <qx> <qy> <qz> <qw>, --reset-offset,");
         Console.WriteLine("--runtime-status, --runtime-telemetry, --driver-telemetry, or --run [config-path].");
+        return 0;
+    }
+
+    private static int ParseAndRunHost(string[] args)
+    {
+        string configurationPath = GetDefaultConfigurationPath();
+        RuntimeLifecycleMode? lifecycleMode = null;
+        int? ownerProcessId = null;
+        bool configurationPathSet = false;
+        for (int index = 1; index < args.Length; index++)
+        {
+            if (string.Equals(args[index], "--lifecycle", StringComparison.Ordinal))
+            {
+                if (++index >= args.Length || !Enum.TryParse(args[index], true, out RuntimeLifecycleMode parsedMode))
+                {
+                    Console.Error.WriteLine("--lifecycle must be FollowTrackSwap or FollowSteamVr.");
+                    return 2;
+                }
+                lifecycleMode = parsedMode;
+            }
+            else if (string.Equals(args[index], "--owner-pid", StringComparison.Ordinal))
+            {
+                if (++index >= args.Length || !int.TryParse(args[index], out int parsedProcessId) || parsedProcessId <= 0)
+                {
+                    Console.Error.WriteLine("--owner-pid must be a positive process id.");
+                    return 2;
+                }
+                ownerProcessId = parsedProcessId;
+            }
+            else if (!configurationPathSet)
+            {
+                configurationPath = args[index];
+                configurationPathSet = true;
+            }
+            else
+            {
+                Console.Error.WriteLine("Unexpected Runtime argument: " + args[index]);
+                return 2;
+            }
+        }
+
+        return RunHost(configurationPath, lifecycleMode, ownerProcessId, launchTrackSwapUi: false);
+    }
+
+    private static int RunHost(
+        string configurationPath,
+        RuntimeLifecycleMode? lifecycleMode,
+        int? ownerProcessId,
+        bool launchTrackSwapUi)
+    {
+        using var singleInstance = new Mutex(
+            initiallyOwned: true,
+            name: @"Local\TrackSwap.Runtime.v1",
+            createdNew: out bool createdNew);
+        if (!createdNew)
+        {
+            return 0;
+        }
+
+        RuntimeHost.RunAsync(
+            configurationPath,
+            lifecycleMode,
+            ownerProcessId,
+            launchTrackSwapUi).GetAwaiter().GetResult();
         return 0;
     }
 

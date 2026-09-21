@@ -1,0 +1,22 @@
+{
+  "source": "builtin",
+  "applications": [
+    {
+      "app_key": "com.hrenact.trackswap",
+      "launch_type": "binary",
+      "binary_path_windows": "TrackSwap.exe",
+      "arguments": "--steamvr-session",
+      "is_dashboard_overlay": true,
+      "strings": {
+        "en_us": {
+          "name": "TrackSwap",
+          "description": "SteamVR pose routing control surface"
+        },
+        "zh_cn": {
+          "name": "TrackSwap",
+          "description": "SteamVR 位姿映射管理工具"
+        }
+      }
+    }
+  ]
+}

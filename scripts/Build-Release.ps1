@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]{3}$')]
-    [string]$Version = 'v004',
+    [string]$Version = 'v005',
     [switch]$Clean
 )
 
@@ -53,7 +53,11 @@ if ($LASTEXITCODE -ne 0) { throw "Runtime publish failed with exit code $LASTEXI
 New-Item -ItemType Directory -Path (Join-Path $stageDirectory 'driver') -Force | Out-Null
 Copy-Item -LiteralPath $driverPackageDirectory -Destination (Join-Path $stageDirectory 'driver\trackswap') -Recurse -Force
 New-Item -ItemType Directory -Path (Join-Path $stageDirectory 'scripts') -Force | Out-Null
-foreach ($scriptName in @('Install-Driver.ps1', 'Uninstall-Driver.ps1', 'OpenVrDriverTools.ps1')) {
+foreach ($scriptName in @(
+    'Install-Driver.ps1',
+    'Uninstall-Driver.ps1',
+    'OpenVrDriverTools.ps1',
+    'Manage-SteamVrRegistration.ps1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $scriptName) -Destination (Join-Path $stageDirectory 'scripts') -Force
 }
 foreach ($fileName in @('README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md')) {

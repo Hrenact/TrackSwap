@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using TrackSwap.Models;
 using TrackSwap.Services;
+using MessageBox = TrackSwap.AppDialog;
 
 namespace TrackSwap
 {

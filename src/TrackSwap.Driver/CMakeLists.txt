@@ -36,6 +36,8 @@ add_library(driver_trackswap SHARED
     src/driver_factory.cpp
     src/pose_math.cpp
     src/pose_math.h
+    src/runtime_launcher.cpp
+    src/runtime_launcher.h
     src/tracker_registry.cpp
     src/tracker_registry.h
     src/virtual_tracker.cpp

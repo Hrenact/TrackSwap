@@ -17,6 +17,7 @@ using System.Windows.Threading;
 using TrackSwap.Models;
 using TrackSwap.Protocol;
 using TrackSwap.Services;
+using MessageBox = TrackSwap.AppDialog;
 
 namespace TrackSwap
 {
@@ -34,8 +35,12 @@ namespace TrackSwap
         private readonly SteamVrSettingsService _settingsService = new SteamVrSettingsService();
         private readonly OpenVrDeviceService _openVrDeviceService = new OpenVrDeviceService();
         private readonly OpenVrRenderModelService _openVrRenderModelService = new OpenVrRenderModelService();
+        private readonly SteamVrApplicationService _steamVrApplicationService = new SteamVrApplicationService();
+        private readonly DeviceHistoryService _deviceHistoryService = new DeviceHistoryService();
+        private readonly UiPreferencesService _uiPreferencesService = new UiPreferencesService();
         private readonly RuntimeControlService _runtimeControlService = new RuntimeControlService();
         private readonly DispatcherTimer _statusTimer;
+        private readonly DispatcherTimer _deviceRefreshTimer;
         private readonly DispatcherTimer _telemetryTimer;
         private Model3DGroup _sourcePreviewModel;
         private Model3DGroup _targetPreviewModel;
@@ -57,19 +62,35 @@ namespace TrackSwap
         private bool _runtimeEditorInitialized;
         private bool _calibrationProfilesLoaded;
         private bool _calibrationBusy;
+        private bool _deviceRefreshPending;
         private bool _telemetryUpdatePending;
         private int _runtimeStatusFailureCount;
         private int _telemetryFailureCount;
         private string _previewModelDescription;
         private IReadOnlyList<DeviceOption> _onlinePhysicalDevices = Array.Empty<DeviceOption>();
+        private IReadOnlyList<DeviceOption> _knownPhysicalDevices = Array.Empty<DeviceOption>();
         private readonly Dictionary<string, string> _knownSourceRoleTargets =
             new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly ObservableCollection<RouteListItem> _routeItems = new ObservableCollection<RouteListItem>();
         private readonly List<RouteConfiguration> _workingRoutes = new List<RouteConfiguration>();
         private RouteConfiguration _selectedRoute;
         private bool _showingSettings;
+        private SettingsSection _settingsSection = SettingsSection.Runtime;
+        private bool _showSteamVrRoleTargets;
+        private bool _followSteamVrWithTrackSwap;
+        private bool _steamVrObservedForUiLifecycle;
+        private bool _steamVrUiCloseScheduled;
+        private readonly bool _startedForSteamVrSession;
+        private RuntimeLifecycleMode _runtimeLifecycleMode;
+        private bool _runtimeLifecycleSelectionReady;
+        private bool _runtimeStartPending;
+        private bool _runtimeLifecycleRestarting;
+        private bool _isClosing;
         private bool _pendingDeletionBusy;
         private bool _pendingDeletionAutoRetrySuppressed;
+        private bool _pendingStaticMappingBusy;
+        private bool _pendingStaticMappingAutoRetrySuppressed;
+        private bool _lastDeviceRefreshSteamVrRunning;
         private long _displayedDriverAppliedRevision = long.MinValue;
         private bool _displayedDriverConnected;
 
@@ -77,22 +98,42 @@ namespace TrackSwap
         {
             InitializeComponent();
 
+            UiPreferences preferences = _uiPreferencesService.Load();
+            _showSteamVrRoleTargets = preferences.ShowSteamVrRoleTargets;
+            _runtimeLifecycleMode = preferences.RuntimeLifecycleMode;
+            _startedForSteamVrSession = Environment.GetCommandLineArgs().Any(argument =>
+                string.Equals(argument, "--steamvr-session", StringComparison.OrdinalIgnoreCase));
+            _followSteamVrWithTrackSwap =
+                preferences.FollowSteamVrWithTrackSwap || _startedForSteamVrSession;
+            ShowSteamVrRoleTargetsCheckBox.IsChecked = _showSteamVrRoleTargets;
+            FollowSteamVrWithTrackSwapCheckBox.IsChecked = _followSteamVrWithTrackSwap;
+            RuntimeLifecycleComboBox.ItemsSource = new[]
+            {
+                new RuntimeLifecycleOption(RuntimeLifecycleMode.FollowTrackSwap, "跟随 TrackSwap"),
+                new RuntimeLifecycleOption(RuntimeLifecycleMode.FollowSteamVr, "跟随 SteamVR")
+            };
+            RuntimeLifecycleComboBox.SelectedItem =
+                ((IEnumerable<RuntimeLifecycleOption>)RuntimeLifecycleComboBox.ItemsSource)
+                    .First(option => option.Mode == _runtimeLifecycleMode);
+            _runtimeLifecycleSelectionReady = true;
+
             RouteListBox.ItemsSource = _routeItems;
 
             TargetComboBox.ItemsSource = BuildTargets(
                 Array.Empty<DeviceOption>(),
                 Array.Empty<TargetOption>(),
-                includeRoleTargets: true,
+                includeRoleTargets: false,
                 includeConcreteDevices: true);
             TargetComboBox.SelectedIndex = 0;
             RuntimeTargetComboBox.ItemsSource = BuildTargets(
                 Array.Empty<DeviceOption>(),
                 Array.Empty<TargetOption>(),
-                includeRoleTargets: false,
+                includeRoleTargets: _showSteamVrRoleTargets,
                 includeConcreteDevices: true);
             RuntimeTargetComboBox.SelectedIndex = 0;
             CalibrationNameTextBox.Text = "校准 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
             InitializePosePreview();
+            ShowSettingsSection(_settingsSection);
             UpdateContentVisibility();
 
             _statusTimer = new DispatcherTimer
@@ -100,6 +141,11 @@ namespace TrackSwap
                 Interval = TimeSpan.FromSeconds(1)
             };
             _statusTimer.Tick += async (_, __) => await RefreshStatusAsync();
+            _deviceRefreshTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(2)
+            };
+            _deviceRefreshTimer.Tick += async (_, __) => await RefreshDevicesAsync();
             _telemetryTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(33)
@@ -109,19 +155,29 @@ namespace TrackSwap
             Loaded += async (_, __) =>
             {
                 RefreshAll();
+                await EnsureRuntimeStartedAsync(showError: false);
                 _statusTimer.Start();
+                _deviceRefreshTimer.Start();
                 _telemetryTimer.Start();
                 await RefreshStatusAsync();
+                if (_statusService.IsRunning() && _followSteamVrWithTrackSwap)
+                {
+                    await SyncSteamVrAutoLaunchAsync(enabled: true, showWarning: false);
+                }
             };
             Closed += (_, __) =>
             {
+                _isClosing = true;
                 _previewModelRequestVersion++;
                 _statusTimer.Stop();
+                _deviceRefreshTimer.Stop();
                 _telemetryTimer.Stop();
             };
         }
 
-        private void RefreshAll()
+        private void RefreshAll(
+            IReadOnlyList<DeviceOption> suppliedOnlineSources = null,
+            bool useSuppliedOnlineSources = false)
         {
             _isLoading = true;
             try
@@ -131,6 +187,7 @@ namespace TrackSwap
                 string previousRuntimeTargetPath = (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath;
                 _settingsPath = _pathService.FindSettingsPath();
                 SettingsPathText.Text = _settingsPath ?? "未找到 steamvr.vrsettings";
+                DeviceHistoryPathText.Text = _deviceHistoryService.FilePath;
                 ViewRawButton.IsEnabled = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath);
                 RestoreBackupButton.IsEnabled = ViewRawButton.IsEnabled;
 
@@ -138,10 +195,12 @@ namespace TrackSwap
                     ? _settingsService.ReadKnownSources(_settingsPath)
                     : Array.Empty<DeviceOption>();
                 bool steamVrRunning = _statusService.IsRunning();
-                IReadOnlyList<DeviceOption> onlineSources = Array.Empty<DeviceOption>();
+                IReadOnlyList<DeviceOption> onlineSources = useSuppliedOnlineSources
+                    ? suppliedOnlineSources ?? Array.Empty<DeviceOption>()
+                    : Array.Empty<DeviceOption>();
                 string enumerationWarning = null;
 
-                if (steamVrRunning)
+                if (steamVrRunning && !useSuppliedOnlineSources)
                 {
                     try
                     {
@@ -153,22 +212,48 @@ namespace TrackSwap
                     }
                 }
 
-                IReadOnlyList<DeviceOption> sources = MergeSources(onlineSources, savedSources);
-                SourceComboBox.ItemsSource = sources;
+                IReadOnlyList<DeviceOption> onlinePhysicalDevices = onlineSources
+                    .Where(IsPhysicalDevice)
+                    .ToList();
+                _deviceHistoryService.Remember(onlinePhysicalDevices);
+                _onlinePhysicalDevices = onlinePhysicalDevices;
+                IReadOnlyList<DeviceOption> rememberedDevices = _deviceHistoryService.Load();
+                var onlineDevicePaths = new HashSet<string>(
+                    onlinePhysicalDevices.Select(device => device.DevicePath),
+                    StringComparer.Ordinal);
+                IReadOnlyList<DeviceHistoryListItem> historyItems = rememberedDevices
+                    .Select(device => new DeviceHistoryListItem(
+                        DeviceOption.BaseDisplayName(device.DisplayName),
+                        device.DevicePath,
+                        onlineDevicePaths.Contains(device.DevicePath)))
+                    .OrderByDescending(device => device.IsOnline)
+                    .ThenBy(device => device.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+                DeviceHistoryCountText.Text = historyItems.Count + " 台设备";
+                DeviceHistoryItemsControl.ItemsSource = historyItems;
+                EmptyDeviceHistoryText.Visibility = historyItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                _knownPhysicalDevices = MergeDeviceCatalog(
+                    onlinePhysicalDevices,
+                    rememberedDevices);
+                foreach (DeviceOption device in onlinePhysicalDevices.Where(device =>
+                    !string.IsNullOrWhiteSpace(device.DevicePath) &&
+                    !string.IsNullOrWhiteSpace(device.RoleTargetPath)))
+                {
+                    _knownSourceRoleTargets[device.DevicePath] = device.RoleTargetPath;
+                }
 
                 IReadOnlyList<TargetOption> savedDeviceTargets = ViewRawButton.IsEnabled
                     ? _settingsService.ReadKnownDeviceTargets(_settingsPath)
                     : Array.Empty<TargetOption>();
+                IReadOnlyList<TargetOption> savedRoleTargets = ViewRawButton.IsEnabled
+                    ? _settingsService.ReadKnownRoleTargets(_settingsPath)
+                    : Array.Empty<TargetOption>();
                 IReadOnlyList<TargetOption> targets = BuildTargets(
-                    onlineSources,
-                    savedDeviceTargets,
-                    includeRoleTargets: true,
-                    includeConcreteDevices: true);
-                IReadOnlyList<TargetOption> runtimeTargets = BuildTargets(
-                    onlineSources,
-                    savedDeviceTargets,
+                    _knownPhysicalDevices,
+                    savedDeviceTargets.Concat(savedRoleTargets).ToList(),
                     includeRoleTargets: false,
-                    includeConcreteDevices: true);
+                    includeConcreteDevices: true,
+                    currentTargetPath: previousTargetPath);
                 TargetComboBox.ItemsSource = targets;
                 TargetOption selectedTarget = targets.FirstOrDefault(target =>
                     string.Equals(target.TargetPath, previousTargetPath, StringComparison.Ordinal))
@@ -179,14 +264,18 @@ namespace TrackSwap
                     ? null
                     : _settingsService.ReadSourceForTarget(_settingsPath, selectedTarget.TargetPath);
 
+                IReadOnlyList<DeviceOption> legacySourceCatalog = MergeDeviceCatalog(
+                    _knownPhysicalDevices,
+                    savedSources.Where(IsPhysicalDevice));
+                IReadOnlyList<DeviceOption> sources = BuildDeviceChoices(legacySourceCatalog, currentSource);
+                SourceComboBox.ItemsSource = sources;
                 DeviceOption selectedSource = sources.FirstOrDefault(source =>
                     string.Equals(source.DevicePath, currentSource, StringComparison.Ordinal));
                 SourceComboBox.SelectedItem = selectedSource ?? sources.FirstOrDefault();
                 PopulateRuntimeOptions(
-                    onlineSources,
-                    runtimeTargets,
                     previousRuntimeSourcePath,
-                    previousRuntimeTargetPath);
+                    previousRuntimeTargetPath,
+                    savedDeviceTargets);
                 RefreshOverrideList();
 
                 if (!string.IsNullOrWhiteSpace(enumerationWarning))
@@ -197,6 +286,7 @@ namespace TrackSwap
                 {
                     RefreshButton.ToolTip = "重新扫描设备并读取配置";
                 }
+                _lastDeviceRefreshSteamVrRunning = steamVrRunning;
             }
             catch (Exception exception)
             {
@@ -211,28 +301,94 @@ namespace TrackSwap
             }
         }
 
-        private void PopulateRuntimeOptions(
-            IReadOnlyList<DeviceOption> onlineDevices,
-            IReadOnlyList<TargetOption> targets,
-            string selectedSourcePath,
-            string selectedTargetPath)
+        private async Task RefreshDevicesAsync()
         {
-            IReadOnlyList<DeviceOption> physicalSources = onlineDevices
-                .Where(device => device.DevicePath.IndexOf(
-                    ProtocolConstants.VirtualSerialPrefix,
-                    StringComparison.OrdinalIgnoreCase) < 0)
-                .ToList();
-            _onlinePhysicalDevices = physicalSources;
-            foreach (DeviceOption device in physicalSources.Where(device =>
-                !string.IsNullOrWhiteSpace(device.DevicePath) &&
-                !string.IsNullOrWhiteSpace(device.RoleTargetPath)))
+            if (_deviceRefreshPending || _isLoading || _calibrationBusy ||
+                SourceComboBox.IsDropDownOpen || TargetComboBox.IsDropDownOpen ||
+                RuntimeSourceComboBox.IsDropDownOpen || RuntimeTargetComboBox.IsDropDownOpen ||
+                CalibrationTargetComboBox.IsDropDownOpen)
             {
-                _knownSourceRoleTargets[device.DevicePath] = device.RoleTargetPath;
+                return;
             }
-            RuntimeSourceComboBox.ItemsSource = physicalSources;
-            RuntimeSourceComboBox.SelectedItem = physicalSources.FirstOrDefault(device =>
+
+            _deviceRefreshPending = true;
+            try
+            {
+                bool steamVrRunning = _statusService.IsRunning();
+                IReadOnlyList<DeviceOption> onlineSources = Array.Empty<DeviceOption>();
+                if (steamVrRunning)
+                {
+                    try
+                    {
+                        string runtimePath = _pathService.FindRuntimePath();
+                        onlineSources = await Task.Run(() =>
+                            _openVrDeviceService.EnumerateOnlineDevices(runtimePath));
+                    }
+                    catch (Exception exception)
+                    {
+                        RefreshButton.ToolTip =
+                            "实时设备扫描失败，已保留上次结果：" + exception.Message;
+                        return;
+                    }
+                }
+
+                IReadOnlyList<DeviceOption> physicalDevices = onlineSources
+                    .Where(IsPhysicalDevice)
+                    .ToList();
+                if (steamVrRunning == _lastDeviceRefreshSteamVrRunning &&
+                    DeviceCatalogsEqual(_onlinePhysicalDevices, physicalDevices))
+                {
+                    return;
+                }
+
+                RefreshAll(onlineSources, useSuppliedOnlineSources: true);
+            }
+            finally
+            {
+                _deviceRefreshPending = false;
+            }
+        }
+
+        private static bool DeviceCatalogsEqual(
+            IReadOnlyList<DeviceOption> left,
+            IReadOnlyList<DeviceOption> right)
+        {
+            if (left.Count != right.Count)
+            {
+                return false;
+            }
+
+            var rightByPath = right.ToDictionary(device => device.DevicePath, StringComparer.Ordinal);
+            foreach (DeviceOption device in left)
+            {
+                if (!rightByPath.TryGetValue(device.DevicePath, out DeviceOption match) ||
+                    !string.Equals(device.DisplayName, match.DisplayName, StringComparison.Ordinal) ||
+                    !string.Equals(device.RoleTargetPath, match.RoleTargetPath, StringComparison.Ordinal) ||
+                    !string.Equals(device.RenderModelName, match.RenderModelName, StringComparison.Ordinal) ||
+                    device.DeviceKind != match.DeviceKind)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private void PopulateRuntimeOptions(
+            string selectedSourcePath,
+            string selectedTargetPath,
+            IReadOnlyList<TargetOption> savedDeviceTargets)
+        {
+            IReadOnlyList<DeviceOption> sources = BuildDeviceChoices(_knownPhysicalDevices, selectedSourcePath);
+            RuntimeSourceComboBox.ItemsSource = sources;
+            RuntimeSourceComboBox.SelectedItem = sources.FirstOrDefault(device =>
                 string.Equals(device.DevicePath, selectedSourcePath, StringComparison.Ordinal));
 
+            IReadOnlyList<TargetOption> targets = BuildTargets(
+                _knownPhysicalDevices,
+                savedDeviceTargets,
+                includeRoleTargets: _showSteamVrRoleTargets,
+                includeConcreteDevices: true,
+                currentTargetPath: selectedTargetPath);
             RuntimeTargetComboBox.ItemsSource = targets;
             RuntimeTargetComboBox.SelectedItem = targets.FirstOrDefault(target =>
                 string.Equals(target.TargetPath, selectedTargetPath, StringComparison.Ordinal))
@@ -241,10 +397,11 @@ namespace TrackSwap
         }
 
         private static IReadOnlyList<TargetOption> BuildTargets(
-            IReadOnlyList<DeviceOption> onlineDevices,
+            IReadOnlyList<DeviceOption> knownDevices,
             IReadOnlyList<TargetOption> savedDeviceTargets,
             bool includeRoleTargets,
-            bool includeConcreteDevices)
+            bool includeConcreteDevices,
+            string currentTargetPath = null)
         {
             var targets = new List<TargetOption>();
             if (includeRoleTargets)
@@ -259,60 +416,172 @@ namespace TrackSwap
                 return targets;
             }
 
-            var knownPaths = new HashSet<string>(
-                targets.Select(target => target.TargetPath),
-                StringComparer.Ordinal);
+            var knownPaths = new HashSet<string>(targets.Select(target => target.TargetPath), StringComparer.Ordinal);
+            DeviceOption currentDevice = knownDevices.FirstOrDefault(device =>
+                string.Equals(device.DevicePath, currentTargetPath, StringComparison.Ordinal));
+            TargetOption currentSavedTarget = savedDeviceTargets.FirstOrDefault(target =>
+                string.Equals(target.TargetPath, currentTargetPath, StringComparison.Ordinal));
+            if (!string.IsNullOrWhiteSpace(currentTargetPath) && knownPaths.Add(currentTargetPath))
+            {
+                string currentName = currentDevice != null
+                    ? DeviceOption.BaseDisplayName(currentDevice.DisplayName)
+                    : currentSavedTarget != null
+                        ? DeviceOption.BaseDisplayName(currentSavedTarget.DisplayName)
+                        : currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
+                            ? BuildConfiguredRuntimeTargetName(currentTargetPath)
+                            : DeviceNameFromPath(currentTargetPath);
+                string currentPrefix = currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
+                    ? string.Empty
+                    : currentDevice?.IsOnline == true ? "在线 · " : "离线 · ";
+                targets.Add(new TargetOption(currentPrefix + currentName, currentTargetPath));
+            }
 
-            foreach (DeviceOption device in onlineDevices)
+            foreach (DeviceOption device in knownDevices.Where(device => device.IsOnline))
             {
                 if (knownPaths.Add(device.DevicePath))
                 {
-                    targets.Add(new TargetOption("在线设备 · " + device.DisplayName, device.DevicePath));
+                    targets.Add(new TargetOption(
+                        "在线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
+                        device.DevicePath));
                 }
             }
 
-            foreach (TargetOption target in savedDeviceTargets)
+            foreach (DeviceOption device in knownDevices.Where(device => !device.IsOnline))
             {
-                if (knownPaths.Add(target.TargetPath))
+                if (knownPaths.Add(device.DevicePath))
                 {
-                    targets.Add(target);
+                    targets.Add(new TargetOption(
+                        "离线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
+                        device.DevicePath));
                 }
+            }
+
+            foreach (TargetOption target in savedDeviceTargets.Where(target => knownPaths.Add(target.TargetPath)))
+            {
+                targets.Add(new TargetOption(
+                    target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal)
+                        ? "离线 · " + DeviceOption.BaseDisplayName(target.DisplayName)
+                        : target.DisplayName,
+                    target.TargetPath));
             }
 
             return targets;
         }
 
-        private static IReadOnlyList<DeviceOption> MergeSources(
-            IReadOnlyList<DeviceOption> onlineSources,
-            IReadOnlyList<DeviceOption> savedSources)
+        private static IReadOnlyList<DeviceOption> MergeDeviceCatalog(
+            params IEnumerable<DeviceOption>[] groups)
         {
-            var result = new List<DeviceOption>(onlineSources);
-            var knownPaths = new HashSet<string>(
-                onlineSources.Select(source => source.DevicePath),
-                StringComparer.Ordinal);
-
-            foreach (DeviceOption source in savedSources)
+            var result = new List<DeviceOption>();
+            var knownPaths = new HashSet<string>(StringComparer.Ordinal);
+            foreach (IEnumerable<DeviceOption> group in groups)
             {
-                if (knownPaths.Add(source.DevicePath))
+                foreach (DeviceOption device in group ?? Enumerable.Empty<DeviceOption>())
                 {
-                    result.Add(source);
+                    if (IsPhysicalDevice(device) && knownPaths.Add(device.DevicePath))
+                    {
+                        result.Add(device);
+                    }
                 }
             }
-
             return result;
+        }
+
+        private static IReadOnlyList<DeviceOption> BuildDeviceChoices(
+            IReadOnlyList<DeviceOption> knownDevices,
+            string currentDevicePath)
+        {
+            var result = new List<DeviceOption>();
+            DeviceOption current = knownDevices.FirstOrDefault(device =>
+                string.Equals(device.DevicePath, currentDevicePath, StringComparison.Ordinal));
+            if (!string.IsNullOrWhiteSpace(currentDevicePath))
+            {
+                result.Add(CloneDeviceOption(
+                    current,
+                    (current?.IsOnline == true ? "在线 · " : "离线 · ") + (current != null
+                        ? DeviceOption.BaseDisplayName(current.DisplayName)
+                        : DeviceNameFromPath(currentDevicePath)),
+                    currentDevicePath));
+            }
+
+            foreach (DeviceOption device in knownDevices.Where(device =>
+                !string.Equals(device.DevicePath, currentDevicePath, StringComparison.Ordinal) && device.IsOnline))
+            {
+                result.Add(CloneDeviceOption(
+                    device,
+                    "在线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
+                    device.DevicePath));
+            }
+            foreach (DeviceOption device in knownDevices.Where(device =>
+                !string.Equals(device.DevicePath, currentDevicePath, StringComparison.Ordinal) && !device.IsOnline))
+            {
+                result.Add(CloneDeviceOption(
+                    device,
+                    "离线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
+                    device.DevicePath));
+            }
+            return result;
+        }
+
+        private static DeviceOption CloneDeviceOption(
+            DeviceOption device,
+            string displayName,
+            string devicePath)
+        {
+            return new DeviceOption(
+                displayName,
+                devicePath,
+                device?.IsOnline == true,
+                device?.DeviceIndex,
+                device?.SerialNumber,
+                device?.RoleTargetPath,
+                device?.RenderModelName,
+                device?.DeviceKind ?? TrackedDeviceKind.Unknown);
+        }
+
+        private static bool IsPhysicalDevice(DeviceOption device)
+        {
+            return device != null &&
+                !string.IsNullOrWhiteSpace(device.DevicePath) &&
+                device.DevicePath.StartsWith("/devices/", StringComparison.Ordinal) &&
+                device.DevicePath.IndexOf(ProtocolConstants.VirtualSerialPrefix, StringComparison.OrdinalIgnoreCase) < 0;
+        }
+
+        private static string DeviceNameFromPath(string devicePath)
+        {
+            if (string.IsNullOrWhiteSpace(devicePath))
+            {
+                return "未知设备";
+            }
+            int separator = devicePath.LastIndexOf('/');
+            return separator >= 0 && separator + 1 < devicePath.Length
+                ? devicePath.Substring(separator + 1)
+                : devicePath;
         }
 
         private void UpdateSteamVrStatus()
         {
             bool running = _statusService.IsRunning();
+            if (running && _followSteamVrWithTrackSwap)
+            {
+                _steamVrObservedForUiLifecycle = true;
+                _steamVrUiCloseScheduled = false;
+            }
+            else if (!running &&
+                _followSteamVrWithTrackSwap &&
+                _steamVrObservedForUiLifecycle &&
+                !_steamVrUiCloseScheduled &&
+                !_isClosing)
+            {
+                _steamVrUiCloseScheduled = true;
+            }
             SteamVrStatusText.Text = "SteamVR";
             SteamVrStatusText.Foreground = FindBrush(running ? "SuccessBrush" : "MutedTextBrush");
             SteamVrDot.Fill = FindBrush(running ? "SuccessBrush" : "MutedTextBrush");
-            SteamVrBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(running ? "#123225" : "#202A34"));
+            SteamVrBadge.Background = Brushes.Transparent;
 
             ApplyButton.IsEnabled = !running
                 && SourceComboBox.SelectedItem is DeviceOption
-                && TargetComboBox.SelectedItem is TargetOption
+                && IsConcreteDeviceTarget(TargetComboBox.SelectedItem as TargetOption)
                 && !string.IsNullOrWhiteSpace(_settingsPath);
         }
 
@@ -325,6 +594,7 @@ namespace TrackSwap
             }
 
             _isRuntimeStatusUpdatePending = true;
+            bool stoppedStateWorkCompleted = false;
             try
             {
                 RuntimeStatusSnapshot status = await _runtimeControlService.GetStatusAsync();
@@ -335,11 +605,22 @@ namespace TrackSwap
                 {
                     await RefreshCalibrationProfilesAsync();
                 }
-                if (!_statusService.IsRunning() &&
-                    !_pendingDeletionAutoRetrySuppressed &&
-                    status.Configuration?.Routes?.Any(route => route.PendingDeletion) == true)
+                if (!_statusService.IsRunning())
                 {
-                    await FinalizePendingDeletionsAsync();
+                    bool deletionsCompleted = true;
+                    if (!_pendingDeletionAutoRetrySuppressed &&
+                        status.Configuration?.Routes?.Any(route => route.PendingDeletion) == true)
+                    {
+                        deletionsCompleted = await FinalizePendingDeletionsAsync();
+                    }
+                    bool mappingsCompleted = false;
+                    if (!_pendingStaticMappingAutoRetrySuppressed &&
+                        deletionsCompleted &&
+                        !_workingRoutes.Any(route => route.PendingDeletion))
+                    {
+                        mappingsCompleted = await ReconcilePendingStaticMappingsAsync();
+                    }
+                    stoppedStateWorkCompleted = deletionsCompleted && mappingsCompleted;
                 }
             }
             catch (Exception exception) when (
@@ -353,12 +634,17 @@ namespace TrackSwap
                 {
                     _runtimeStatus = null;
                     ShowRuntimeOffline(exception.Message);
+                    await EnsureRuntimeStartedAsync(showError: false);
                 }
             }
             finally
             {
                 _isRuntimeStatusUpdatePending = false;
                 UpdateRuntimeSelectionDetails();
+                if (_steamVrUiCloseScheduled && stoppedStateWorkCompleted && !_isClosing)
+                {
+                    Close();
+                }
             }
         }
 
@@ -367,7 +653,7 @@ namespace TrackSwap
             RuntimeStatusText.Text = "Runtime";
             RuntimeStatusText.Foreground = FindBrush("SuccessBrush");
             RuntimeDot.Fill = FindBrush("SuccessBrush");
-            RuntimeBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#123225"));
+            RuntimeBadge.Background = Brushes.Transparent;
             RuntimeHealthText.Text = "在线";
             RuntimeHealthText.Foreground = FindBrush("SuccessBrush");
             DriverHealthText.Text = status.DriverConnected ? "已连接" : "等待驱动";
@@ -407,7 +693,7 @@ namespace TrackSwap
             RuntimeStatusText.Text = "Runtime";
             RuntimeStatusText.Foreground = FindBrush("MutedTextBrush");
             RuntimeDot.Fill = FindBrush("MutedTextBrush");
-            RuntimeBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#202A34"));
+            RuntimeBadge.Background = Brushes.Transparent;
             RuntimeHealthText.Text = "离线";
             RuntimeHealthText.Foreground = FindBrush("MutedTextBrush");
             DriverHealthText.Text = "未知";
@@ -445,6 +731,10 @@ namespace TrackSwap
             TargetOption target = TargetComboBox.SelectedItem as TargetOption;
             SourcePathText.Text = source?.DevicePath ?? "未选择来源";
             TargetPathText.Text = target?.TargetPath ?? "未选择目标";
+            bool legacyRoleTarget = target != null && !IsConcreteDeviceTarget(target);
+            LegacyStaticTargetWarningText.Visibility = legacyRoleTarget
+                ? Visibility.Visible
+                : Visibility.Collapsed;
             UpdateSteamVrStatus();
         }
 
@@ -455,19 +745,20 @@ namespace TrackSwap
             RuntimeSourcePathText.Text = source?.DevicePath ?? "未选择物理来源";
             RuntimeTargetPathText.Text = target?.TargetPath ?? "未选择静态目标";
             ApplyRuntimeButton.IsEnabled = _runtimeStatus != null && _selectedRoute != null &&
-                !_selectedRoute.PendingDeletion && source != null && IsConcreteRuntimeTarget(target);
+                !_selectedRoute.PendingDeletion && source != null && IsAllowedRuntimeTarget(target);
 
             RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
                 _selectedRoute != null && string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
             bool sourceWillChange = activeRoute != null && source != null &&
                 !string.Equals(activeRoute.SourceDevicePath, source.DevicePath, StringComparison.Ordinal);
-            bool legacyRoleTarget = target != null && !IsConcreteRuntimeTarget(target);
-            RuntimeRouteChangeWarningText.Text = legacyRoleTarget
+            bool blockedRoleTarget = target != null && IsSteamVrRoleTargetPath(target.TargetPath) &&
+                !_showSteamVrRoleTargets;
+            RuntimeRouteChangeWarningText.Text = blockedRoleTarget
                 ? "当前目标来自旧角色配置。请选择一个明确的在线实体设备后再应用。"
                 : sourceWillChange
                 ? "注意：应用后物理来源将从 “" + activeRoute.SourceDevicePath + "” 切换为 “" + source.DevicePath + "”。"
                 : string.Empty;
-            RuntimeRouteChangeWarningText.Visibility = legacyRoleTarget || sourceWillChange
+            RuntimeRouteChangeWarningText.Visibility = blockedRoleTarget || sourceWillChange
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             if (_selectedRoute != null)
@@ -480,21 +771,24 @@ namespace TrackSwap
                         string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot), StringComparison.Ordinal) &&
                         string.Equals(mapping.TargetPath, _selectedRoute.TargetDevicePath, StringComparison.Ordinal));
                 bool steamVrRunning = _statusService.IsRunning();
-                string state = _selectedRoute.PendingDeletion ? "待删除" : !_selectedRoute.Enabled ? "已停用" : !mapped ? "待初始化" : !steamVrRunning ? "已配置" : applied ? "已应用" : "待应用";
+                string state = _selectedRoute.PendingDeletion ? "待删除" : !_selectedRoute.Enabled ? "已停用" : !mapped ? "待映射" : !steamVrRunning ? "已配置" : applied ? "已应用" : "待应用";
                 SelectedRouteStateText.Text = state;
                 bool synchronized = mapped && (!steamVrRunning || applied);
                 SelectedRouteStateText.Foreground = FindBrush(_selectedRoute.PendingDeletion ? "WarningBrush" : !_selectedRoute.Enabled ? "MutedTextBrush" : synchronized ? "SuccessBrush" : "WarningBrush");
                 RouteSyncText.Text = _selectedRoute.PendingDeletion
                     ? "退出 SteamVR 后将自动清理绑定并删除"
-                    : synchronized ? "配置已同步" : !mapped ? "需要初始化静态映射" : "配置待同步";
+                    : synchronized ? "配置已同步" : !mapped
+                    ? steamVrRunning ? "退出 SteamVR 后将自动写入静态映射" : "正在等待自动写入静态映射"
+                    : "配置待同步";
                 RouteSyncText.Foreground = FindBrush(_selectedRoute.PendingDeletion || !synchronized ? "WarningBrush" : "SuccessBrush");
                 SelectedRouteSummaryText.Text = _selectedRoute.PendingDeletion
                     ? "该配置仍保持输出；可通过右键菜单取消删除。"
-                    : legacyRoleTarget
+                    : blockedRoleTarget
                     ? "旧配置使用 SteamVR 角色目标；请选择明确的在线实体设备完成迁移。"
                     : source == null || target == null
                     ? "选择来源与目标以完成配置。"
-                    : source.DisplayName + " 提供定位，" + target.DisplayName + " 保留输入。";
+                    : DeviceOption.BaseDisplayName(source.DisplayName) + " 提供定位，" +
+                        DeviceOption.BaseDisplayName(target.DisplayName) + " 保留输入。";
             }
             RefreshCalibrationTargets();
             UpdateCalibrationControls();
@@ -622,7 +916,7 @@ namespace TrackSwap
                 bool mapped = overrides.Any(mapping =>
                     string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot), StringComparison.Ordinal) &&
                     string.Equals(mapping.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
-                string state = route.PendingDeletion ? "待删除" : !route.Enabled ? "已停用" : !mapped ? "待初始化" : !steamVrRunning ? "已配置" : driverApplied ? "已应用" : "等待驱动";
+                string state = route.PendingDeletion ? "待删除" : !route.Enabled ? "已停用" : !mapped ? "待映射" : !steamVrRunning ? "已配置" : driverApplied ? "已应用" : "等待驱动";
                 Brush brush = FindBrush(route.PendingDeletion ? "WarningBrush" : !route.Enabled ? "MutedTextBrush" : mapped && (!steamVrRunning || driverApplied) ? "SuccessBrush" : "WarningBrush");
                 _routeItems.Add(new RouteListItem(route, state, brush));
             }
@@ -645,26 +939,21 @@ namespace TrackSwap
             _isLoading = true;
             try
             {
-                var sources = ((RuntimeSourceComboBox.ItemsSource as IEnumerable<DeviceOption>) ?? Enumerable.Empty<DeviceOption>()).ToList();
+                IReadOnlyList<DeviceOption> sources = BuildDeviceChoices(
+                    _knownPhysicalDevices,
+                    route.SourceDevicePath);
+                RuntimeSourceComboBox.ItemsSource = sources;
                 DeviceOption source = sources.FirstOrDefault(candidate => string.Equals(candidate.DevicePath, route.SourceDevicePath, StringComparison.Ordinal));
-                if (source == null && !string.IsNullOrWhiteSpace(route.SourceDevicePath))
-                {
-                    source = new DeviceOption("已配置 · 当前离线", route.SourceDevicePath);
-                    sources.Add(source);
-                    RuntimeSourceComboBox.ItemsSource = sources;
-                }
                 RuntimeSourceComboBox.SelectedItem = source ?? sources.FirstOrDefault();
 
-                var targets = ((RuntimeTargetComboBox.ItemsSource as IEnumerable<TargetOption>) ?? Enumerable.Empty<TargetOption>()).ToList();
+                IReadOnlyList<TargetOption> targets = BuildTargets(
+                    _knownPhysicalDevices,
+                    Array.Empty<TargetOption>(),
+                    includeRoleTargets: _showSteamVrRoleTargets,
+                    includeConcreteDevices: true,
+                    currentTargetPath: route.TargetDevicePath);
+                RuntimeTargetComboBox.ItemsSource = targets;
                 TargetOption target = targets.FirstOrDefault(candidate => string.Equals(candidate.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
-                if (target == null && !string.IsNullOrWhiteSpace(route.TargetDevicePath))
-                {
-                    target = new TargetOption(
-                        BuildConfiguredRuntimeTargetName(route.TargetDevicePath),
-                        route.TargetDevicePath);
-                    targets.Add(target);
-                    RuntimeTargetComboBox.ItemsSource = targets;
-                }
                 RuntimeTargetComboBox.SelectedItem = target ?? targets.FirstOrDefault();
                 LoadOffsetFields(route.Offset ?? PoseOffset.Identity());
                 SelectedProxyText.Text = ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
@@ -697,11 +986,31 @@ namespace TrackSwap
             return value.ToString("G9", CultureInfo.InvariantCulture);
         }
 
-        private static bool IsConcreteRuntimeTarget(TargetOption target)
+        private static bool IsConcreteDeviceTarget(TargetOption target)
         {
             return target != null &&
                 !string.IsNullOrWhiteSpace(target.TargetPath) &&
                 target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal);
+        }
+
+        private static bool IsSteamVrRoleTargetPath(string targetPath)
+        {
+            return string.Equals(targetPath, ProtocolConstants.RightHandRolePath, StringComparison.Ordinal) ||
+                string.Equals(targetPath, ProtocolConstants.LeftHandRolePath, StringComparison.Ordinal) ||
+                string.Equals(targetPath, ProtocolConstants.HeadRolePath, StringComparison.Ordinal);
+        }
+
+        private bool IsAllowedRuntimeTarget(TargetOption target)
+        {
+            return IsConcreteDeviceTarget(target) ||
+                (_showSteamVrRoleTargets && target != null && IsSteamVrRoleTargetPath(target.TargetPath));
+        }
+
+        private bool IsAllowedRuntimeTargetPath(string targetPath)
+        {
+            return !string.IsNullOrWhiteSpace(targetPath) &&
+                (targetPath.StartsWith("/devices/", StringComparison.Ordinal) ||
+                    (_showSteamVrRoleTargets && IsSteamVrRoleTargetPath(targetPath)));
         }
 
         private static string BuildConfiguredRuntimeTargetName(string targetPath)
@@ -806,16 +1115,248 @@ namespace TrackSwap
             UpdateContentVisibility();
         }
 
-        private void ManageRoutesButton_Click(object sender, RoutedEventArgs e)
+        private void SettingsCategoryButton_Click(object sender, RoutedEventArgs e)
         {
-            if (RouteListBox.SelectedItem == null)
+            if (sender == SettingsRuntimeCategoryButton)
             {
-                MessageBox.Show(this, "请先选择一条配置。", "管理配置", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowSettingsSection(SettingsSection.Runtime);
+            }
+            else if (sender == SettingsSteamVrCategoryButton)
+            {
+                ShowSettingsSection(SettingsSection.SteamVr);
+            }
+            else if (sender == SettingsDevicesCategoryButton)
+            {
+                ShowSettingsSection(SettingsSection.Devices);
+            }
+            else if (sender == SettingsAdvancedCategoryButton)
+            {
+                ShowSettingsSection(SettingsSection.Advanced);
+            }
+        }
+
+        private void ShowSettingsSection(SettingsSection section)
+        {
+            _settingsSection = section;
+            RuntimeSettingsPanel.Visibility = section == SettingsSection.Runtime ? Visibility.Visible : Visibility.Collapsed;
+            SteamVrSettingsPanel.Visibility = section == SettingsSection.SteamVr ? Visibility.Visible : Visibility.Collapsed;
+            DeviceSettingsPanel.Visibility = section == SettingsSection.Devices ? Visibility.Visible : Visibility.Collapsed;
+            AdvancedSettingsPanel.Visibility = section == SettingsSection.Advanced ? Visibility.Visible : Visibility.Collapsed;
+
+            UpdateSettingsCategoryButton(SettingsRuntimeCategoryButton, section == SettingsSection.Runtime);
+            UpdateSettingsCategoryButton(SettingsSteamVrCategoryButton, section == SettingsSection.SteamVr);
+            UpdateSettingsCategoryButton(SettingsDevicesCategoryButton, section == SettingsSection.Devices);
+            UpdateSettingsCategoryButton(SettingsAdvancedCategoryButton, section == SettingsSection.Advanced);
+        }
+
+        private void ShowSteamVrRoleTargetsCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            bool previousValue = _showSteamVrRoleTargets;
+            bool nextValue = ShowSteamVrRoleTargetsCheckBox.IsChecked == true;
+            try
+            {
+                _showSteamVrRoleTargets = nextValue;
+                SaveUiPreferences();
+                RefreshAll();
+                if (_selectedRoute != null)
+                {
+                    ShowSelectedRoute(_selectedRoute);
+                }
+            }
+            catch (Exception exception)
+            {
+                _showSteamVrRoleTargets = previousValue;
+                ShowSteamVrRoleTargetsCheckBox.IsChecked = previousValue;
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "无法保存高级选项",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private async void FollowSteamVrWithTrackSwapCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            bool previousValue = _followSteamVrWithTrackSwap;
+            bool nextValue = FollowSteamVrWithTrackSwapCheckBox.IsChecked == true;
+            try
+            {
+                _followSteamVrWithTrackSwap = nextValue;
+                if (!nextValue)
+                {
+                    _steamVrObservedForUiLifecycle = false;
+                    _steamVrUiCloseScheduled = false;
+                }
+                else if (_statusService.IsRunning())
+                {
+                    _steamVrObservedForUiLifecycle = true;
+                }
+                SaveUiPreferences();
+
+                if (_statusService.IsRunning())
+                {
+                    await SyncSteamVrAutoLaunchAsync(nextValue, showWarning: true);
+                }
+            }
+            catch (Exception exception)
+            {
+                _followSteamVrWithTrackSwap = previousValue;
+                FollowSteamVrWithTrackSwapCheckBox.IsChecked = previousValue;
+                SaveUiPreferences();
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "无法保存高级选项",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private async Task SyncSteamVrAutoLaunchAsync(bool enabled, bool showWarning)
+        {
+            try
+            {
+                string runtimePath = _pathService.FindRuntimePath();
+                string manifestPath = Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "TrackSwap.vrmanifest");
+                await Task.Run(() => _steamVrApplicationService.SetAutoLaunch(
+                    runtimePath,
+                    manifestPath,
+                    enabled));
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is UnauthorizedAccessException ||
+                exception is InvalidOperationException ||
+                exception is System.ComponentModel.Win32Exception)
+            {
+                if (showWarning)
+                {
+                    MessageBox.Show(
+                        this,
+                        "TrackSwap 自身的跟随机制仍会生效，但未能同步 SteamVR 的启动应用列表。\n\n" + exception.Message,
+                        "SteamVR 启动设置未同步",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+            }
+        }
+
+        private async void RuntimeLifecycleComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_runtimeLifecycleSelectionReady ||
+                !(RuntimeLifecycleComboBox.SelectedItem is RuntimeLifecycleOption selected) ||
+                selected.Mode == _runtimeLifecycleMode)
+            {
                 return;
             }
-            UpdateRouteContextMenu();
-            RouteListBox.ContextMenu.PlacementTarget = RouteListBox;
-            RouteListBox.ContextMenu.IsOpen = true;
+
+            RuntimeLifecycleMode previousMode = _runtimeLifecycleMode;
+            try
+            {
+                _runtimeLifecycleMode = selected.Mode;
+                SaveUiPreferences();
+                await RestartRuntimeForLifecycleChangeAsync();
+            }
+            catch (Exception exception)
+            {
+                _runtimeLifecycleMode = previousMode;
+                SaveUiPreferences();
+                _runtimeLifecycleSelectionReady = false;
+                RuntimeLifecycleComboBox.SelectedItem =
+                    ((IEnumerable<RuntimeLifecycleOption>)RuntimeLifecycleComboBox.ItemsSource)
+                        .First(option => option.Mode == previousMode);
+                _runtimeLifecycleSelectionReady = true;
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "无法更改 Runtime 启停行为",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private void SaveUiPreferences()
+        {
+            _uiPreferencesService.Save(new UiPreferences
+            {
+                ShowSteamVrRoleTargets = _showSteamVrRoleTargets,
+                RuntimeLifecycleMode = _runtimeLifecycleMode,
+                FollowSteamVrWithTrackSwap = _followSteamVrWithTrackSwap
+            });
+        }
+
+        private async Task RestartRuntimeForLifecycleChangeAsync()
+        {
+            _runtimeLifecycleRestarting = true;
+            try
+            {
+                try
+                {
+                    await _runtimeControlService.ShutdownAsync();
+                }
+                catch (Exception exception) when (
+                    exception is IOException ||
+                    exception is TimeoutException ||
+                    exception is UnauthorizedAccessException ||
+                    exception is InvalidDataException)
+                {
+                }
+
+                await Task.Delay(600);
+                if (!_runtimeControlService.TryStartRuntime(
+                    _runtimeLifecycleMode,
+                    Process.GetCurrentProcess().Id,
+                    out string error))
+                {
+                    throw new InvalidOperationException(error);
+                }
+                _runtimeStatusFailureCount = 0;
+                await Task.Delay(600);
+                await RefreshStatusAsync();
+            }
+            finally
+            {
+                _runtimeLifecycleRestarting = false;
+            }
+        }
+
+        private async Task EnsureRuntimeStartedAsync(bool showError)
+        {
+            if (_runtimeStartPending || _runtimeLifecycleRestarting || _isClosing)
+            {
+                return;
+            }
+
+            _runtimeStartPending = true;
+            try
+            {
+                if (!_runtimeControlService.TryStartRuntime(
+                    _runtimeLifecycleMode,
+                    Process.GetCurrentProcess().Id,
+                    out string error))
+                {
+                    if (showError)
+                    {
+                        MessageBox.Show(this, error, "Runtime 启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                    return;
+                }
+                await Task.Delay(500);
+            }
+            finally
+            {
+                _runtimeStartPending = false;
+            }
+        }
+
+        private static void UpdateSettingsCategoryButton(Button button, bool selected)
+        {
+            button.Background = (Brush)Application.Current.FindResource(selected ? "AccentSoftBrush" : "SurfaceBrush");
+            button.BorderBrush = (Brush)Application.Current.FindResource(selected ? "AccentBorderMutedBrush" : "BorderBrush");
+            button.Foreground = (Brush)Application.Current.FindResource(selected ? "TextBrush" : "MutedTextBrush");
         }
 
         private void UpdateRouteContextMenu()
@@ -826,7 +1367,7 @@ namespace TrackSwap
             DeleteRouteMenuItem.Header = pendingDeletion ? "取消删除" : "删除配置…";
             DeleteRouteMenuItem.Foreground = pendingDeletion
                 ? FindBrush("TextBrush")
-                : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF6A73"));
+                : FindBrush("DestructiveBrush");
         }
 
         private void RenameRouteMenuItem_Click(object sender, RoutedEventArgs e)
@@ -915,8 +1456,7 @@ namespace TrackSwap
             bool enabling = !_selectedRoute.Enabled;
             if (enabling)
             {
-                if (string.IsNullOrWhiteSpace(_selectedRoute.TargetDevicePath) ||
-                    !_selectedRoute.TargetDevicePath.StartsWith("/devices/", StringComparison.Ordinal))
+                if (!IsAllowedRuntimeTargetPath(_selectedRoute.TargetDevicePath))
                 {
                     MessageBox.Show(
                         this,
@@ -1061,11 +1601,11 @@ namespace TrackSwap
             }
         }
 
-        private async Task FinalizePendingDeletionsAsync()
+        private async Task<bool> FinalizePendingDeletionsAsync()
         {
             if (_pendingDeletionBusy || _statusService.IsRunning() || _runtimeStatus == null)
             {
-                return;
+                return false;
             }
 
             List<RouteConfiguration> pendingRoutes = _workingRoutes
@@ -1073,7 +1613,7 @@ namespace TrackSwap
                 .ToList();
             if (pendingRoutes.Count == 0)
             {
-                return;
+                return true;
             }
 
             _pendingDeletionBusy = true;
@@ -1121,6 +1661,7 @@ namespace TrackSwap
                 _runtimeStatus = refreshed;
                 ShowRuntimeOnline(refreshed);
                 UpdateRouteContextMenu();
+                return true;
             }
             catch (Exception exception)
             {
@@ -1131,10 +1672,66 @@ namespace TrackSwap
                     "删除尚未完成",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
+                return false;
             }
             finally
             {
                 _pendingDeletionBusy = false;
+            }
+        }
+
+        private Task<bool> ReconcilePendingStaticMappingsAsync()
+        {
+            if (_pendingStaticMappingBusy || _statusService.IsRunning() || _runtimeStatus == null)
+            {
+                return Task.FromResult(false);
+            }
+            if (string.IsNullOrWhiteSpace(_settingsPath) || !File.Exists(_settingsPath))
+            {
+                return Task.FromResult(false);
+            }
+            if (_workingRoutes.Any(route => route.PendingDeletion))
+            {
+                return Task.FromResult(false);
+            }
+
+            IReadOnlyDictionary<string, string> desiredMappings = _workingRoutes
+                .Where(route => route.Enabled && IsRouteComplete(route))
+                .ToDictionary(
+                    route => ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot),
+                    route => route.TargetDevicePath,
+                    StringComparer.Ordinal);
+
+            _pendingStaticMappingBusy = true;
+            try
+            {
+                bool changed = _settingsService.ReconcileTrackSwapOverrides(
+                    _settingsPath,
+                    desiredMappings);
+                if (changed)
+                {
+                    RefreshOverrideList();
+                    RefreshRouteList(_selectedRoute?.RouteId);
+                    UpdateRuntimeSelectionDetails();
+                }
+
+                _pendingStaticMappingAutoRetrySuppressed = false;
+                return Task.FromResult(true);
+            }
+            catch (Exception exception)
+            {
+                _pendingStaticMappingAutoRetrySuppressed = true;
+                MessageBox.Show(
+                    this,
+                    "静态映射尚未自动写入，已保留待映射状态；修复问题后重新启动 TrackSwap 即可重试。\n\n" + exception.Message,
+                    "映射尚未完成",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return Task.FromResult(false);
+            }
+            finally
+            {
+                _pendingStaticMappingBusy = false;
             }
         }
 
@@ -1301,7 +1898,7 @@ namespace TrackSwap
                 string.Equals(candidate.DevicePath, sourceDevicePath, StringComparison.Ordinal));
             if (source == null)
             {
-                source = new DeviceOption("档案来源 · 当前离线", sourceDevicePath);
+                source = new DeviceOption("离线 · " + DeviceNameFromPath(sourceDevicePath), sourceDevicePath);
                 sources.Add(source);
                 RuntimeSourceComboBox.ItemsSource = sources;
             }
@@ -1332,14 +1929,7 @@ namespace TrackSwap
         private async void StartRuntimeButton_Click(object sender, RoutedEventArgs e)
         {
             StartRuntimeButton.IsEnabled = false;
-            if (!_runtimeControlService.TryStartRuntime(out string error))
-            {
-                MessageBox.Show(this, error, "Runtime 启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
-                StartRuntimeButton.IsEnabled = true;
-                return;
-            }
-
-            await Task.Delay(500);
+            await EnsureRuntimeStartedAsync(showError: true);
             await RefreshStatusAsync();
         }
 
@@ -1372,6 +1962,17 @@ namespace TrackSwap
             if (_runtimeStatus == null || _selectedRoute == null || source == null || target == null)
             {
                 MessageBox.Show(this, "Runtime 未连接，或尚未选择完整路由。", "无法应用", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!IsAllowedRuntimeTarget(target))
+            {
+                MessageBox.Show(
+                    this,
+                    "该配置仍使用隐藏的 SteamVR 角色目标。请先选择明确的实体设备，或在“设置 → 高级选项”中启用 SteamVR 角色目标。",
+                    "需要迁移目标",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
                 return;
             }
 
@@ -1455,6 +2056,7 @@ namespace TrackSwap
                     RefreshOverrideList();
                 }
                 await _runtimeControlService.ApplyConfigurationAsync(configuration);
+                _pendingStaticMappingAutoRetrySuppressed = false;
                 _loadedRuntimeRevision = -1;
                 _runtimeEditorInitialized = false;
                 await RefreshStatusAsync();
@@ -1468,7 +2070,7 @@ namespace TrackSwap
                         string.Equals(mapping.TargetPath, target.TargetPath, StringComparison.Ordinal));
                     if (!mapped)
                     {
-                        RuntimeRouteChangeWarningText.Text = "运行时配置已保存。要让该代理替换目标，请退出 SteamVR 后再次点击“应用更改”以写入静态引导映射。";
+                        RuntimeRouteChangeWarningText.Text = "运行时配置已保存。退出 SteamVR 后将自动写入静态引导映射，无需再次点击“应用更改”。";
                         RuntimeRouteChangeWarningText.Visibility = Visibility.Visible;
                     }
                 }
@@ -1560,6 +2162,17 @@ namespace TrackSwap
             TargetOption target = TargetComboBox.SelectedItem as TargetOption;
             if (source == null || target == null)
             {
+                return;
+            }
+
+            if (!IsConcreteDeviceTarget(target))
+            {
+                MessageBox.Show(
+                    this,
+                    "旧版 SteamVR 角色目标仅用于查看和维护已有规则。请选择一个明确的在线实体设备作为新目标。",
+                    "需要明确设备目标",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
                 return;
             }
 
@@ -1661,19 +2274,19 @@ namespace TrackSwap
 
         private void HighlightEditorCard()
         {
-            var background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#31598C"));
+            var background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#24466F"));
             EditorCardBorder.Background = background;
 
             var animation = new ColorAnimation
             {
-                To = (Color)ColorConverter.ConvertFromString("#17212B"),
+                To = (Color)ColorConverter.ConvertFromString("#1A1A1A"),
                 Duration = TimeSpan.FromMilliseconds(750),
                 BeginTime = TimeSpan.FromMilliseconds(180),
                 EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
                 FillBehavior = FillBehavior.Stop
             };
             animation.Completed += (_, __) => EditorCardBorder.Background = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#17212B"));
+                (Color)ColorConverter.ConvertFromString("#1A1A1A"));
             background.BeginAnimation(SolidColorBrush.ColorProperty, animation);
         }
 
@@ -1850,9 +2463,9 @@ namespace TrackSwap
                     StringComparison.Ordinal));
             string targetPath = (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath ??
                 _selectedRoute.TargetDevicePath;
-            DeviceOption target = _onlinePhysicalDevices.FirstOrDefault(device =>
+            DeviceOption target = _knownPhysicalDevices.FirstOrDefault(device =>
                 string.Equals(device.DevicePath, targetPath, StringComparison.Ordinal)) ??
-                _onlinePhysicalDevices.FirstOrDefault(device =>
+                _knownPhysicalDevices.FirstOrDefault(device =>
                     string.Equals(device.RoleTargetPath, targetPath, StringComparison.Ordinal));
 
             Task<OpenVrRenderModel> sourceTask = GetPreviewRenderModelAsync(source?.RenderModelName);
@@ -2229,7 +2842,13 @@ namespace TrackSwap
             {
                 positions.Add(new Point3D(vertex.PositionX, vertex.PositionY, vertex.PositionZ));
                 normals.Add(new Vector3D(vertex.NormalX, vertex.NormalY, vertex.NormalZ));
-                textureCoordinates.Add(new Point(vertex.TextureU, vertex.TextureV));
+                // Some OpenVR render models deliberately place UVs outside 0..1 to sample
+                // an edge colour. WPF does not expose OpenGL's CLAMP_TO_EDGE sampler, so
+                // clamp explicitly. The RenderModels API already returns texture data in
+                // the orientation expected by its UVs; do not flip the V coordinate here.
+                textureCoordinates.Add(new Point(
+                    ClampTextureCoordinate(vertex.TextureU),
+                    ClampTextureCoordinate(vertex.TextureV)));
             }
 
             var triangleIndices = new Int32Collection(renderModel.Indices.Length);
@@ -2275,6 +2894,11 @@ namespace TrackSwap
                 materials.Children.Add(new DiffuseMaterial(new SolidColorBrush(Colors.LightGray)));
             }
             return new GeometryModel3D(mesh, materials) { BackMaterial = materials };
+        }
+
+        private static double ClampTextureCoordinate(double value)
+        {
+            return Math.Max(0.0, Math.Min(1.0, value));
         }
 
         private static void AddFallbackDeviceGeometry(
@@ -2373,6 +2997,83 @@ namespace TrackSwap
             if (window.ShowDialog() == true)
             {
                 RefreshAll();
+            }
+        }
+
+        private void ClearDeviceHistoryButton_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBoxResult result = MessageBox.Show(
+                this,
+                "确定清空设备记录？\n\n在线设备会在下次扫描时重新记录；现有配置仍会保留其引用，并按实际连接状态显示为“在线”或“离线”。",
+                "清空设备记录",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning);
+            if (result != MessageBoxResult.OK)
+            {
+                return;
+            }
+
+            try
+            {
+                _deviceHistoryService.Clear();
+                RefreshAll();
+                if (_selectedRoute != null)
+                {
+                    ShowSelectedRoute(_selectedRoute);
+                }
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "无法清空设备记录",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private enum SettingsSection
+        {
+            Runtime,
+            SteamVr,
+            Devices,
+            Advanced
+        }
+
+        private sealed class DeviceHistoryListItem
+        {
+            public DeviceHistoryListItem(string displayName, string devicePath, bool isOnline)
+            {
+                DisplayName = displayName;
+                DevicePath = devicePath;
+                IsOnline = isOnline;
+            }
+
+            public string DisplayName { get; }
+
+            public string DevicePath { get; }
+
+            public bool IsOnline { get; }
+
+            public string StateText => IsOnline ? "在线" : "离线";
+        }
+
+        private sealed class RuntimeLifecycleOption
+        {
+            public RuntimeLifecycleOption(RuntimeLifecycleMode mode, string displayName)
+            {
+                Mode = mode;
+                DisplayName = displayName;
+            }
+
+            public RuntimeLifecycleMode Mode { get; }
+
+            public string DisplayName { get; }
+
+            public override string ToString()
+            {
+                return DisplayName;
             }
         }
     }

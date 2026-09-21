@@ -30,6 +30,6 @@ function Assert-SteamVrStopped {
         ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
         Select-Object -First 1
     if ($running) {
-        throw "SteamVR must be fully stopped before registering or removing the development driver."
+        throw "SteamVR must be fully stopped before installing, updating, or removing TrackSwap."
     }
 }
