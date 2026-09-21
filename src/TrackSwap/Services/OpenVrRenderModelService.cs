@@ -61,7 +61,7 @@ namespace TrackSwap.Services
                 VRInitInternal init = GetExport<VRInitInternal>(module, "VR_InitInternal2");
                 VRGetGenericInterface getInterface = GetExport<VRGetGenericInterface>(module, "VR_GetGenericInterface");
                 EVRInitError initError = EVRInitError.None;
-                init(ref initError, EVRApplicationType.Background, null);
+                init(ref initError, EVRApplicationType.Utility, null);
                 if (initError != EVRInitError.None)
                 {
                     throw new InvalidOperationException("OpenVR 初始化失败，错误码：" + (int)initError);
@@ -427,7 +427,7 @@ namespace TrackSwap.Services
 
         private enum EVRApplicationType
         {
-            Background = 3
+            Utility = 4
         }
 
         private enum EVRInitError

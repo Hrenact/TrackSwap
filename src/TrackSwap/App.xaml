@@ -119,12 +119,20 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="38" />
                                                 </Grid.ColumnDefinitions>
-                                                <ContentPresenter Margin="{Binding Padding, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                <ContentPresenter x:Name="SelectionContent"
+                                                                  Margin="{Binding Padding, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                                   VerticalAlignment="Center"
                                                                   HorizontalAlignment="Left"
                                                                   Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                                   ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                                   ContentTemplateSelector="{Binding ItemTemplateSelector, RelativeSource={RelativeSource AncestorType=ComboBox}}" />
+                                                <TextBlock x:Name="PlaceholderText"
+                                                           Margin="{Binding Padding, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource MutedTextBrush}"
+                                                           Text="{Binding Tag, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                           Visibility="Collapsed"
+                                                           IsHitTestVisible="False" />
                                                 <Path Grid.Column="1"
                                                       Width="8"
                                                       Height="5"
@@ -144,6 +152,10 @@
                                             <Trigger Property="IsEnabled" Value="False">
                                                 <Setter TargetName="ComboBorder" Property="Opacity" Value="0.45" />
                                             </Trigger>
+                                            <DataTrigger Binding="{Binding SelectedIndex, RelativeSource={RelativeSource AncestorType=ComboBox}}" Value="-1">
+                                                <Setter TargetName="SelectionContent" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="PlaceholderText" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </ToggleButton.Template>

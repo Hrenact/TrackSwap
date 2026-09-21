@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TrackSwap.Protocol;
 
 namespace TrackSwap.Runtime;
@@ -19,10 +20,20 @@ internal sealed class ConfigurationStore
             return new RuntimeConfiguration();
         }
 
-        RuntimeConfiguration? configuration = JsonConvert.DeserializeObject<RuntimeConfiguration>(
-            File.ReadAllText(Path),
-            RuntimeJson.Settings);
+        JObject root = JObject.Parse(File.ReadAllText(Path));
+        bool removedLegacyOscAddresses = false;
+        if (root.GetValue("osc", StringComparison.OrdinalIgnoreCase) is JObject osc)
+        {
+            removedLegacyOscAddresses |= RemoveProperty(osc, "left");
+            removedLegacyOscAddresses |= RemoveProperty(osc, "right");
+        }
+        RuntimeConfiguration? configuration = root.ToObject<RuntimeConfiguration>(
+            JsonSerializer.Create(RuntimeJson.Settings));
         EnsureValid(configuration);
+        if (removedLegacyOscAddresses)
+        {
+            Save(configuration!);
+        }
         return configuration!;
     }
 
@@ -76,4 +87,17 @@ internal sealed class ConfigurationStore
             throw new InvalidDataException(string.Join(Environment.NewLine, errors));
         }
     }
+
+    private static bool RemoveProperty(JObject value, string propertyName)
+    {
+        JProperty? property = value.Properties().FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase));
+        if (property == null)
+        {
+            return false;
+        }
+        property.Remove();
+        return true;
+    }
+
 }

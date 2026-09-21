@@ -52,9 +52,21 @@ internal sealed class DriverSynchronizer
                     for (int slot = 0; slot < ProtocolConstants.MaximumRoutes; slot++)
                     {
                         RouteConfiguration? route = snapshot.Routes.SingleOrDefault(
-                            candidate => candidate.Enabled && candidate.VirtualDeviceSlot == slot);
+                            candidate => candidate.Enabled && candidate.Mode != RouteMode.VirtualController &&
+                                candidate.VirtualDeviceSlot == slot);
                         DriverControlClient.ApplySnapshot(
                             slot,
+                            route,
+                            (ulong)snapshot.Revision,
+                            TimeSpan.FromSeconds(1));
+                    }
+                    foreach (ControllerHand hand in new[] { ControllerHand.Left, ControllerHand.Right })
+                    {
+                        RouteConfiguration? route = snapshot.Routes.SingleOrDefault(candidate =>
+                            candidate.Enabled && candidate.Mode == RouteMode.VirtualController &&
+                            candidate.ControllerHand == hand);
+                        DriverControlClient.ApplyControllerSnapshot(
+                            hand,
                             route,
                             (ulong)snapshot.Revision,
                             TimeSpan.FromSeconds(1));

@@ -34,6 +34,8 @@ namespace TrackSwap.Models
 
         public string DisplayName { get; }
 
+        public string StatusDisplayName => BaseDisplayName(DisplayName);
+
         public string DevicePath { get; }
 
         public bool IsOnline { get; }

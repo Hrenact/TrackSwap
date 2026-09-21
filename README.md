@@ -2,16 +2,17 @@
 
 TrackSwap 是一个轻量的 Windows 工具，用来管理 SteamVR 的设备位姿映射。
 
-当前版本：**TrackSwap v005**
+当前版本：**TrackSwap v006**
 
-简单来说，它可以让一个设备负责提供位置和旋转数据，同时继续使用另一个设备的按键输入。例如：
+简单来说，它可以把一个设备的位置和旋转数据输出为虚拟 Tracker、替换另一个设备的位姿，或驱动一对虚拟控制器。例如：
 
+- 把 VIVE Tracker 直接输出为稳定的 TrackSwap 虚拟 Tracker
 - 使用 VIVE Tracker 的定位，保留一体机手柄的按键和摇杆
 - 用左手柄的位置暂时替代右手柄
-- 用 Tracker 替代头显或其他在线设备的位姿
+- 用 Tracker 位姿驱动虚拟左手或右手控制器，并通过 OSC 提供基础输入
 - 同时保存多条互不冲突的映射规则
 
-TrackSwap 只调整定位来源，不会把来源设备的按键映射给目标设备。
+目标替换模式只调整定位来源，不会把来源设备的按键映射给目标设备。虚拟控制器模式可选择不接收输入，或从 OSC 接收输入。
 
 ## 系统要求
 
@@ -40,13 +41,19 @@ SteamVR 的配置文件和运行目录。
 
 1. 打开需要使用的手柄、Tracker 和头显。
 2. 启动 SteamVR，等待设备全部连接，然后启动 TrackSwap。
-3. 点击侧边栏“新增”，为路由选择物理位姿来源和替换目标。
+3. 点击侧边栏“新增”，选择运行模式与物理位姿来源。目标替换模式还需要选择明确目标；虚拟控制器模式需要选择左右手及控制输入来源。
 4. 根据需要编辑局部位置、旋转偏移，或在静态覆盖尚未启用时执行自动校准。
 5. 点击“应用更改”。Runtime 会立即保存路由并让对应虚拟代理开始跟随来源。
-6. 如果界面提示“待映射”，请保持 TrackSwap 打开并完全退出 SteamVR；程序会自动写入静态映射，无需再次点击“应用更改”。
-7. 重新启动 SteamVR，检查定位与原目标设备的按键输入是否符合预期。
+6. 只有目标替换模式可能提示“待映射”。此时保持 TrackSwap 打开并完全退出 SteamVR；程序会自动写入静态映射，无需再次点击“应用更改”。
+7. 重新启动 SteamVR，检查虚拟输出或目标设备的定位与输入是否符合预期。
 
-代理与目标完成首次静态绑定后，切换物理来源和修改偏移可以在 SteamVR 运行期间立即生效，不需要重启。写入、移除或更换 `TrackingOverrides` 引导映射仍然要求 SteamVR 完全退出。
+直接输出与虚拟控制器模式不需要 `TrackingOverrides`。目标替换模式完成首次静态绑定后，切换物理来源和修改偏移可以在 SteamVR 运行期间立即生效，不需要重启；写入、移除或更换引导映射仍然要求 SteamVR 完全退出。
+
+## 运行模式
+
+- **输出为虚拟追踪器**：把来源位姿和局部偏移直接输出到稳定的 `TRKSWAP-PROXY-00` 至 `TRKSWAP-PROXY-07`。这是新配置的默认模式，不需要替换实体设备。
+- **替换现有设备位姿**：由代理覆盖明确目标的位姿，同时保留目标原有输入。该模式需要 SteamVR 的 `TrackingOverrides` 静态映射。
+- **输出为虚拟控制器**：最多创建一只左手和一只右手虚拟控制器。物理设备提供位姿，控制输入可选“无”或“OSC”。选择“无”时所有按键和模拟量保持中立。
 
 ## 追踪来源与替换目标
 
@@ -75,6 +82,14 @@ TrackSwap 会阻止来源覆盖自身、循环覆盖、目标冲突，以及“�
 - 多条目标互不冲突的路由可以同时运行
 
 SteamVR 运行时删除配置会先进入“待删除”状态，代理继续输出，避免目标立即失去定位。完全退出 SteamVR 后，TrackSwap 会自动清理静态绑定并最终删除；完成前可通过右键菜单取消删除。首次绑定、目标变更和停用清理仍可能要求 SteamVR 完全退出。
+
+## OSC 虚拟控制器输入
+
+在“设置 → OSC”中可以启用接收器、选择监听地址与端口，并设置无信号时的复位时间。默认仅监听 `127.0.0.1:9015`。OSC 本身没有身份验证或加密，不建议在不可信网络接口上监听。
+
+左、右手使用固定的 `/trackswap/left/` 与 `/trackswap/right/` 参数前缀，支持 A、B、摇杆 X/Y 与按下、扳机值与按下、抓握值与按下以及系统键。完整参数地址会显示在设置页中，可选中复制但不可修改，也不会写入 `runtime-config.json`。设置页的状态条和摇杆十字轴以约 30 Hz 显示收到的值。
+
+虚拟控制器采用 Knuckles 兼容输入档案，但只提交当前已实现的基础控件；电容触摸等扩展输入尚未提供。有限复位时间到期后，对应手会回到完整中立状态。
 
 ## 备份与恢复
 
@@ -115,14 +130,14 @@ steamvr.vrsettings.trackswap-20260917-114817-123.backup
 
 项目使用 WPF、.NET Framework 4.8 和 Newtonsoft.Json。
 
-`main` 保留稳定的 v001 历史。v002、v003、v004、v005 已发布；后续开发继续在
+`main` 保留稳定的 v001 历史。v002、v003、v004、v005、v006 已发布；后续开发继续在
 `v002-runtime` 分支进行，架构契约见
 [`docs/v002-architecture.md`](docs/v002-architecture.md)，驱动开发闭环见
 [`docs/driver-development.md`](docs/driver-development.md)。普通构建不会安装或注册驱动。
 
 当前界面以侧边栏管理命名运行时路由，并在“设置”中保留 v001
 `TrackingOverrides`、备份和恢复流程。静态映射仍然只负责把稳定虚拟代理
-引导到目标，不提供偏移。
+引导到目标，不提供偏移；直接输出和虚拟控制器模式不依赖静态映射。
 
 开发环境启动 Runtime：
 
@@ -166,14 +181,14 @@ dotnet build TrackSwap.sln -c Release
 生成完整的 Windows x64 发布包、ZIP 和 SHA-256 文件：
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version v005 -Clean
+.\scripts\Build-Release.ps1 -Version v006 -Clean
 ```
 
 安装 Inno Setup 6 后，生成发布包、Windows 安装程序及其 SHA-256 文件：
 
 ```powershell
 winget install --id JRSoftware.InnoSetup --exact
-.\scripts\Build-Installer.ps1 -Version v005 -Clean
+.\scripts\Build-Installer.ps1 -Version v006 -Clean
 ```
 
 安装程序采用按用户安装，默认目录为 `%LOCALAPPDATA%\Programs\TrackSwap`。安装与卸载都要求
@@ -193,7 +208,7 @@ src\TrackSwap\bin\Release\net48\TrackSwap.exe
 
 ## 版本规则
 
-TrackSwap 使用连续编号：`v001`、`v002`、`v003`、`v004`、`v005`……不区分主版本、次版本或预发布状态。
+TrackSwap 使用连续编号：`v001`、`v002`、`v003`、`v004`、`v005`、`v006`……不区分主版本、次版本或预发布状态。
 
 推送与项目版本一致的 `vNNN` Git 标签后，GitHub Actions 会自动构建 Windows x64 Release、生成 ZIP 压缩包和 SHA-256 校验文件，并发布对应的 GitHub Release。
 

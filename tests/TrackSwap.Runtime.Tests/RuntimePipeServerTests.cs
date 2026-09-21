@@ -7,6 +7,54 @@ namespace TrackSwap.Runtime.Tests;
 public sealed class RuntimePipeServerTests
 {
     [Fact]
+    public async Task ReturnsNeutralOscMonitorStatusWithoutReceiver()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "TrackSwap.Runtime.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string pipeName = "TrackSwap.Runtime.Tests." + Guid.NewGuid().ToString("N");
+            var configuration = new RuntimeConfiguration();
+            var server = new RuntimePipeServer(
+                new ConfigurationStore(Path.Combine(directory, "runtime-config.json")),
+                new DriverSynchronizer(configuration),
+                configuration,
+                new CalibrationProfileStore(Path.Combine(directory, "profiles.json")),
+                new OpenVrCalibrationService(),
+                new TelemetrySampler(),
+                pipeName);
+            using var cancellation = new CancellationTokenSource();
+            Task serverTask = server.RunAsync(cancellation.Token);
+
+            MessageEnvelope response = RuntimeControlClient.Send(new MessageEnvelope
+            {
+                MessageType = "getOscStatus",
+                RequestId = Guid.NewGuid().ToString("N"),
+                PayloadJson = "{}"
+            }, TimeSpan.FromSeconds(2), pipeName);
+
+            Assert.Equal("oscStatus", response.MessageType);
+            OscRuntimeStatus? status = JsonConvert.DeserializeObject<OscRuntimeStatus>(response.PayloadJson);
+            Assert.NotNull(status);
+            Assert.False(status.LeftInput.PrimaryButton);
+            Assert.Equal(0, status.RightInput.JoystickX);
+
+            cancellation.Cancel();
+            try
+            {
+                await serverTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task AcceptsGracefulShutdownRequest()
     {
         string directory = Path.Combine(Path.GetTempPath(), "TrackSwap.Runtime.Tests", Guid.NewGuid().ToString("N"));

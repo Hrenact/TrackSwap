@@ -7,5 +7,6 @@ namespace TrackSwap.Protocol
         public int SchemaVersion { get; set; } = ProtocolConstants.CurrentConfigurationSchemaVersion;
         public long Revision { get; set; }
         public List<RouteConfiguration> Routes { get; set; } = new List<RouteConfiguration>();
+        public OscConfiguration Osc { get; set; } = OscConfiguration.CreateDefault();
     }
 }

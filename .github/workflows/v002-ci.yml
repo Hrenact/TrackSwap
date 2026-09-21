@@ -47,7 +47,7 @@ jobs:
       - name: Build complete release package
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v005' }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v006' }
           .\scripts\Build-Release.ps1 -Version $version
 
       - name: Upload Windows x64 package

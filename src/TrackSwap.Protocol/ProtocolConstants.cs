@@ -12,6 +12,8 @@ namespace TrackSwap.Protocol
         public const string PipeName = "TrackSwap.Runtime.v1";
         public const string DriverPipeName = "TrackSwap.Driver.v1";
         public const string VirtualSerialPrefix = "TRKSWAP-PROXY-";
+        public const string LeftControllerSerial = "TRKSWAP-CONTROLLER-L";
+        public const string RightControllerSerial = "TRKSWAP-CONTROLLER-R";
         public const string HeadRolePath = "/user/head";
         public const string LeftHandRolePath = "/user/hand/left";
         public const string RightHandRolePath = "/user/hand/right";
@@ -25,16 +27,24 @@ namespace TrackSwap.Protocol
         {
             return "/devices/trackswap/" + GetVirtualSerial(slot);
         }
+
+        public static string GetControllerSerial(ControllerHand hand)
+        {
+            return hand == ControllerHand.Left ? LeftControllerSerial :
+                hand == ControllerHand.Right ? RightControllerSerial : string.Empty;
+        }
     }
 
     public static class DriverControlProtocol
     {
         public const uint Magic = 0x50575354; // "TSWP" in little-endian byte order.
-        public const ushort Version = 2;
+        public const ushort Version = 3;
         public const ushort SetSourceMessageType = 1;
         public const ushort SetOffsetMessageType = 2;
         public const ushort ApplySnapshotMessageType = 3;
         public const ushort GetTelemetryMessageType = 4;
+        public const ushort ApplyControllerSnapshotMessageType = 5;
+        public const ushort ApplyControllerInputMessageType = 6;
         public const ushort ResponseFlag = 0x8000;
         public const int HeaderBytes = 20;
         public const int MaximumPayloadBytes = 4096;
@@ -43,5 +53,6 @@ namespace TrackSwap.Protocol
         public const int TelemetryPoseBytes = 62;
         public const int TelemetrySnapshotBytes = 202;
         public const int TelemetryBatchBytes = 1 + (ProtocolConstants.MaximumRoutes * TelemetrySnapshotBytes);
+        public const int ControllerInputBytes = 23;
     }
 }

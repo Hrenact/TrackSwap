@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 
 namespace
@@ -305,7 +306,7 @@ void ControlServer::Run()
                         sizeof(targetPathBytes));
                     valid = slot < control_protocol::MaximumRoutes &&
                         ((!enabled && sourcePathBytes == 0 && targetPathBytes == 0) ||
-                         (enabled && sourcePathBytes > 0 && targetPathBytes > 0)) &&
+                         (enabled && sourcePathBytes > 0)) &&
                         request.payloadBytes == FixedBytes + sourcePathBytes + targetPathBytes;
                     if (valid)
                     {
@@ -313,7 +314,7 @@ void ControlServer::Run()
                             sizeof(sourcePathBytes) + sizeof(targetPathBytes);
                         const char* targetPath = sourcePath + sourcePathBytes;
                         valid = !enabled || (IsValidSourcePath(sourcePath, sourcePathBytes) &&
-                            IsValidTargetPath(targetPath, targetPathBytes));
+                            (targetPathBytes == 0 || IsValidTargetPath(targetPath, targetPathBytes)));
                         std::array<double, 7> values{};
                         std::memcpy(values.data(), targetPath + targetPathBytes, sizeof(values));
                         const pose_math::RigidOffset offset{
@@ -344,6 +345,63 @@ void ControlServer::Run()
                 {
                     telemetry = registry_->GetTelemetry();
                     telemetryResponse = true;
+                }
+            }
+            else if (valid && request.messageType == control_protocol::ApplyControllerSnapshotMessageType)
+            {
+                constexpr std::size_t FixedBytes =
+                    (3 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
+                    sizeof(std::uint16_t) + (7 * sizeof(double));
+                valid = request.payloadBytes >= FixedBytes;
+                if (valid)
+                {
+                    const auto hand = static_cast<ControllerHand>(static_cast<std::uint8_t>(payload[0]));
+                    const bool enabled = payload[1] != 0;
+                    const std::uint8_t logicalSlot = static_cast<std::uint8_t>(payload[2]);
+                    std::uint64_t revision = 0;
+                    std::uint16_t sourcePathBytes = 0;
+                    std::memcpy(&revision, payload.data() + 3, sizeof(revision));
+                    std::memcpy(&sourcePathBytes, payload.data() + 3 + sizeof(revision), sizeof(sourcePathBytes));
+                    valid = (hand == ControllerHand::Left || hand == ControllerHand::Right) &&
+                        ((!enabled && sourcePathBytes == 0 && logicalSlot == 255) ||
+                         (enabled && sourcePathBytes > 0 && logicalSlot < control_protocol::MaximumRoutes)) &&
+                        request.payloadBytes == FixedBytes + sourcePathBytes;
+                    const char* sourcePath = payload.data() + 3 + sizeof(revision) + sizeof(sourcePathBytes);
+                    if (valid) valid = !enabled || IsValidSourcePath(sourcePath, sourcePathBytes);
+                    std::array<double, 7> values{};
+                    if (valid)
+                    {
+                        std::memcpy(values.data(), sourcePath + sourcePathBytes, sizeof(values));
+                        const pose_math::RigidOffset offset{
+                            {values[0], values[1], values[2]},
+                            {values[6], values[3], values[4], values[5]}};
+                        valid = pose_math::IsValidOffset(offset);
+                        if (valid)
+                        {
+                            std::array<char, control_protocol::MaximumPayloadBytes + 1> terminatedSource{};
+                            std::memcpy(terminatedSource.data(), sourcePath, sourcePathBytes);
+                            valid = registry_->QueueControllerSnapshot(
+                                hand, enabled, logicalSlot, terminatedSource.data(), offset, revision);
+                        }
+                    }
+                }
+            }
+            else if (valid && request.messageType == control_protocol::ApplyControllerInputMessageType)
+            {
+                valid = request.payloadBytes == sizeof(control_protocol::ControllerInputState);
+                if (valid)
+                {
+                    control_protocol::ControllerInputState input{};
+                    std::memcpy(&input, payload.data(), sizeof(input));
+                    valid = (input.hand == static_cast<std::uint8_t>(ControllerHand::Left) ||
+                             input.hand == static_cast<std::uint8_t>(ControllerHand::Right)) &&
+                        std::isfinite(input.joystickX) && input.joystickX >= -1.0F && input.joystickX <= 1.0F &&
+                        std::isfinite(input.joystickY) && input.joystickY >= -1.0F && input.joystickY <= 1.0F &&
+                        std::isfinite(input.triggerValue) && input.triggerValue >= 0.0F && input.triggerValue <= 1.0F &&
+                        std::isfinite(input.gripValue) && input.gripValue >= 0.0F && input.gripValue <= 1.0F &&
+                        input.joystickClick <= 1 && input.triggerClick <= 1 && input.gripClick <= 1 &&
+                        input.primaryButton <= 1 && input.secondaryButton <= 1 && input.menuButton <= 1;
+                    if (valid) valid = registry_->QueueControllerInput(input);
                 }
             }
             else

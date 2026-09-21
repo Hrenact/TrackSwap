@@ -67,6 +67,12 @@ namespace TrackSwap.Services
     {
         public bool ShowSteamVrRoleTargets { get; set; }
 
+        public bool HideSourceInPreview { get; set; }
+
+        public bool HideTargetInPreview { get; set; }
+
+        public bool ShowProxyInPreview { get; set; }
+
         public RuntimeLifecycleMode RuntimeLifecycleMode { get; set; } = RuntimeLifecycleMode.FollowTrackSwap;
 
         public bool FollowSteamVrWithTrackSwap { get; set; }

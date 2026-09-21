@@ -34,6 +34,11 @@ namespace TrackSwap.Services
                 new TelemetryRequest { VirtualDeviceSlot = virtualDeviceSlot });
         }
 
+        public Task<OscRuntimeStatus> GetOscStatusAsync()
+        {
+            return SendAsync<OscRuntimeStatus>("getOscStatus", new { });
+        }
+
         public Task<CalibrationCaptureResponse> CaptureCalibrationAsync(CalibrationCaptureRequest request)
         {
             return SendAsync<CalibrationCaptureResponse>("captureCalibration", request);
@@ -105,7 +110,7 @@ namespace TrackSwap.Services
             }
             if (executable == null)
             {
-                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v005 程序包。";
+                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v006 程序包。";
                 return false;
             }
 

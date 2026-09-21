@@ -23,6 +23,8 @@ namespace TrackSwap
 {
     public partial class MainWindow : Window
     {
+        private const string ProxyRenderModelName = "{trackswap}trackswap_proxy_tracker";
+
         private static readonly DependencyProperty AnimatedVerticalOffsetProperty =
             DependencyProperty.RegisterAttached(
                 "AnimatedVerticalOffset",
@@ -42,7 +44,10 @@ namespace TrackSwap
         private readonly DispatcherTimer _statusTimer;
         private readonly DispatcherTimer _deviceRefreshTimer;
         private readonly DispatcherTimer _telemetryTimer;
+        private readonly DispatcherTimer _oscMonitorTimer;
+        private readonly DispatcherTimer _oscApplyTimer;
         private Model3DGroup _sourcePreviewModel;
+        private Model3DGroup _proxyPreviewModel;
         private Model3DGroup _targetPreviewModel;
         private Point3D _previewCameraTarget = new Point3D(0, 0, 0);
         private double _previewCameraYaw = 0.694;
@@ -64,6 +69,10 @@ namespace TrackSwap
         private bool _calibrationBusy;
         private bool _deviceRefreshPending;
         private bool _telemetryUpdatePending;
+        private bool _oscMonitorUpdatePending;
+        private bool _loadingOscFields;
+        private bool _oscAutoApplyBusy;
+        private bool _oscAutoApplyQueued;
         private int _runtimeStatusFailureCount;
         private int _telemetryFailureCount;
         private string _previewModelDescription;
@@ -73,10 +82,14 @@ namespace TrackSwap
             new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly ObservableCollection<RouteListItem> _routeItems = new ObservableCollection<RouteListItem>();
         private readonly List<RouteConfiguration> _workingRoutes = new List<RouteConfiguration>();
+        private OscConfiguration _workingOsc = OscConfiguration.CreateDefault();
         private RouteConfiguration _selectedRoute;
         private bool _showingSettings;
         private SettingsSection _settingsSection = SettingsSection.Runtime;
         private bool _showSteamVrRoleTargets;
+        private bool _hideSourceInPreview;
+        private bool _hideTargetInPreview;
+        private bool _showProxyInPreview;
         private bool _followSteamVrWithTrackSwap;
         private bool _steamVrObservedForUiLifecycle;
         private bool _steamVrUiCloseScheduled;
@@ -100,13 +113,57 @@ namespace TrackSwap
 
             UiPreferences preferences = _uiPreferencesService.Load();
             _showSteamVrRoleTargets = preferences.ShowSteamVrRoleTargets;
+            _hideSourceInPreview = preferences.HideSourceInPreview;
+            _hideTargetInPreview = preferences.HideTargetInPreview;
+            _showProxyInPreview = preferences.ShowProxyInPreview;
             _runtimeLifecycleMode = preferences.RuntimeLifecycleMode;
             _startedForSteamVrSession = Environment.GetCommandLineArgs().Any(argument =>
                 string.Equals(argument, "--steamvr-session", StringComparison.OrdinalIgnoreCase));
             _followSteamVrWithTrackSwap =
                 preferences.FollowSteamVrWithTrackSwap || _startedForSteamVrSession;
             ShowSteamVrRoleTargetsCheckBox.IsChecked = _showSteamVrRoleTargets;
+            HideSourceInPreviewCheckBox.IsChecked = _hideSourceInPreview;
+            HideTargetInPreviewCheckBox.IsChecked = _hideTargetInPreview;
+            ShowProxyInPreviewCheckBox.IsChecked = _showProxyInPreview;
             FollowSteamVrWithTrackSwapCheckBox.IsChecked = _followSteamVrWithTrackSwap;
+            RuntimeModeComboBox.ItemsSource = new[]
+            {
+                new RouteModeOption(RouteMode.DirectProxy, "输出为虚拟追踪器"),
+                new RouteModeOption(RouteMode.ReplaceTarget, "替换现有设备位姿"),
+                new RouteModeOption(RouteMode.VirtualController, "输出为虚拟控制器")
+            };
+            RuntimeControllerHandComboBox.ItemsSource = new[]
+            {
+                new ControllerHandOption(ControllerHand.Left, "左手"),
+                new ControllerHandOption(ControllerHand.Right, "右手")
+            };
+            RuntimeControlInputComboBox.ItemsSource = new[]
+            {
+                new ControlInputOption(ControlInputSource.None, "无"),
+                new ControlInputOption(ControlInputSource.Osc, "OSC")
+            };
+            OscResetTimeoutComboBox.ItemsSource = new[]
+            {
+                new OscResetTimeoutOption(OscResetTimeout.Never, "永不"),
+                new OscResetTimeoutOption(OscResetTimeout.OneSecond, "1 秒"),
+                new OscResetTimeoutOption(OscResetTimeout.FiveSeconds, "5 秒"),
+                new OscResetTimeoutOption(OscResetTimeout.ThirtySeconds, "30 秒"),
+                new OscResetTimeoutOption(OscResetTimeout.OneMinute, "1 分钟")
+            };
+            _oscApplyTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(400)
+            };
+            _oscApplyTimer.Tick += async (_, __) =>
+            {
+                _oscApplyTimer.Stop();
+                await ApplyOscSettingsAsync();
+            };
+            LoadOscFields(_workingOsc);
+            OscEnabledCheckBox.Click += (_, __) => ScheduleOscSettingsApply(immediate: true);
+            OscResetTimeoutComboBox.SelectionChanged += (_, __) => ScheduleOscSettingsApply(immediate: true);
+            OscListenAddressTextBox.TextChanged += (_, __) => ScheduleOscSettingsApply(immediate: false);
+            OscPortTextBox.TextChanged += (_, __) => ScheduleOscSettingsApply(immediate: false);
             RuntimeLifecycleComboBox.ItemsSource = new[]
             {
                 new RuntimeLifecycleOption(RuntimeLifecycleMode.FollowTrackSwap, "跟随 TrackSwap"),
@@ -124,13 +181,11 @@ namespace TrackSwap
                 Array.Empty<TargetOption>(),
                 includeRoleTargets: false,
                 includeConcreteDevices: true);
-            TargetComboBox.SelectedIndex = 0;
             RuntimeTargetComboBox.ItemsSource = BuildTargets(
                 Array.Empty<DeviceOption>(),
                 Array.Empty<TargetOption>(),
                 includeRoleTargets: _showSteamVrRoleTargets,
                 includeConcreteDevices: true);
-            RuntimeTargetComboBox.SelectedIndex = 0;
             CalibrationNameTextBox.Text = "校准 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
             InitializePosePreview();
             ShowSettingsSection(_settingsSection);
@@ -151,6 +206,11 @@ namespace TrackSwap
                 Interval = TimeSpan.FromMilliseconds(33)
             };
             _telemetryTimer.Tick += async (_, __) => await RefreshTelemetryAsync();
+            _oscMonitorTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(33)
+            };
+            _oscMonitorTimer.Tick += async (_, __) => await RefreshOscMonitorAsync();
 
             Loaded += async (_, __) =>
             {
@@ -159,6 +219,7 @@ namespace TrackSwap
                 _statusTimer.Start();
                 _deviceRefreshTimer.Start();
                 _telemetryTimer.Start();
+                _oscMonitorTimer.Start();
                 await RefreshStatusAsync();
                 if (_statusService.IsRunning() && _followSteamVrWithTrackSwap)
                 {
@@ -172,7 +233,64 @@ namespace TrackSwap
                 _statusTimer.Stop();
                 _deviceRefreshTimer.Stop();
                 _telemetryTimer.Stop();
+                _oscMonitorTimer.Stop();
+                _oscApplyTimer.Stop();
             };
+        }
+
+        private async Task RefreshOscMonitorAsync()
+        {
+            if (_oscMonitorUpdatePending || !_showingSettings || _settingsSection != SettingsSection.Osc)
+            {
+                return;
+            }
+
+            _oscMonitorUpdatePending = true;
+            try
+            {
+                OscRuntimeStatus status = await _runtimeControlService.GetOscStatusAsync();
+                UpdateOscIndicators(status.LeftInput, status.RightInput);
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is TimeoutException ||
+                exception is UnauthorizedAccessException ||
+                exception is InvalidDataException)
+            {
+                UpdateOscIndicators(null, null);
+            }
+            finally
+            {
+                _oscMonitorUpdatePending = false;
+            }
+        }
+
+        private void UpdateOscIndicators(ControllerInputState left, ControllerInputState right)
+        {
+            left = left ?? new ControllerInputState();
+            right = right ?? new ControllerInputState();
+
+            OscLeftPrimaryIndicator.Value = left.PrimaryButton ? 1.0 : 0.0;
+            OscLeftSecondaryIndicator.Value = left.SecondaryButton ? 1.0 : 0.0;
+            OscLeftJoystickIndicator.X = left.JoystickX;
+            OscLeftJoystickIndicator.Y = left.JoystickY;
+            OscLeftJoystickClickIndicator.Value = left.JoystickClick ? 1.0 : 0.0;
+            OscLeftTriggerValueIndicator.Value = left.TriggerValue;
+            OscLeftTriggerClickIndicator.Value = left.TriggerClick ? 1.0 : 0.0;
+            OscLeftGripValueIndicator.Value = left.GripValue;
+            OscLeftGripClickIndicator.Value = left.GripClick ? 1.0 : 0.0;
+            OscLeftMenuIndicator.Value = left.MenuButton ? 1.0 : 0.0;
+
+            OscRightPrimaryIndicator.Value = right.PrimaryButton ? 1.0 : 0.0;
+            OscRightSecondaryIndicator.Value = right.SecondaryButton ? 1.0 : 0.0;
+            OscRightJoystickIndicator.X = right.JoystickX;
+            OscRightJoystickIndicator.Y = right.JoystickY;
+            OscRightJoystickClickIndicator.Value = right.JoystickClick ? 1.0 : 0.0;
+            OscRightTriggerValueIndicator.Value = right.TriggerValue;
+            OscRightTriggerClickIndicator.Value = right.TriggerClick ? 1.0 : 0.0;
+            OscRightGripValueIndicator.Value = right.GripValue;
+            OscRightGripClickIndicator.Value = right.GripClick ? 1.0 : 0.0;
+            OscRightMenuIndicator.Value = right.MenuButton ? 1.0 : 0.0;
         }
 
         private void RefreshAll(
@@ -391,8 +509,7 @@ namespace TrackSwap
                 currentTargetPath: selectedTargetPath);
             RuntimeTargetComboBox.ItemsSource = targets;
             RuntimeTargetComboBox.SelectedItem = targets.FirstOrDefault(target =>
-                string.Equals(target.TargetPath, selectedTargetPath, StringComparison.Ordinal))
-                ?? targets.FirstOrDefault();
+                string.Equals(target.TargetPath, selectedTargetPath, StringComparison.Ordinal));
             RefreshCalibrationTargets();
         }
 
@@ -433,7 +550,12 @@ namespace TrackSwap
                 string currentPrefix = currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
                     ? string.Empty
                     : currentDevice?.IsOnline == true ? "在线 · " : "离线 · ";
-                targets.Add(new TargetOption(currentPrefix + currentName, currentTargetPath));
+                targets.Add(new TargetOption(
+                    currentPrefix + currentName,
+                    currentTargetPath,
+                    currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
+                        ? (bool?)null
+                        : currentDevice?.IsOnline == true));
             }
 
             foreach (DeviceOption device in knownDevices.Where(device => device.IsOnline))
@@ -442,7 +564,8 @@ namespace TrackSwap
                 {
                     targets.Add(new TargetOption(
                         "在线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
-                        device.DevicePath));
+                        device.DevicePath,
+                        true));
                 }
             }
 
@@ -452,7 +575,8 @@ namespace TrackSwap
                 {
                     targets.Add(new TargetOption(
                         "离线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
-                        device.DevicePath));
+                        device.DevicePath,
+                        false));
                 }
             }
 
@@ -462,7 +586,10 @@ namespace TrackSwap
                     target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal)
                         ? "离线 · " + DeviceOption.BaseDisplayName(target.DisplayName)
                         : target.DisplayName,
-                    target.TargetPath));
+                    target.TargetPath,
+                    target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal)
+                        ? (bool?)false
+                        : null));
             }
 
             return targets;
@@ -671,7 +798,6 @@ namespace TrackSwap
                 ? Visibility.Collapsed
                 : Visibility.Visible;
             StartRuntimeButton.IsEnabled = false;
-
             if (status.Configuration != null &&
                 (!_runtimeEditorInitialized || status.Configuration.Revision != _loadedRuntimeRevision))
             {
@@ -742,53 +868,88 @@ namespace TrackSwap
         {
             DeviceOption source = RuntimeSourceComboBox.SelectedItem as DeviceOption;
             TargetOption target = RuntimeTargetComboBox.SelectedItem as TargetOption;
+            bool replacesTarget = _selectedRoute?.Mode == RouteMode.ReplaceTarget;
+            bool virtualController = _selectedRoute?.Mode == RouteMode.VirtualController;
+            bool controllerReady = RuntimeControllerHandComboBox.SelectedItem is ControllerHandOption &&
+                RuntimeControlInputComboBox.SelectedItem is ControlInputOption;
             RuntimeSourcePathText.Text = source?.DevicePath ?? "未选择物理来源";
-            RuntimeTargetPathText.Text = target?.TargetPath ?? "未选择静态目标";
+            RuntimeTargetPathText.Text = replacesTarget
+                ? target?.TargetPath ?? "未选择替换目标"
+                : virtualController ? "虚拟控制器模式不使用替换目标" : "直接输出模式不使用替换目标";
             ApplyRuntimeButton.IsEnabled = _runtimeStatus != null && _selectedRoute != null &&
-                !_selectedRoute.PendingDeletion && source != null && IsAllowedRuntimeTarget(target);
+                !_selectedRoute.PendingDeletion && source != null &&
+                (!replacesTarget || IsAllowedRuntimeTarget(target)) &&
+                (!virtualController || controllerReady);
 
             RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
                 _selectedRoute != null && string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
             bool sourceWillChange = activeRoute != null && source != null &&
                 !string.Equals(activeRoute.SourceDevicePath, source.DevicePath, StringComparison.Ordinal);
-            bool blockedRoleTarget = target != null && IsSteamVrRoleTargetPath(target.TargetPath) &&
+            bool modeWillChange = activeRoute != null && activeRoute.Mode != _selectedRoute?.Mode;
+            bool blockedRoleTarget = replacesTarget && target != null && IsSteamVrRoleTargetPath(target.TargetPath) &&
                 !_showSteamVrRoleTargets;
             RuntimeRouteChangeWarningText.Text = blockedRoleTarget
                 ? "当前目标来自旧角色配置。请选择一个明确的在线实体设备后再应用。"
+                : modeWillChange
+                ? "运行模式将在应用后切换。若需要增删静态映射，TrackSwap 会在 SteamVR 完全退出后自动完成。"
                 : sourceWillChange
                 ? "注意：应用后物理来源将从 “" + activeRoute.SourceDevicePath + "” 切换为 “" + source.DevicePath + "”。"
                 : string.Empty;
-            RuntimeRouteChangeWarningText.Visibility = blockedRoleTarget || sourceWillChange
+            RuntimeRouteChangeWarningText.Visibility = blockedRoleTarget || modeWillChange || sourceWillChange
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             if (_selectedRoute != null)
             {
                 bool applied = _runtimeStatus != null && _runtimeStatus.DriverConnected &&
                     _runtimeStatus.ConfigurationRevision == _runtimeStatus.DriverAppliedRevision &&
-                    activeRoute != null;
-                bool mapped = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath) &&
-                    _settingsService.ReadOverrides(_settingsPath).Any(mapping =>
-                        string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot), StringComparison.Ordinal) &&
-                        string.Equals(mapping.TargetPath, _selectedRoute.TargetDevicePath, StringComparison.Ordinal));
+                    activeRoute != null && RouteRoutingMatches(activeRoute, _selectedRoute);
+                bool routeSaved = activeRoute != null && RouteRoutingMatches(activeRoute, _selectedRoute);
+                string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                TrackingOverrideOption proxyMapping = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath)
+                    ? _settingsService.ReadOverrides(_settingsPath).FirstOrDefault(mapping =>
+                        string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal))
+                    : null;
+                bool exactMapping = replacesTarget && proxyMapping != null &&
+                    string.Equals(proxyMapping.TargetPath, _selectedRoute.TargetDevicePath, StringComparison.Ordinal);
+                bool staticStateReady = replacesTarget ? exactMapping : proxyMapping == null;
                 bool steamVrRunning = _statusService.IsRunning();
-                string state = _selectedRoute.PendingDeletion ? "待删除" : !_selectedRoute.Enabled ? "已停用" : !mapped ? "待映射" : !steamVrRunning ? "已配置" : applied ? "已应用" : "待应用";
+                string state = _selectedRoute.PendingDeletion ? "待删除" : !_selectedRoute.Enabled ? "已停用" : !routeSaved
+                    ? "待应用"
+                    : !staticStateReady
+                    ? replacesTarget ? "待映射" : "待解除映射"
+                    : !steamVrRunning ? "已配置" : applied ? "已应用" : "待应用";
                 SelectedRouteStateText.Text = state;
-                bool synchronized = mapped && (!steamVrRunning || applied);
+                bool synchronized = routeSaved && staticStateReady && (!steamVrRunning || applied);
                 SelectedRouteStateText.Foreground = FindBrush(_selectedRoute.PendingDeletion ? "WarningBrush" : !_selectedRoute.Enabled ? "MutedTextBrush" : synchronized ? "SuccessBrush" : "WarningBrush");
                 RouteSyncText.Text = _selectedRoute.PendingDeletion
                     ? "退出 SteamVR 后将自动清理绑定并删除"
-                    : synchronized ? "配置已同步" : !mapped
-                    ? steamVrRunning ? "退出 SteamVR 后将自动写入静态映射" : "正在等待自动写入静态映射"
+                    : synchronized ? "配置已同步" : !routeSaved
+                    ? "应用更改以保存配置"
+                    : !staticStateReady
+                    ? replacesTarget
+                        ? steamVrRunning ? "退出 SteamVR 后将自动写入静态映射" : "正在等待自动写入静态映射"
+                        : steamVrRunning ? "退出 SteamVR 后将自动移除静态映射" : "正在等待移除静态映射"
                     : "配置待同步";
                 RouteSyncText.Foreground = FindBrush(_selectedRoute.PendingDeletion || !synchronized ? "WarningBrush" : "SuccessBrush");
                 SelectedRouteSummaryText.Text = _selectedRoute.PendingDeletion
                     ? "该配置仍保持输出；可通过右键菜单取消删除。"
                     : blockedRoleTarget
                     ? "旧配置使用 SteamVR 角色目标；请选择明确的在线实体设备完成迁移。"
-                    : source == null || target == null
-                    ? "选择来源与目标以完成配置。"
-                    : DeviceOption.BaseDisplayName(source.DisplayName) + " 提供定位，" +
-                        DeviceOption.BaseDisplayName(target.DisplayName) + " 保留输入。";
+                    : source == null || (replacesTarget && target == null) || (virtualController && !controllerReady)
+                    ? replacesTarget ? "选择来源与替换目标以完成配置。" : virtualController
+                        ? "选择位姿来源、控制器侧别与控制输入来源以完成配置。"
+                        : "选择位姿来源以完成配置。"
+                    : replacesTarget
+                        ? DeviceOption.BaseDisplayName(source.DisplayName) + " 提供定位，" +
+                            DeviceOption.BaseDisplayName(target.DisplayName) + " 保留输入。"
+                        : virtualController
+                            ? DeviceOption.BaseDisplayName(source.DisplayName) + " 提供定位，" +
+                                (_selectedRoute.ControlInputSource == ControlInputSource.Osc
+                                    ? "OSC 提供输入"
+                                    : "不接收控制输入") + "，输出至 " +
+                                ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand) + "。"
+                            : DeviceOption.BaseDisplayName(source.DisplayName) + " 提供定位，输出至 " +
+                                ProtocolConstants.GetVirtualSerial(_selectedRoute.VirtualDeviceSlot) + "。";
             }
             RefreshCalibrationTargets();
             UpdateCalibrationControls();
@@ -852,6 +1013,8 @@ namespace TrackSwap
             _isLoading = true;
             try
             {
+                _workingOsc = CloneOscConfiguration(configuration.Osc ?? OscConfiguration.CreateDefault());
+                LoadOscFields(_workingOsc);
                 _workingRoutes.Clear();
                 int unnamedIndex = 0;
                 foreach (RouteConfiguration route in configuration.Routes ?? new List<RouteConfiguration>())
@@ -885,6 +1048,9 @@ namespace TrackSwap
                 Enabled = route.Enabled,
                 PendingDeletion = route.PendingDeletion,
                 VirtualDeviceSlot = route.VirtualDeviceSlot,
+                Mode = route.Mode,
+                ControllerHand = route.ControllerHand,
+                ControlInputSource = route.ControlInputSource,
                 SourceDevicePath = route.SourceDevicePath,
                 TargetDevicePath = route.TargetDevicePath,
                 Offset = new PoseOffset
@@ -913,11 +1079,21 @@ namespace TrackSwap
                     : _settingsService.ReadOverrides(_settingsPath);
             foreach (RouteConfiguration route in _workingRoutes.OrderBy(candidate => candidate.VirtualDeviceSlot))
             {
-                bool mapped = overrides.Any(mapping =>
-                    string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot), StringComparison.Ordinal) &&
-                    string.Equals(mapping.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
-                string state = route.PendingDeletion ? "待删除" : !route.Enabled ? "已停用" : !mapped ? "待映射" : !steamVrRunning ? "已配置" : driverApplied ? "已应用" : "等待驱动";
-                Brush brush = FindBrush(route.PendingDeletion ? "WarningBrush" : !route.Enabled ? "MutedTextBrush" : mapped && (!steamVrRunning || driverApplied) ? "SuccessBrush" : "WarningBrush");
+                RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
+                    string.Equals(candidate.RouteId, route.RouteId, StringComparison.Ordinal));
+                bool routeSaved = activeRoute != null && RouteRoutingMatches(activeRoute, route);
+                TrackingOverrideOption proxyMapping = overrides.FirstOrDefault(mapping =>
+                    string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot), StringComparison.Ordinal));
+                bool replacesTarget = route.Mode == RouteMode.ReplaceTarget;
+                bool exactMapping = replacesTarget && proxyMapping != null &&
+                    string.Equals(proxyMapping.TargetPath, route.TargetDevicePath, StringComparison.Ordinal);
+                bool staticStateReady = replacesTarget ? exactMapping : proxyMapping == null;
+                string state = route.PendingDeletion ? "待删除" : !route.Enabled ? "已停用" : !routeSaved
+                    ? "待应用"
+                    : !staticStateReady
+                    ? replacesTarget ? "待映射" : "待解除映射"
+                    : !steamVrRunning ? "已配置" : driverApplied ? "已应用" : "等待驱动";
+                Brush brush = FindBrush(route.PendingDeletion ? "WarningBrush" : !route.Enabled ? "MutedTextBrush" : routeSaved && staticStateReady && (!steamVrRunning || driverApplied) ? "SuccessBrush" : "WarningBrush");
                 _routeItems.Add(new RouteListItem(route, state, brush));
             }
             RouteListItem selection = _routeItems.FirstOrDefault(item =>
@@ -944,7 +1120,17 @@ namespace TrackSwap
                     route.SourceDevicePath);
                 RuntimeSourceComboBox.ItemsSource = sources;
                 DeviceOption source = sources.FirstOrDefault(candidate => string.Equals(candidate.DevicePath, route.SourceDevicePath, StringComparison.Ordinal));
-                RuntimeSourceComboBox.SelectedItem = source ?? sources.FirstOrDefault();
+                RuntimeSourceComboBox.SelectedItem = source;
+
+                RuntimeModeComboBox.SelectedItem = RuntimeModeComboBox.Items
+                    .Cast<RouteModeOption>()
+                    .First(option => option.Mode == route.Mode);
+                RuntimeControllerHandComboBox.SelectedItem = RuntimeControllerHandComboBox.Items
+                    .Cast<ControllerHandOption>()
+                    .FirstOrDefault(option => option.Hand == route.ControllerHand);
+                RuntimeControlInputComboBox.SelectedItem = RuntimeControlInputComboBox.Items
+                    .Cast<ControlInputOption>()
+                    .FirstOrDefault(option => option.Source == route.ControlInputSource);
 
                 IReadOnlyList<TargetOption> targets = BuildTargets(
                     _knownPhysicalDevices,
@@ -954,15 +1140,22 @@ namespace TrackSwap
                     currentTargetPath: route.TargetDevicePath);
                 RuntimeTargetComboBox.ItemsSource = targets;
                 TargetOption target = targets.FirstOrDefault(candidate => string.Equals(candidate.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
-                RuntimeTargetComboBox.SelectedItem = target ?? targets.FirstOrDefault();
+                RuntimeTargetComboBox.SelectedItem = target;
                 LoadOffsetFields(route.Offset ?? PoseOffset.Identity());
-                SelectedProxyText.Text = ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
+                SelectedProxyText.Text = route.Mode == RouteMode.VirtualController
+                    ? ProtocolConstants.GetControllerSerial(route.ControllerHand)
+                    : ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
                 RuntimeProxyText.Text = ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
+                RuntimeControllerOutputText.Text = string.IsNullOrWhiteSpace(ProtocolConstants.GetControllerSerial(route.ControllerHand))
+                    ? "请选择控制器侧别"
+                    : ProtocolConstants.GetControllerSerial(route.ControllerHand);
                 SelectedRouteNameText.Text = route.Name;
                 ToggleSelectedRouteButton.Content = route.Enabled ? "停用" : "启用";
                 ToggleSelectedRouteButton.IsEnabled = !route.PendingDeletion;
                 RuntimeSourceComboBox.IsEnabled = !route.PendingDeletion;
+                RuntimeModeComboBox.IsEnabled = !route.PendingDeletion;
                 RuntimeTargetComboBox.IsEnabled = !route.PendingDeletion;
+                UpdateRuntimeModePresentation();
             }
             finally
             {
@@ -1053,6 +1246,7 @@ namespace TrackSwap
                 Name = GetNextRouteName(),
                 Enabled = true,
                 VirtualDeviceSlot = slot,
+                Mode = RouteMode.DirectProxy,
                 Offset = PoseOffset.Identity()
             };
             _workingRoutes.Add(route);
@@ -1080,7 +1274,25 @@ namespace TrackSwap
         private static bool IsRouteComplete(RouteConfiguration route)
         {
             return route != null && !string.IsNullOrWhiteSpace(route.SourceDevicePath) &&
-                !string.IsNullOrWhiteSpace(route.TargetDevicePath);
+                (route.Mode == RouteMode.DirectProxy ||
+                 route.Mode == RouteMode.ReplaceTarget && !string.IsNullOrWhiteSpace(route.TargetDevicePath) ||
+                 route.Mode == RouteMode.VirtualController &&
+                    (route.ControllerHand == ControllerHand.Left || route.ControllerHand == ControllerHand.Right) &&
+                    (route.ControlInputSource == ControlInputSource.None ||
+                     route.ControlInputSource == ControlInputSource.Osc));
+        }
+
+        private static bool RouteRoutingMatches(RouteConfiguration left, RouteConfiguration right)
+        {
+            return left != null && right != null &&
+                left.Mode == right.Mode &&
+                string.Equals(left.SourceDevicePath, right.SourceDevicePath, StringComparison.Ordinal) &&
+                (left.Mode == RouteMode.DirectProxy ||
+                 left.Mode == RouteMode.VirtualController &&
+                    left.ControllerHand == right.ControllerHand &&
+                    left.ControlInputSource == right.ControlInputSource ||
+                 left.Mode == RouteMode.ReplaceTarget &&
+                    string.Equals(left.TargetDevicePath, right.TargetDevicePath, StringComparison.Ordinal));
         }
 
         private void RouteListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1129,6 +1341,10 @@ namespace TrackSwap
             {
                 ShowSettingsSection(SettingsSection.Devices);
             }
+            else if (sender == SettingsOscCategoryButton)
+            {
+                ShowSettingsSection(SettingsSection.Osc);
+            }
             else if (sender == SettingsAdvancedCategoryButton)
             {
                 ShowSettingsSection(SettingsSection.Advanced);
@@ -1141,11 +1357,13 @@ namespace TrackSwap
             RuntimeSettingsPanel.Visibility = section == SettingsSection.Runtime ? Visibility.Visible : Visibility.Collapsed;
             SteamVrSettingsPanel.Visibility = section == SettingsSection.SteamVr ? Visibility.Visible : Visibility.Collapsed;
             DeviceSettingsPanel.Visibility = section == SettingsSection.Devices ? Visibility.Visible : Visibility.Collapsed;
+            OscSettingsPanel.Visibility = section == SettingsSection.Osc ? Visibility.Visible : Visibility.Collapsed;
             AdvancedSettingsPanel.Visibility = section == SettingsSection.Advanced ? Visibility.Visible : Visibility.Collapsed;
 
             UpdateSettingsCategoryButton(SettingsRuntimeCategoryButton, section == SettingsSection.Runtime);
             UpdateSettingsCategoryButton(SettingsSteamVrCategoryButton, section == SettingsSection.SteamVr);
             UpdateSettingsCategoryButton(SettingsDevicesCategoryButton, section == SettingsSection.Devices);
+            UpdateSettingsCategoryButton(SettingsOscCategoryButton, section == SettingsSection.Osc);
             UpdateSettingsCategoryButton(SettingsAdvancedCategoryButton, section == SettingsSection.Advanced);
         }
 
@@ -1167,6 +1385,48 @@ namespace TrackSwap
             {
                 _showSteamVrRoleTargets = previousValue;
                 ShowSteamVrRoleTargetsCheckBox.IsChecked = previousValue;
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "无法保存高级选项",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private void PreviewModelVisibilityCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            bool previousHideSource = _hideSourceInPreview;
+            bool previousHideTarget = _hideTargetInPreview;
+            bool previousShowProxy = _showProxyInPreview;
+            try
+            {
+                _hideSourceInPreview = HideSourceInPreviewCheckBox.IsChecked == true;
+                _hideTargetInPreview = HideTargetInPreviewCheckBox.IsChecked == true;
+                _showProxyInPreview = ShowProxyInPreviewCheckBox.IsChecked == true;
+                SaveUiPreferences();
+                if (_hideSourceInPreview && _sourcePreviewModel != null)
+                {
+                    HidePreviewModel(_sourcePreviewModel);
+                }
+                if (_hideTargetInPreview && _targetPreviewModel != null)
+                {
+                    HidePreviewModel(_targetPreviewModel);
+                }
+                if (!ShouldShowProxyInPreview() && _proxyPreviewModel != null)
+                {
+                    HidePreviewModel(_proxyPreviewModel);
+                }
+                _ = RefreshPreviewDeviceModelsAsync();
+            }
+            catch (Exception exception)
+            {
+                _hideSourceInPreview = previousHideSource;
+                _hideTargetInPreview = previousHideTarget;
+                _showProxyInPreview = previousShowProxy;
+                HideSourceInPreviewCheckBox.IsChecked = previousHideSource;
+                HideTargetInPreviewCheckBox.IsChecked = previousHideTarget;
+                ShowProxyInPreviewCheckBox.IsChecked = previousShowProxy;
                 MessageBox.Show(
                     this,
                     exception.Message,
@@ -1283,6 +1543,9 @@ namespace TrackSwap
             _uiPreferencesService.Save(new UiPreferences
             {
                 ShowSteamVrRoleTargets = _showSteamVrRoleTargets,
+                HideSourceInPreview = _hideSourceInPreview,
+                HideTargetInPreview = _hideTargetInPreview,
+                ShowProxyInPreview = _showProxyInPreview,
                 RuntimeLifecycleMode = _runtimeLifecycleMode,
                 FollowSteamVrWithTrackSwap = _followSteamVrWithTrackSwap
             });
@@ -1456,7 +1719,8 @@ namespace TrackSwap
             bool enabling = !_selectedRoute.Enabled;
             if (enabling)
             {
-                if (!IsAllowedRuntimeTargetPath(_selectedRoute.TargetDevicePath))
+                if (_selectedRoute.Mode == RouteMode.ReplaceTarget &&
+                    !IsAllowedRuntimeTargetPath(_selectedRoute.TargetDevicePath))
                 {
                     MessageBox.Show(
                         this,
@@ -1470,7 +1734,8 @@ namespace TrackSwap
                 var candidate = new RuntimeConfiguration
                 {
                     Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
-                    Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList()
+                    Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
+                    Osc = CloneOscConfiguration(_workingOsc)
                 };
                 IReadOnlyList<string> dependencyErrors =
                     ConfigurationValidator.ValidateSourceRoleDependencies(
@@ -1489,7 +1754,8 @@ namespace TrackSwap
                     return;
                 }
             }
-            if (!enabling && _statusService.IsRunning() && MessageBox.Show(
+            if (!enabling && _selectedRoute.Mode == RouteMode.ReplaceTarget &&
+                _statusService.IsRunning() && MessageBox.Show(
                     this,
                     "停用后虚拟代理会立即停止输出，但 SteamVR 静态映射仍然生效，因此对应目标会暂时失去定位。是否继续？",
                     "确认停用",
@@ -1505,7 +1771,7 @@ namespace TrackSwap
                 string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
                 IReadOnlyList<TrackingOverrideOption> overrides = _settingsService.ReadOverrides(_settingsPath);
                 bool mapped = overrides.Any(mapping => string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal));
-                if (enabling)
+                if (enabling && _selectedRoute.Mode == RouteMode.ReplaceTarget)
                 {
                     _settingsService.ApplyOverride(_settingsPath, proxyPath, _selectedRoute.TargetDevicePath);
                 }
@@ -1539,7 +1805,8 @@ namespace TrackSwap
                     string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
                     bool mapped = _settingsService.ReadOverrides(_settingsPath).Any(mapping =>
                         string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal));
-                    if (!mapped && IsRouteComplete(_selectedRoute))
+                    if (!mapped && IsRouteComplete(_selectedRoute) &&
+                        _selectedRoute.Mode == RouteMode.ReplaceTarget)
                     {
                         _settingsService.ApplyOverride(_settingsPath, proxyPath, _selectedRoute.TargetDevicePath);
                         RefreshOverrideList();
@@ -1552,6 +1819,32 @@ namespace TrackSwap
             }
 
             bool steamVrRunning = _statusService.IsRunning();
+            string selectedProxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+            bool hasStaticMapping = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath) &&
+                _settingsService.ReadOverrides(_settingsPath).Any(mapping =>
+                    string.Equals(mapping.SourcePath, selectedProxyPath, StringComparison.Ordinal));
+            if (_selectedRoute.Mode != RouteMode.ReplaceTarget && !hasStaticMapping)
+            {
+                string outputName = _selectedRoute.Mode == RouteMode.VirtualController
+                    ? "虚拟控制器"
+                    : "虚拟追踪器";
+                if (MessageBox.Show(
+                        this,
+                        "确定删除配置 “" + _selectedRoute.Name + "”？对应" + outputName + "将立即停止输出；已保存的校准档案不会删除。",
+                        "删除配置",
+                        MessageBoxButton.OKCancel,
+                        MessageBoxImage.Warning) != MessageBoxResult.OK)
+                {
+                    return;
+                }
+
+                RouteConfiguration removedRoute = _selectedRoute;
+                _workingRoutes.Remove(removedRoute);
+                _selectedRoute = _workingRoutes.OrderBy(route => route.VirtualDeviceSlot).FirstOrDefault();
+                await PersistWorkingRoutesAsync();
+                return;
+            }
+
             string message = steamVrRunning
                 ? "SteamVR 正在运行。配置会先标记为“待删除”并继续输出，避免目标立即失去定位。完全退出 SteamVR 后，TrackSwap 将自动清理静态绑定并完成删除。\n\n已保存的校准档案不会删除。"
                 : "确定删除配置 “" + _selectedRoute.Name + "”？TrackSwap 将清理对应的静态绑定；已保存的校准档案不会删除。";
@@ -1580,7 +1873,8 @@ namespace TrackSwap
             var configuration = new RuntimeConfiguration
             {
                 Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
-                Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList()
+                Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
+                Osc = CloneOscConfiguration(_workingOsc)
             };
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
             if (errors.Count != 0)
@@ -1641,7 +1935,8 @@ namespace TrackSwap
                     Routes = _workingRoutes
                         .Where(route => !route.PendingDeletion && IsRouteComplete(route))
                         .Select(CloneRoute)
-                        .ToList()
+                        .ToList(),
+                    Osc = CloneOscConfiguration(_workingOsc)
                 };
                 IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
                 if (errors.Count != 0)
@@ -1696,7 +1991,7 @@ namespace TrackSwap
             }
 
             IReadOnlyDictionary<string, string> desiredMappings = _workingRoutes
-                .Where(route => route.Enabled && IsRouteComplete(route))
+                .Where(route => route.Enabled && route.Mode == RouteMode.ReplaceTarget && IsRouteComplete(route))
                 .ToDictionary(
                     route => ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot),
                     route => route.TargetDevicePath,
@@ -1743,12 +2038,98 @@ namespace TrackSwap
                 {
                     _selectedRoute.SourceDevicePath =
                         (RuntimeSourceComboBox.SelectedItem as DeviceOption)?.DevicePath;
-                    _selectedRoute.TargetDevicePath =
-                        (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath;
+                    if (_selectedRoute.Mode == RouteMode.ReplaceTarget)
+                    {
+                        _selectedRoute.TargetDevicePath =
+                            (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath;
+                    }
+                    if (_selectedRoute.Mode == RouteMode.VirtualController)
+                    {
+                        _selectedRoute.ControllerHand =
+                            (RuntimeControllerHandComboBox.SelectedItem as ControllerHandOption)?.Hand ?? ControllerHand.None;
+                        _selectedRoute.ControlInputSource =
+                            (RuntimeControlInputComboBox.SelectedItem as ControlInputOption)?.Source ?? ControlInputSource.None;
+                        RuntimeControllerOutputText.Text = string.IsNullOrWhiteSpace(
+                            ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand))
+                            ? "请选择控制器侧别"
+                            : ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand);
+                        SelectedProxyText.Text = string.IsNullOrWhiteSpace(
+                            ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand))
+                            ? ProtocolConstants.GetVirtualSerial(_selectedRoute.VirtualDeviceSlot)
+                            : ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand);
+                    }
                 }
                 UpdateRuntimeSelectionDetails();
+                UpdateRuntimeModeDescription();
                 _ = RefreshPreviewDeviceModelsAsync();
             }
+        }
+
+        private void RuntimeModeSelection_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isLoading || _selectedRoute == null ||
+                !(RuntimeModeComboBox.SelectedItem is RouteModeOption option))
+            {
+                return;
+            }
+
+            if (_selectedRoute.Mode != option.Mode)
+            {
+                _selectedRoute.Mode = option.Mode;
+                _selectedRoute.TargetDevicePath = null;
+                _selectedRoute.ControllerHand = ControllerHand.None;
+                _selectedRoute.ControlInputSource = ControlInputSource.None;
+                RuntimeTargetComboBox.SelectedItem = null;
+                RuntimeControllerHandComboBox.SelectedItem = null;
+                RuntimeControlInputComboBox.SelectedItem = null;
+                SelectedProxyText.Text = option.Mode == RouteMode.VirtualController
+                    ? "请选择控制器侧别"
+                    : ProtocolConstants.GetVirtualSerial(_selectedRoute.VirtualDeviceSlot);
+                RuntimeControllerOutputText.Text = "请选择控制器侧别";
+            }
+            UpdateRuntimeModePresentation();
+            UpdateRuntimeSelectionDetails();
+            _ = RefreshPreviewDeviceModelsAsync();
+        }
+
+        private void UpdateRuntimeModePresentation()
+        {
+            bool replacesTarget = _selectedRoute?.Mode == RouteMode.ReplaceTarget;
+            bool virtualController = _selectedRoute?.Mode == RouteMode.VirtualController;
+            UpdateRuntimeModeDescription();
+            RuntimeOutputPanel.Visibility = virtualController ? Visibility.Collapsed : Visibility.Visible;
+            RuntimeTargetPanel.Visibility = replacesTarget ? Visibility.Visible : Visibility.Collapsed;
+            RuntimeTargetArrow.Visibility = replacesTarget ? Visibility.Visible : Visibility.Collapsed;
+            RuntimeTargetColumn.Width = replacesTarget ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            Grid.SetColumnSpan(RuntimeProxyPanel, replacesTarget ? 1 : 3);
+            RuntimeControllerPanel.Visibility = virtualController ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void UpdateRuntimeModeDescription()
+        {
+            if (_selectedRoute?.Mode == RouteMode.ReplaceTarget)
+            {
+                RuntimeModeDescriptionText.Text = "代理设备将覆盖目标位姿，并保留目标原有输入。";
+                return;
+            }
+            if (_selectedRoute?.Mode == RouteMode.VirtualController)
+            {
+                ControlInputSource? inputSource =
+                    (RuntimeControlInputComboBox.SelectedItem as ControlInputOption)?.Source;
+                RuntimeModeDescriptionText.Text = inputSource == ControlInputSource.None
+                    ? "来源提供位姿；控制器不接收按键或模拟量输入。"
+                    : inputSource == ControlInputSource.Osc
+                        ? "来源提供位姿，OSC 提供按钮与模拟量，输出为一只虚拟控制器。"
+                        : "来源提供位姿；请选择控制输入来源。";
+                return;
+            }
+            RuntimeModeDescriptionText.Text = "来源位姿直接输出到稳定的 TrackSwap 虚拟追踪器。";
+        }
+
+        private bool ShouldShowProxyInPreview()
+        {
+            return _showProxyInPreview || _selectedRoute?.Mode == RouteMode.DirectProxy ||
+                _selectedRoute?.Mode == RouteMode.VirtualController;
         }
 
         private void CalibrationSelection_Changed(object sender, SelectionChangedEventArgs e)
@@ -1959,13 +2340,19 @@ namespace TrackSwap
         {
             DeviceOption source = RuntimeSourceComboBox.SelectedItem as DeviceOption;
             TargetOption target = RuntimeTargetComboBox.SelectedItem as TargetOption;
-            if (_runtimeStatus == null || _selectedRoute == null || source == null || target == null)
+            bool replacesTarget = _selectedRoute?.Mode == RouteMode.ReplaceTarget;
+            bool virtualController = _selectedRoute?.Mode == RouteMode.VirtualController;
+            ControllerHandOption hand = RuntimeControllerHandComboBox.SelectedItem as ControllerHandOption;
+            ControlInputOption input = RuntimeControlInputComboBox.SelectedItem as ControlInputOption;
+            if (_runtimeStatus == null || _selectedRoute == null || source == null ||
+                (replacesTarget && target == null) ||
+                (virtualController && (hand == null || input == null)))
             {
                 MessageBox.Show(this, "Runtime 未连接，或尚未选择完整路由。", "无法应用", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            if (!IsAllowedRuntimeTarget(target))
+            if (replacesTarget && !IsAllowedRuntimeTarget(target))
             {
                 MessageBox.Show(
                     this,
@@ -1976,7 +2363,7 @@ namespace TrackSwap
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(source.RoleTargetPath) &&
+            if (replacesTarget && !string.IsNullOrWhiteSpace(source.RoleTargetPath) &&
                 string.Equals(source.RoleTargetPath, target.TargetPath, StringComparison.Ordinal))
             {
                 MessageBox.Show(
@@ -2015,12 +2402,21 @@ namespace TrackSwap
             }
 
             _selectedRoute.SourceDevicePath = source.DevicePath;
-            _selectedRoute.TargetDevicePath = target.TargetPath;
+            if (replacesTarget)
+            {
+                _selectedRoute.TargetDevicePath = target.TargetPath;
+            }
+            if (virtualController)
+            {
+                _selectedRoute.ControllerHand = hand.Hand;
+                _selectedRoute.ControlInputSource = input.Source;
+            }
             _selectedRoute.Offset = offset;
             var configuration = new RuntimeConfiguration
             {
                 Revision = revision,
-                Routes = _workingRoutes.Select(CloneRoute).ToList()
+                Routes = _workingRoutes.Select(CloneRoute).ToList(),
+                Osc = CloneOscConfiguration(_workingOsc)
             };
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
             errors = errors
@@ -2049,10 +2445,16 @@ namespace TrackSwap
             {
                 if (!_statusService.IsRunning() && !string.IsNullOrWhiteSpace(_settingsPath))
                 {
-                    _settingsService.ApplyOverride(
-                        _settingsPath,
-                        ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot),
-                        target.TargetPath);
+                    string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                    if (replacesTarget)
+                    {
+                        _settingsService.ApplyOverride(_settingsPath, proxyPath, target.TargetPath);
+                    }
+                    else if (_settingsService.ReadOverrides(_settingsPath).Any(mapping =>
+                        string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal)))
+                    {
+                        _settingsService.RemoveOverride(_settingsPath, proxyPath);
+                    }
                     RefreshOverrideList();
                 }
                 await _runtimeControlService.ApplyConfigurationAsync(configuration);
@@ -2065,12 +2467,17 @@ namespace TrackSwap
                     IReadOnlyList<TrackingOverrideOption> overrides = string.IsNullOrWhiteSpace(_settingsPath)
                         ? Array.Empty<TrackingOverrideOption>()
                         : _settingsService.ReadOverrides(_settingsPath);
-                    bool mapped = overrides.Any(mapping =>
-                        string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot), StringComparison.Ordinal) &&
-                        string.Equals(mapping.TargetPath, target.TargetPath, StringComparison.Ordinal));
-                    if (!mapped)
+                    string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                    TrackingOverrideOption proxyMapping = overrides.FirstOrDefault(mapping =>
+                        string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal));
+                    bool staticStateReady = replacesTarget
+                        ? proxyMapping != null && string.Equals(proxyMapping.TargetPath, target.TargetPath, StringComparison.Ordinal)
+                        : proxyMapping == null;
+                    if (!staticStateReady)
                     {
-                        RuntimeRouteChangeWarningText.Text = "运行时配置已保存。退出 SteamVR 后将自动写入静态引导映射，无需再次点击“应用更改”。";
+                        RuntimeRouteChangeWarningText.Text = replacesTarget
+                            ? "运行时配置已保存。退出 SteamVR 后将自动写入静态映射，无需再次点击“应用更改”。"
+                            : "直接输出模式已保存。退出 SteamVR 后将自动移除旧的静态映射，无需再次点击“应用更改”。";
                         RuntimeRouteChangeWarningText.Visibility = Visibility.Visible;
                     }
                 }
@@ -2330,10 +2737,13 @@ namespace TrackSwap
         private void InitializePosePreview()
         {
             _sourcePreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#F5A623"), TrackedDeviceKind.Unknown);
+            _proxyPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#5A9BFF"), TrackedDeviceKind.Tracker);
             _targetPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#45D483"), TrackedDeviceKind.Unknown);
             PreviewSceneRoot.Children.Add(_sourcePreviewModel);
+            PreviewSceneRoot.Children.Add(_proxyPreviewModel);
             PreviewSceneRoot.Children.Add(_targetPreviewModel);
             HidePreviewModel(_sourcePreviewModel);
+            HidePreviewModel(_proxyPreviewModel);
             HidePreviewModel(_targetPreviewModel);
             UpdatePreviewCamera();
         }
@@ -2461,8 +2871,10 @@ namespace TrackSwap
                     device.DevicePath,
                     _selectedRoute.SourceDevicePath,
                     StringComparison.Ordinal));
-            string targetPath = (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath ??
-                _selectedRoute.TargetDevicePath;
+            bool replacesTarget = _selectedRoute.Mode == RouteMode.ReplaceTarget;
+            string targetPath = replacesTarget
+                ? (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath ?? _selectedRoute.TargetDevicePath
+                : string.Empty;
             DeviceOption target = _knownPhysicalDevices.FirstOrDefault(device =>
                 string.Equals(device.DevicePath, targetPath, StringComparison.Ordinal)) ??
                 _knownPhysicalDevices.FirstOrDefault(device =>
@@ -2470,7 +2882,18 @@ namespace TrackSwap
 
             Task<OpenVrRenderModel> sourceTask = GetPreviewRenderModelAsync(source?.RenderModelName);
             Task<OpenVrRenderModel> targetTask = GetPreviewRenderModelAsync(target?.RenderModelName);
-            OpenVrRenderModel[] models = await Task.WhenAll(sourceTask, targetTask);
+            bool showProxy = ShouldShowProxyInPreview();
+            string outputRenderModel = _selectedRoute.Mode == RouteMode.VirtualController
+                ? _selectedRoute.ControllerHand == ControllerHand.Left
+                    ? "{indexcontroller}valve_controller_knu_1_0_left"
+                    : _selectedRoute.ControllerHand == ControllerHand.Right
+                        ? "{indexcontroller}valve_controller_knu_1_0_right"
+                        : null
+                : ProxyRenderModelName;
+            Task<OpenVrRenderModel> proxyTask = showProxy
+                ? GetPreviewRenderModelAsync(outputRenderModel)
+                : Task.FromResult<OpenVrRenderModel>(null);
+            OpenVrRenderModel[] models = await Task.WhenAll(sourceTask, targetTask, proxyTask);
             if (models[0] == null && !string.IsNullOrWhiteSpace(source?.RenderModelName))
             {
                 _previewModelCache.Remove(source.RenderModelName);
@@ -2493,10 +2916,26 @@ namespace TrackSwap
                 sourceKind,
                 (Color)ColorConverter.ConvertFromString("#F5A623"));
             SetPreviewDeviceModel(_targetPreviewModel, models[1], targetKind, targetColor);
+            SetPreviewDeviceModel(
+                _proxyPreviewModel,
+                models[2],
+                TrackedDeviceKind.Tracker,
+                (Color)ColorConverter.ConvertFromString("#5A9BFF"));
 
-            string sourceMode = models[0] == null ? "来源模型：内置回退" : "来源模型：SteamVR " + models[0].Name;
-            string targetMode = models[1] == null ? "目标模型：内置回退" : "目标模型：SteamVR " + models[1].Name;
-            _previewModelDescription = sourceMode + "\n" + targetMode + "\n虚拟输出仅作为路由代理，不参与渲染。";
+            string sourceMode = _hideSourceInPreview
+                ? "来源模型：已隐藏"
+                : models[0] == null ? "来源模型：内置回退" : "来源模型：SteamVR " + models[0].Name;
+            string targetMode = !replacesTarget
+                ? "目标模型：无（直接输出）"
+                : _hideTargetInPreview
+                ? "目标模型：已隐藏"
+                : models[1] == null ? "目标模型：内置回退" : "目标模型：SteamVR " + models[1].Name;
+            string proxyMode = !showProxy
+                ? "代理模型：已隐藏"
+                : models[2] == null
+                    ? "代理模型：内置回退"
+                    : "代理模型：SteamVR " + models[2].Name;
+            _previewModelDescription = sourceMode + "\n" + targetMode + "\n" + proxyMode;
             PreviewStatusText.ToolTip = _previewModelDescription;
         }
 
@@ -2632,11 +3071,17 @@ namespace TrackSwap
         private void ApplySourceAndTargetPreview(PoseTelemetrySnapshot snapshot)
         {
             Matrix3D targetMatrix = Matrix3D.Identity;
-            bool targetVisible = IsRenderablePose(snapshot.Source) &&
+            bool targetVisible = !_hideTargetInPreview &&
+                IsRenderablePose(snapshot.Source) &&
                 IsRenderablePose(snapshot.Target) &&
                 TryGetRelativePoseMatrix(snapshot.Source, snapshot.Target, out targetMatrix);
-            bool sourceVisible = IsRenderablePose(snapshot.Source);
+            bool sourceVisible = !_hideSourceInPreview && IsRenderablePose(snapshot.Source);
             Matrix3D sourceMatrix = Matrix3D.Identity;
+            Matrix3D proxyMatrix = Matrix3D.Identity;
+            bool proxyVisible = ShouldShowProxyInPreview() &&
+                IsRenderablePose(snapshot.Source) &&
+                IsRenderablePose(snapshot.Output) &&
+                TryGetRelativePoseMatrix(snapshot.Source, snapshot.Output, out proxyMatrix);
             Rect3D combined = Rect3D.Empty;
             if (sourceVisible)
             {
@@ -2645,6 +3090,10 @@ namespace TrackSwap
             if (targetVisible)
             {
                 AddTransformedBounds(ref combined, _targetPreviewModel, targetMatrix);
+            }
+            if (proxyVisible)
+            {
+                AddTransformedBounds(ref combined, _proxyPreviewModel, proxyMatrix);
             }
 
             Vector3D centerOffset = new Vector3D();
@@ -2673,6 +3122,15 @@ namespace TrackSwap
             else
             {
                 HidePreviewModel(_targetPreviewModel);
+            }
+            if (proxyVisible)
+            {
+                proxyMatrix.Translate(centerOffset);
+                _proxyPreviewModel.Transform = new MatrixTransform3D(proxyMatrix);
+            }
+            else
+            {
+                HidePreviewModel(_proxyPreviewModel);
             }
         }
 
@@ -2873,7 +3331,10 @@ namespace TrackSwap
                     bgra[index] = renderModel.TextureRgba[index + 2];
                     bgra[index + 1] = renderModel.TextureRgba[index + 1];
                     bgra[index + 2] = renderModel.TextureRgba[index];
-                    bgra[index + 3] = renderModel.TextureRgba[index + 3];
+                    // OpenVR render-model textures may carry an auxiliary alpha channel.
+                    // The preview renders solid device shells, so do not let that channel
+                    // turn an emissive (unlit) material translucent.
+                    bgra[index + 3] = byte.MaxValue;
                 }
                 BitmapSource bitmap = BitmapSource.Create(
                     renderModel.TextureWidth,
@@ -3004,7 +3465,7 @@ namespace TrackSwap
         {
             MessageBoxResult result = MessageBox.Show(
                 this,
-                "确定清空设备记录？\n\n在线设备会在下次扫描时重新记录；现有配置仍会保留其引用，并按实际连接状态显示为“在线”或“离线”。",
+                "确定清空设备记录？\n\n在线设备会在下次扫描时重新记录；现有配置仍会保留其引用，并继续用绿色或橙色圆点显示连接状态。",
                 "清空设备记录",
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Warning);
@@ -3033,11 +3494,138 @@ namespace TrackSwap
             }
         }
 
+        private void LoadOscFields(OscConfiguration configuration)
+        {
+            _loadingOscFields = true;
+            try
+            {
+                OscEnabledCheckBox.IsChecked = configuration.Enabled;
+                OscListenAddressTextBox.Text = configuration.ListenAddress;
+                OscPortTextBox.Text = configuration.Port.ToString(CultureInfo.InvariantCulture);
+                OscResetTimeoutComboBox.SelectedItem = OscResetTimeoutComboBox.Items
+                    .Cast<OscResetTimeoutOption>()
+                    .FirstOrDefault(option => option.Timeout == configuration.ResetTimeout);
+                LoadOscMapping(OscControllerAddresses.ForHand(ControllerHand.Left), true);
+                LoadOscMapping(OscControllerAddresses.ForHand(ControllerHand.Right), false);
+            }
+            finally
+            {
+                _loadingOscFields = false;
+            }
+        }
+
+        private void LoadOscMapping(OscControllerAddresses addresses, bool left)
+        {
+            TextBox primary = left ? OscLeftPrimaryTextBox : OscRightPrimaryTextBox;
+            TextBox secondary = left ? OscLeftSecondaryTextBox : OscRightSecondaryTextBox;
+            TextBox joystickX = left ? OscLeftJoystickXTextBox : OscRightJoystickXTextBox;
+            TextBox joystickY = left ? OscLeftJoystickYTextBox : OscRightJoystickYTextBox;
+            TextBox joystickClick = left ? OscLeftJoystickClickTextBox : OscRightJoystickClickTextBox;
+            TextBox triggerValue = left ? OscLeftTriggerValueTextBox : OscRightTriggerValueTextBox;
+            TextBox triggerClick = left ? OscLeftTriggerClickTextBox : OscRightTriggerClickTextBox;
+            TextBox gripValue = left ? OscLeftGripValueTextBox : OscRightGripValueTextBox;
+            TextBox gripClick = left ? OscLeftGripClickTextBox : OscRightGripClickTextBox;
+            TextBox menu = left ? OscLeftMenuTextBox : OscRightMenuTextBox;
+            primary.Text = addresses.PrimaryButton;
+            secondary.Text = addresses.SecondaryButton;
+            joystickX.Text = addresses.JoystickX;
+            joystickY.Text = addresses.JoystickY;
+            joystickClick.Text = addresses.JoystickClick;
+            triggerValue.Text = addresses.TriggerValue;
+            triggerClick.Text = addresses.TriggerClick;
+            gripValue.Text = addresses.GripValue;
+            gripClick.Text = addresses.GripClick;
+            menu.Text = addresses.MenuButton;
+        }
+
+        private void ScheduleOscSettingsApply(bool immediate)
+        {
+            if (_loadingOscFields || _isClosing)
+            {
+                return;
+            }
+            _oscApplyTimer.Stop();
+            _oscApplyTimer.Interval = immediate
+                ? TimeSpan.FromMilliseconds(1)
+                : TimeSpan.FromMilliseconds(400);
+            _oscApplyTimer.Start();
+        }
+
+        private async Task ApplyOscSettingsAsync()
+        {
+            if (_oscAutoApplyBusy)
+            {
+                _oscAutoApplyQueued = true;
+                return;
+            }
+            if (_runtimeStatus == null)
+            {
+                return;
+            }
+            if (!int.TryParse(OscPortTextBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int port) ||
+                !(OscResetTimeoutComboBox.SelectedItem is OscResetTimeoutOption timeout))
+            {
+                return;
+            }
+            var osc = new OscConfiguration
+            {
+                Enabled = OscEnabledCheckBox.IsChecked == true,
+                ListenAddress = OscListenAddressTextBox.Text.Trim(),
+                Port = port,
+                ResetTimeout = timeout.Timeout
+            };
+            var configuration = new RuntimeConfiguration
+            {
+                Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
+                Osc = osc
+            };
+            IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+            if (errors.Count != 0)
+            {
+                return;
+            }
+            _oscAutoApplyBusy = true;
+            try
+            {
+                await _runtimeControlService.ApplyConfigurationAsync(configuration);
+                _workingOsc = CloneOscConfiguration(osc);
+                _loadedRuntimeRevision = -1;
+                await RefreshStatusAsync();
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(this, exception.Message, "保存 OSC 设置失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                _oscAutoApplyBusy = false;
+                if (_oscAutoApplyQueued)
+                {
+                    _oscAutoApplyQueued = false;
+                    ScheduleOscSettingsApply(immediate: true);
+                }
+            }
+        }
+
+        private static OscConfiguration CloneOscConfiguration(OscConfiguration configuration)
+        {
+            OscConfiguration source = configuration ?? OscConfiguration.CreateDefault();
+            return new OscConfiguration
+            {
+                Enabled = source.Enabled,
+                ListenAddress = source.ListenAddress,
+                Port = source.Port,
+                ResetTimeout = source.ResetTimeout
+            };
+        }
+
         private enum SettingsSection
         {
             Runtime,
             SteamVr,
             Devices,
+            Osc,
             Advanced
         }
 
@@ -3075,6 +3663,60 @@ namespace TrackSwap
             {
                 return DisplayName;
             }
+        }
+
+        private sealed class RouteModeOption
+        {
+            public RouteModeOption(RouteMode mode, string displayName)
+            {
+                Mode = mode;
+                DisplayName = displayName;
+            }
+
+            public RouteMode Mode { get; }
+
+            public string DisplayName { get; }
+
+            public override string ToString()
+            {
+                return DisplayName;
+            }
+        }
+
+        private sealed class ControllerHandOption
+        {
+            public ControllerHandOption(ControllerHand hand, string displayName)
+            {
+                Hand = hand;
+                DisplayName = displayName;
+            }
+            public ControllerHand Hand { get; }
+            public string DisplayName { get; }
+            public override string ToString() { return DisplayName; }
+        }
+
+        private sealed class ControlInputOption
+        {
+            public ControlInputOption(ControlInputSource source, string displayName)
+            {
+                Source = source;
+                DisplayName = displayName;
+            }
+            public ControlInputSource Source { get; }
+            public string DisplayName { get; }
+            public override string ToString() { return DisplayName; }
+        }
+
+        private sealed class OscResetTimeoutOption
+        {
+            public OscResetTimeoutOption(OscResetTimeout timeout, string displayName)
+            {
+                Timeout = timeout;
+                DisplayName = displayName;
+            }
+            public OscResetTimeout Timeout { get; }
+            public string DisplayName { get; }
+            public override string ToString() { return DisplayName; }
         }
     }
 }

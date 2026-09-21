@@ -133,10 +133,7 @@ vr::EVRInitError VirtualTracker::Activate(std::uint32_t objectId)
         vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap Virtual Tracker");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
-    vr::VRProperties()->SetStringProperty(
-        properties,
-        vr::Prop_RenderModelName_String,
-        "{trackswap}trackswap_hidden_proxy");
+    SetRenderModelVisible(targetDevicePath_[0] == '\0', true);
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_tracker");
     vr::VRProperties()->SetStringProperty(
@@ -351,6 +348,10 @@ void VirtualTracker::ApplyPendingSource()
     {
         ConfigureSource(pending.data());
         targetDevicePath_ = pendingTarget;
+        if (!enabledChanged || pendingEnabled)
+        {
+            SetRenderModelVisible(targetDevicePath_[0] == '\0');
+        }
         targetId_ = vr::k_unTrackedDeviceIndexInvalid;
         targetSearchCountdown_ = 0;
         lastPose_ = pose_math::MakeInvalidPose();
@@ -377,6 +378,35 @@ void VirtualTracker::ApplyPendingSource()
             lastPose_ = pose_math::MakeInvalidPose();
             SetHealth(false);
         }
+    }
+}
+
+void VirtualTracker::SetRenderModelVisible(bool visible, bool force)
+{
+    if (objectId_ == vr::k_unTrackedDeviceIndexInvalid || (!force && renderModelVisible_ == visible))
+    {
+        return;
+    }
+
+    const vr::PropertyContainerHandle_t properties =
+        vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
+    const char* renderModel = visible
+        ? "{trackswap}trackswap_proxy_tracker"
+        : "{trackswap}trackswap_hidden_proxy";
+    const vr::ETrackedPropertyError error = vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_RenderModelName_String,
+        renderModel);
+    if (error == vr::TrackedProp_Success)
+    {
+        renderModelVisible_ = visible;
+        vr::VRDriverLog()->Log(visible
+            ? "TrackSwap switched the proxy to its visible render model."
+            : "TrackSwap switched the proxy to its hidden render model.");
+    }
+    else
+    {
+        vr::VRDriverLog()->Log("TrackSwap failed to switch the proxy render model.");
     }
 }
 

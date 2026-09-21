@@ -38,9 +38,11 @@ internal static class DriverControlClient
     {
         bool enabled = route?.Enabled == true;
         byte[] sourcePath = enabled ? Encoding.UTF8.GetBytes(route!.SourceDevicePath) : Array.Empty<byte>();
-        byte[] targetPath = enabled ? Encoding.UTF8.GetBytes(route!.TargetDevicePath) : Array.Empty<byte>();
+        byte[] targetPath = enabled && route!.Mode == RouteMode.ReplaceTarget
+            ? Encoding.UTF8.GetBytes(route.TargetDevicePath)
+            : Array.Empty<byte>();
         if (slot < 0 || slot >= ProtocolConstants.MaximumRoutes ||
-            (enabled && (sourcePath.Length == 0 || targetPath.Length == 0)) ||
+            (enabled && sourcePath.Length == 0) ||
             sourcePath.Length > ushort.MaxValue || targetPath.Length > ushort.MaxValue ||
             sourcePath.Length + targetPath.Length > DriverControlProtocol.MaximumCombinedDevicePathBytes)
         {
@@ -67,6 +69,69 @@ internal static class DriverControlClient
             writer.Write(offset.RotationW);
         }
         return SendAccepted(DriverControlProtocol.ApplySnapshotMessageType, payloadStream.ToArray(), timeout);
+    }
+
+    public static string ApplyControllerSnapshot(
+        ControllerHand hand,
+        RouteConfiguration? route,
+        ulong revision,
+        TimeSpan timeout)
+    {
+        bool enabled = route?.Enabled == true;
+        byte[] sourcePath = enabled ? Encoding.UTF8.GetBytes(route!.SourceDevicePath) : Array.Empty<byte>();
+        if ((hand != ControllerHand.Left && hand != ControllerHand.Right) ||
+            (enabled && (route!.Mode != RouteMode.VirtualController || route.ControllerHand != hand || sourcePath.Length == 0)) ||
+            sourcePath.Length > ushort.MaxValue || sourcePath.Length > DriverControlProtocol.MaximumPayloadBytes - 69)
+        {
+            throw new IOException("The virtual controller snapshot is invalid.");
+        }
+
+        using var payloadStream = new MemoryStream();
+        using (var writer = new BinaryWriter(payloadStream, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write((byte)hand);
+            writer.Write(enabled ? (byte)1 : (byte)0);
+            writer.Write(enabled ? (byte)route!.VirtualDeviceSlot : byte.MaxValue);
+            writer.Write(revision);
+            writer.Write((ushort)sourcePath.Length);
+            writer.Write(sourcePath);
+            PoseOffset offset = route?.Offset ?? PoseOffset.Identity();
+            writer.Write(offset.TranslationX);
+            writer.Write(offset.TranslationY);
+            writer.Write(offset.TranslationZ);
+            writer.Write(offset.RotationX);
+            writer.Write(offset.RotationY);
+            writer.Write(offset.RotationZ);
+            writer.Write(offset.RotationW);
+        }
+        return SendAccepted(DriverControlProtocol.ApplyControllerSnapshotMessageType, payloadStream.ToArray(), timeout);
+    }
+
+    public static string ApplyControllerInput(
+        ControllerHand hand,
+        ControllerInputState state,
+        TimeSpan timeout)
+    {
+        if ((hand != ControllerHand.Left && hand != ControllerHand.Right) || state == null)
+        {
+            throw new IOException("The virtual controller input state is invalid.");
+        }
+        using var payloadStream = new MemoryStream();
+        using (var writer = new BinaryWriter(payloadStream, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write((byte)hand);
+            writer.Write(state.JoystickX);
+            writer.Write(state.JoystickY);
+            writer.Write(state.TriggerValue);
+            writer.Write(state.GripValue);
+            writer.Write(state.JoystickClick ? (byte)1 : (byte)0);
+            writer.Write(state.TriggerClick ? (byte)1 : (byte)0);
+            writer.Write(state.GripClick ? (byte)1 : (byte)0);
+            writer.Write(state.PrimaryButton ? (byte)1 : (byte)0);
+            writer.Write(state.SecondaryButton ? (byte)1 : (byte)0);
+            writer.Write(state.MenuButton ? (byte)1 : (byte)0);
+        }
+        return SendAccepted(DriverControlProtocol.ApplyControllerInputMessageType, payloadStream.ToArray(), timeout);
     }
 
     public static IReadOnlyList<PoseTelemetrySnapshot> GetTelemetry(TimeSpan timeout)

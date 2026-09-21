@@ -1,0 +1,28 @@
+{
+  "jsonid": "input_profile",
+  "controller_type": "trackswap_controller",
+  "compatibility_mode_controller_type": "knuckles",
+  "device_class": "TrackedDeviceClass_Controller",
+  "resource_root": "trackswap",
+  "driver_name": "trackswap",
+  "legacy_binding": "{indexcontroller}/input/legacy_bindings_index_controller.json",
+  "remapping": "{indexcontroller}/input/index_controller_remapping.json",
+  "input_bindingui_mode": "controller_handed",
+  "should_show_binding_errors": true,
+  "input_bindingui_left": {
+    "image": "{indexcontroller}/icons/indexcontroller_left.svg"
+  },
+  "input_bindingui_right": {
+    "image": "{indexcontroller}/icons/indexcontroller_right.svg"
+  },
+  "input_source": {
+    "/input/a": { "type": "button", "click": true, "binding_image_point": [26, 42], "order": 1 },
+    "/input/b": { "type": "button", "click": true, "binding_image_point": [18, 37], "order": 2 },
+    "/input/thumbstick": { "type": "joystick", "click": true, "binding_image_point": [31, 26], "order": 3 },
+    "/input/trigger": { "type": "trigger", "click": true, "value": true, "binding_image_point": [11, 60], "order": 4 },
+    "/input/grip": { "type": "trigger", "force": true, "value": true, "touch": true, "input_activity_path": "/input/grip/force", "input_activity_threshold": 0.1, "binding_image_point": [47, 86], "order": 5 },
+    "/input/system": { "type": "button", "click": true, "binding_image_point": [34, 45], "order": 6 },
+    "/pose/raw": { "type": "pose", "binding_image_point": [5, 35] },
+    "/pose/tip": { "type": "pose", "binding_image_point": [5, 35] }
+  }
+}

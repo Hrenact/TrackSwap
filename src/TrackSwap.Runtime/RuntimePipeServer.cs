@@ -12,6 +12,7 @@ internal sealed class RuntimePipeServer
     private readonly CalibrationProfileStore profileStore;
     private readonly OpenVrCalibrationService calibrationService;
     private readonly TelemetrySampler telemetrySampler;
+    private readonly OscInputService? oscInput;
     private readonly string pipeName;
     private readonly Action? requestShutdown;
     private RuntimeConfiguration configuration;
@@ -24,13 +25,15 @@ internal sealed class RuntimePipeServer
         OpenVrCalibrationService calibrationService,
         TelemetrySampler telemetrySampler,
         string? pipeName = null,
-        Action? requestShutdown = null)
+        Action? requestShutdown = null,
+        OscInputService? oscInput = null)
     {
         this.store = store;
         this.synchronizer = synchronizer;
         this.profileStore = profileStore;
         this.calibrationService = calibrationService;
         this.telemetrySampler = telemetrySampler;
+        this.oscInput = oscInput;
         this.pipeName = pipeName ?? ProtocolConstants.PipeName;
         this.requestShutdown = requestShutdown;
         configuration = initialConfiguration;
@@ -96,6 +99,7 @@ internal sealed class RuntimePipeServer
             {
                 "applyConfiguration" => ApplyConfiguration(request),
                 "getStatus" => CreateStatus(request.RequestId),
+                "getOscStatus" => CreateOscStatus(request.RequestId),
                 "getTelemetry" => GetTelemetry(request),
                 "captureCalibration" => CaptureCalibration(request, cancellationToken),
                 "listCalibrationProfiles" => ListCalibrationProfiles(request.RequestId),
@@ -215,6 +219,7 @@ internal sealed class RuntimePipeServer
         store.Save(candidate);
         configuration = candidate;
         synchronizer.Update(candidate);
+        oscInput?.Update(candidate.Osc, candidate.Routes);
         return new MessageEnvelope
         {
             MessageType = "configurationApplied",
@@ -232,11 +237,31 @@ internal sealed class RuntimePipeServer
             DriverAppliedRevision = driverStatus.AppliedRevision,
             DriverConnected = driverStatus.IsConnected,
             LastError = driverStatus.LastError,
-            Configuration = configuration
+            Configuration = configuration,
+            Osc = oscInput?.GetStatus() ?? new OscRuntimeStatus
+            {
+                Enabled = configuration.Osc.Enabled,
+                Endpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.Port
+            }
         };
         return new MessageEnvelope
         {
             MessageType = "status",
+            RequestId = requestId,
+            PayloadJson = JsonConvert.SerializeObject(status, RuntimeJson.Settings)
+        };
+    }
+
+    private MessageEnvelope CreateOscStatus(string requestId)
+    {
+        OscRuntimeStatus status = oscInput?.GetStatus() ?? new OscRuntimeStatus
+        {
+            Enabled = configuration.Osc.Enabled,
+            Endpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.Port
+        };
+        return new MessageEnvelope
+        {
+            MessageType = "oscStatus",
             RequestId = requestId,
             PayloadJson = JsonConvert.SerializeObject(status, RuntimeJson.Settings)
         };

@@ -49,7 +49,7 @@ namespace TrackSwap.Services
                 VRShutdownInternal shutdown = GetExport<VRShutdownInternal>(module, "VR_ShutdownInternal");
 
                 EVRInitError initError = EVRInitError.None;
-                init(ref initError, EVRApplicationType.Background, null);
+                init(ref initError, EVRApplicationType.Utility, null);
                 if (initError != EVRInitError.None)
                 {
                     throw new InvalidOperationException("OpenVR 初始化失败，错误码：" + (int)initError);
@@ -284,7 +284,7 @@ namespace TrackSwap.Services
 
         private enum EVRApplicationType
         {
-            Background = 3
+            Utility = 4
         }
 
         private enum EVRInitError

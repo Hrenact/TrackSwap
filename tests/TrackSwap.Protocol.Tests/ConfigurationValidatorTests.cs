@@ -16,6 +16,93 @@ public sealed class ConfigurationValidatorTests
     }
 
     [Fact]
+    public void DirectProxyRouteDoesNotRequireTarget()
+    {
+        var configuration = CreateConfiguration();
+        configuration.Routes[0].Mode = RouteMode.DirectProxy;
+        configuration.Routes[0].TargetDevicePath = string.Empty;
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void DirectProxyRouteDoesNotReserveStaleTarget()
+    {
+        var configuration = CreateConfiguration();
+        configuration.Routes[0].Mode = RouteMode.DirectProxy;
+        configuration.Routes.Add(new RouteConfiguration
+        {
+            RouteId = "replacement",
+            Mode = RouteMode.ReplaceTarget,
+            VirtualDeviceSlot = 1,
+            SourceDevicePath = "/devices/lighthouse/LHR-BBBBBBBB",
+            TargetDevicePath = ProtocolConstants.LeftHandRolePath,
+            Offset = PoseOffset.Identity()
+        });
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.DoesNotContain(errors, error =>
+            error.Contains("assigned more than once", StringComparison.Ordinal) &&
+            error.Contains(ProtocolConstants.LeftHandRolePath, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void VirtualControllerSupportsOscInput()
+    {
+        var configuration = CreateConfiguration();
+        configuration.Routes[0].Mode = RouteMode.VirtualController;
+        configuration.Routes[0].TargetDevicePath = string.Empty;
+        configuration.Routes[0].ControllerHand = ControllerHand.Left;
+        configuration.Routes[0].ControlInputSource = ControlInputSource.Osc;
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Empty(errors);
+        Assert.Equal("TRKSWAP-CONTROLLER-L", ProtocolConstants.GetControllerSerial(ControllerHand.Left));
+    }
+
+    [Fact]
+    public void VirtualControllerAllowsNoControlInput()
+    {
+        var configuration = CreateConfiguration();
+        configuration.Routes[0].Mode = RouteMode.VirtualController;
+        configuration.Routes[0].TargetDevicePath = string.Empty;
+        configuration.Routes[0].ControllerHand = ControllerHand.Left;
+        configuration.Routes[0].ControlInputSource = ControlInputSource.None;
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void RejectsSecondVirtualControllerForSameHand()
+    {
+        var configuration = CreateConfiguration();
+        configuration.Routes[0].Mode = RouteMode.VirtualController;
+        configuration.Routes[0].TargetDevicePath = string.Empty;
+        configuration.Routes[0].ControllerHand = ControllerHand.Left;
+        configuration.Routes[0].ControlInputSource = ControlInputSource.Osc;
+        configuration.Routes.Add(new RouteConfiguration
+        {
+            RouteId = "second-left",
+            Mode = RouteMode.VirtualController,
+            VirtualDeviceSlot = 1,
+            ControllerHand = ControllerHand.Left,
+            ControlInputSource = ControlInputSource.Osc,
+            SourceDevicePath = "/devices/lighthouse/LHR-BBBBBBBB",
+            Offset = PoseOffset.Identity()
+        });
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(errors, error => error.Contains("Only one virtual left controller", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void RejectsDuplicateSlotsAndTargets()
     {
         var configuration = CreateConfiguration();
@@ -101,6 +188,7 @@ public sealed class ConfigurationValidatorTests
     {
         Assert.Equal(0x50575354U, DriverControlProtocol.Magic);
         Assert.Equal(20, DriverControlProtocol.HeaderBytes);
+        Assert.Equal(3, DriverControlProtocol.Version);
         Assert.Equal(
             0x8001,
             DriverControlProtocol.SetSourceMessageType | DriverControlProtocol.ResponseFlag);

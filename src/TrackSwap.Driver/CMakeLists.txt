@@ -40,6 +40,8 @@ add_library(driver_trackswap SHARED
     src/runtime_launcher.h
     src/tracker_registry.cpp
     src/tracker_registry.h
+    src/virtual_controller.cpp
+    src/virtual_controller.h
     src/virtual_tracker.cpp
     src/virtual_tracker.h
 )

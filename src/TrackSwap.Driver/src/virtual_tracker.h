@@ -45,6 +45,7 @@ private:
     void ApplyPendingSource();
     void PublishTelemetry();
     void SetHealth(bool healthy);
+    void SetRenderModelVisible(bool visible, bool force = false);
 
     static constexpr std::size_t MaximumDevicePathBytes = 512;
     static constexpr std::uint32_t SearchIntervalFrames = 60;
@@ -62,6 +63,7 @@ private:
     std::uint32_t searchCountdown_ = 0;
     std::uint32_t targetSearchCountdown_ = 0;
     bool lastHealth_ = false;
+    bool renderModelVisible_ = true;
     bool activeEnabled_ = false;
     bool pendingEnabled_ = false;
     bool hasPendingEnabled_ = false;

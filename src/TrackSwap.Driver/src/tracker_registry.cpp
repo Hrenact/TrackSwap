@@ -12,6 +12,36 @@ TrackerRegistry::TrackerRegistry()
         registrationRequested_[slot].store(false);
         registered_[slot] = false;
     }
+    controllers_[0] = std::make_unique<VirtualController>(ControllerHand::Left);
+    controllers_[1] = std::make_unique<VirtualController>(ControllerHand::Right);
+    for (std::size_t index = 0; index < controllers_.size(); ++index)
+    {
+        controllerRegistrationRequested_[index].store(false);
+        controllerRegistered_[index] = false;
+    }
+}
+
+bool TrackerRegistry::QueueControllerSnapshot(
+    ControllerHand hand,
+    bool enabled,
+    std::uint8_t logicalSlot,
+    const char* sourceDevicePath,
+    const pose_math::RigidOffset& offset,
+    std::uint64_t revision)
+{
+    const std::size_t index = hand == ControllerHand::Left ? 0U : hand == ControllerHand::Right ? 1U : 2U;
+    if (index >= controllers_.size()) return false;
+    if (enabled) controllerRegistrationRequested_[index].store(true);
+    return controllers_[index]->QueueSnapshot(enabled, logicalSlot, sourceDevicePath, offset, revision);
+}
+
+bool TrackerRegistry::QueueControllerInput(const control_protocol::ControllerInputState& input)
+{
+    const std::size_t index = input.hand == static_cast<std::uint8_t>(ControllerHand::Left) ? 0U :
+        input.hand == static_cast<std::uint8_t>(ControllerHand::Right) ? 1U : 2U;
+    if (index >= controllers_.size()) return false;
+    controllers_[index]->QueueInput(input);
+    return true;
 }
 
 bool TrackerRegistry::QueueSource(std::uint8_t slot, const char* sourceDevicePath)
@@ -68,6 +98,14 @@ control_protocol::TelemetryBatch TrackerRegistry::GetTelemetry() const
     {
         batch.snapshots[slot] = trackers_[slot]->GetTelemetry();
     }
+    for (const auto& controller : controllers_)
+    {
+        const std::uint8_t slot = controller->LogicalSlot();
+        if (slot < control_protocol::MaximumRoutes)
+        {
+            batch.snapshots[slot] = controller->GetTelemetry();
+        }
+    }
     return batch;
 }
 
@@ -89,6 +127,20 @@ void TrackerRegistry::RunFrame()
         {
             trackers_[slot]->Update();
         }
+    }
+    for (std::size_t index = 0; index < controllers_.size(); ++index)
+    {
+        if (!controllerRegistered_[index] && controllerRegistrationRequested_[index].exchange(false))
+        {
+            controllerRegistered_[index] = vr::VRServerDriverHost()->TrackedDeviceAdded(
+                controllers_[index]->SerialNumber(),
+                vr::TrackedDeviceClass_Controller,
+                controllers_[index].get());
+            vr::VRDriverLog()->Log(controllerRegistered_[index]
+                ? "TrackSwap registered a requested virtual controller."
+                : "TrackSwap failed to register a requested virtual controller.");
+        }
+        if (controllerRegistered_[index]) controllers_[index]->Update();
     }
 }
 } // namespace trackswap

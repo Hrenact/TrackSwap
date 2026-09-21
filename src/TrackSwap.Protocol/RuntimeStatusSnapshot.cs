@@ -11,5 +11,6 @@ namespace TrackSwap.Protocol
         public bool DriverConnected { get; set; }
         public string? LastError { get; set; }
         public RuntimeConfiguration Configuration { get; set; } = new RuntimeConfiguration();
+        public OscRuntimeStatus Osc { get; set; } = new OscRuntimeStatus();
     }
 }

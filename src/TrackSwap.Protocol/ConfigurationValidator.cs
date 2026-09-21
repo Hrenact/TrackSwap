@@ -45,6 +45,7 @@ namespace TrackSwap.Protocol
             var slots = new HashSet<int>();
             var sources = new HashSet<string>(StringComparer.Ordinal);
             var targets = new HashSet<string>(StringComparer.Ordinal);
+            var controllerHands = new HashSet<ControllerHand>();
 
             foreach (RouteConfiguration? route in configuration.Routes)
             {
@@ -92,16 +93,45 @@ namespace TrackSwap.Protocol
                 }
 
                 ValidateSourcePath(route.SourceDevicePath, prefix, errors);
-                ValidateTargetPath(route.TargetDevicePath, prefix, errors);
+                if (!Enum.IsDefined(typeof(RouteMode), route.Mode))
+                {
+                    errors.Add($"{prefix} has an unsupported route mode.");
+                }
+                if (route.Mode == RouteMode.ReplaceTarget)
+                {
+                    ValidateTargetPath(route.TargetDevicePath, prefix, errors);
+                }
+                else if (!string.IsNullOrEmpty(route.TargetDevicePath) && route.TargetDevicePath.Any(char.IsControl))
+                {
+                    errors.Add($"{prefix} targetDevicePath cannot contain control characters.");
+                }
+                if (route.Mode == RouteMode.VirtualController)
+                {
+                    if (route.ControllerHand != ControllerHand.Left && route.ControllerHand != ControllerHand.Right)
+                    {
+                        errors.Add($"{prefix} must select a left or right controller hand.");
+                    }
+                    else if (!controllerHands.Add(route.ControllerHand))
+                    {
+                        errors.Add($"Only one virtual {route.ControllerHand.ToString().ToLowerInvariant()} controller is supported.");
+                    }
+                    if (route.ControlInputSource != ControlInputSource.None &&
+                        route.ControlInputSource != ControlInputSource.Osc)
+                    {
+                        errors.Add($"{prefix} has an unsupported control input source.");
+                    }
+                }
                 ValidateCombinedPathSize(route.SourceDevicePath, route.TargetDevicePath, prefix, errors);
 
-                if (!string.IsNullOrEmpty(route.SourceDevicePath) &&
+                if (route.Mode == RouteMode.ReplaceTarget &&
+                    !string.IsNullOrEmpty(route.SourceDevicePath) &&
                     string.Equals(route.SourceDevicePath, route.TargetDevicePath, StringComparison.Ordinal))
                 {
                     errors.Add($"{prefix} cannot map a device to itself.");
                 }
 
-                if (!string.IsNullOrWhiteSpace(route.TargetDevicePath) && !targets.Add(route.TargetDevicePath))
+                if (route.Mode == RouteMode.ReplaceTarget &&
+                    !string.IsNullOrWhiteSpace(route.TargetDevicePath) && !targets.Add(route.TargetDevicePath))
                 {
                     errors.Add($"Target '{route.TargetDevicePath}' is assigned more than once.");
                 }
@@ -115,8 +145,31 @@ namespace TrackSwap.Protocol
             }
 
             ValidateCycles(configuration.Routes, errors);
+            ValidateOsc(configuration.Osc, errors);
 
             return errors;
+        }
+
+        private static void ValidateOsc(OscConfiguration? configuration, ICollection<string> errors)
+        {
+            if (configuration == null)
+            {
+                errors.Add("OSC configuration is required.");
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(configuration.ListenAddress) || configuration.ListenAddress.Length > 255 ||
+                configuration.ListenAddress.Any(char.IsControl))
+            {
+                errors.Add("OSC listen address is invalid.");
+            }
+            if (configuration.Port < 1 || configuration.Port > 65535)
+            {
+                errors.Add("OSC port must be between 1 and 65535.");
+            }
+            if (!Enum.IsDefined(typeof(OscResetTimeout), configuration.ResetTimeout))
+            {
+                errors.Add("OSC reset timeout is invalid.");
+            }
         }
 
         public static IReadOnlyList<string> ValidateSourceRoleDependencies(
@@ -143,6 +196,7 @@ namespace TrackSwap.Protocol
 
                 RouteConfiguration? overridingRoute = enabledRoutes.FirstOrDefault(route =>
                     !ReferenceEquals(route, sourceRoute) &&
+                    route.Mode == RouteMode.ReplaceTarget &&
                     string.Equals(route.TargetDevicePath, sourceRoleTarget, StringComparison.Ordinal));
                 if (overridingRoute != null)
                 {
@@ -165,6 +219,7 @@ namespace TrackSwap.Protocol
         {
             var edges = routes
                 .Where(route => route != null && route.Enabled &&
+                    route.Mode == RouteMode.ReplaceTarget &&
                     !string.IsNullOrWhiteSpace(route.SourceDevicePath) &&
                     !string.IsNullOrWhiteSpace(route.TargetDevicePath))
                 .GroupBy(route => route.SourceDevicePath, StringComparer.Ordinal)
