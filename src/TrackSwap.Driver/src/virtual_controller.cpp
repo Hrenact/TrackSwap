@@ -74,6 +74,11 @@ control_protocol::TelemetrySnapshot VirtualController::GetTelemetry() const
 
 std::uint8_t VirtualController::LogicalSlot() const { return logicalSlot_.load(); }
 
+bool VirtualController::MatchesHapticComponent(vr::VRInputComponentHandle_t handle) const
+{
+    return hapticHandle_ != vr::k_ulInvalidInputComponentHandle && handle == hapticHandle_;
+}
+
 vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
 {
     objectId_ = objectId;
@@ -110,14 +115,16 @@ vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/joystick/click", &joystickClickHandle_);
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/joystick/touch", &joystickTouchHandle_);
     vr::VRDriverInput()->CreateScalarComponent(properties, "/input/trigger/value", &triggerValueHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided);
-    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/trigger/click", &triggerClickHandle_);
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/trigger/touch", &triggerTouchHandle_);
     vr::VRDriverInput()->CreateScalarComponent(properties, "/input/grip/value", &gripValueHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided);
-    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/grip/click", &gripClickHandle_);
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/grip/touch", &gripTouchHandle_);
-    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/system/click", &menuHandle_);
-    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/system/touch", &menuTouchHandle_);
+    if (left)
+    {
+        vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/system/click", &menuHandle_);
+        vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/system/touch", &menuTouchHandle_);
+    }
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/thumbrest/touch", &thumbrestTouchHandle_);
+    vr::VRDriverInput()->CreateHapticComponent(properties, "/output/haptic", &hapticHandle_);
     const auto skeletonError = vr::VRDriverInput()->CreateSkeletonComponent(
         properties,
         left ? "/input/skeleton/left" : "/input/skeleton/right",
@@ -235,18 +242,31 @@ void VirtualController::ApplyInput()
     vr::VRDriverInput()->UpdateBooleanComponent(joystickClickHandle_, input.joystickClick != 0, 0.0);
     const bool joystickActive = input.joystickClick != 0 ||
         input.joystickX * input.joystickX + input.joystickY * input.joystickY > 0.0025F;
-    vr::VRDriverInput()->UpdateBooleanComponent(joystickTouchHandle_, joystickActive, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(triggerClickHandle_, input.triggerClick != 0, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(triggerTouchHandle_, input.triggerClick != 0 || input.triggerValue > 0.0F, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(gripClickHandle_, input.gripClick != 0, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(gripTouchHandle_, input.gripClick != 0 || input.gripValue > 0.0F, 0.0);
+    const bool explicitTouch = input.hasExplicitTouchState != 0;
+    vr::VRDriverInput()->UpdateBooleanComponent(
+        joystickTouchHandle_, explicitTouch ? input.joystickTouch != 0 : joystickActive, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(
+        triggerTouchHandle_,
+        explicitTouch ? input.triggerTouch != 0 : input.triggerValue > 0.0F,
+        0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(
+        gripTouchHandle_,
+        explicitTouch ? input.gripTouch != 0 : input.gripValue > 0.0F,
+        0.0);
     vr::VRDriverInput()->UpdateBooleanComponent(primaryHandle_, input.primaryButton != 0, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(primaryTouchHandle_, input.primaryButton != 0, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(
+        primaryTouchHandle_, explicitTouch ? input.primaryTouch != 0 : input.primaryButton != 0, 0.0);
     vr::VRDriverInput()->UpdateBooleanComponent(secondaryHandle_, input.secondaryButton != 0, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(secondaryTouchHandle_, input.secondaryButton != 0, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(menuHandle_, input.menuButton != 0, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(menuTouchHandle_, input.menuButton != 0, 0.0);
-    vr::VRDriverInput()->UpdateBooleanComponent(thumbrestTouchHandle_, false, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(
+        secondaryTouchHandle_, explicitTouch ? input.secondaryTouch != 0 : input.secondaryButton != 0, 0.0);
+    if (hand_ == ControllerHand::Left)
+    {
+        vr::VRDriverInput()->UpdateBooleanComponent(menuHandle_, input.menuButton != 0, 0.0);
+        vr::VRDriverInput()->UpdateBooleanComponent(
+            menuTouchHandle_, explicitTouch ? input.menuTouch != 0 : input.menuButton != 0, 0.0);
+    }
+    vr::VRDriverInput()->UpdateBooleanComponent(
+        thumbrestTouchHandle_, explicitTouch && input.thumbRestTouch != 0, 0.0);
     ApplySkeleton(input);
 }
 

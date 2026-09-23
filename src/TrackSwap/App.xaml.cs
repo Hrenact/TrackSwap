@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace TrackSwap
 {
@@ -13,6 +14,10 @@ namespace TrackSwap
                 typeof(Window),
                 FrameworkElement.LoadedEvent,
                 new RoutedEventHandler(OnWindowLoaded));
+            EventManager.RegisterClassHandler(
+                typeof(ComboBoxItem),
+                FrameworkElement.RequestBringIntoViewEvent,
+                new RequestBringIntoViewEventHandler(OnComboBoxItemRequestBringIntoView));
         }
 
         protected override void OnStartup(StartupEventArgs e)
@@ -48,6 +53,23 @@ namespace TrackSwap
             if (sender is Window window)
             {
                 WindowThemeService.ApplyDarkTitleBar(window);
+            }
+        }
+
+        private static void OnComboBoxItemRequestBringIntoView(
+            object sender,
+            RequestBringIntoViewEventArgs e)
+        {
+            // WPF focuses a ComboBoxItem whenever the pointer enters it. A partially
+            // visible first or last item then requests scrolling even though the user
+            // only hovered it. Keep explicit wheel/scrollbar and keyboard navigation,
+            // but suppress this hover-only adjustment.
+            if (sender is ComboBoxItem item &&
+                item.IsMouseOver &&
+                ItemsControl.ItemsControlFromItemContainer(item) is ComboBox comboBox &&
+                comboBox.IsDropDownOpen)
+            {
+                e.Handled = true;
             }
         }
     }

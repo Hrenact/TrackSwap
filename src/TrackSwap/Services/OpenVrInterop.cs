@@ -14,11 +14,21 @@ namespace TrackSwap.Services
         private static VRShutdownInternal _shutdown;
         private static string _libraryPath;
         private static bool _initialized;
+        private static bool _sessionEnding;
+
+        private const string SystemInterfaceVersion = "FnTable:IVRSystem_026";
+        private const int PollNextEventFunctionIndex = 30;
+        private const int VrEventSize = 64;
+        private const uint QuitEventType = 700;
 
         internal static IntPtr GetInterface(string runtimePath, string interfaceVersion)
         {
             lock (SyncRoot)
             {
+                if (_sessionEnding)
+                {
+                    throw new InvalidOperationException("SteamVR 正在退出。");
+                }
                 EnsureInitialized(runtimePath);
                 EVRInitError error = EVRInitError.None;
                 IntPtr table = _getInterface(interfaceVersion, ref error);
@@ -57,6 +67,77 @@ namespace TrackSwap.Services
                     FreeLibrary(_module);
                     _module = IntPtr.Zero;
                 }
+            }
+        }
+
+        internal static bool DetachIfSteamVrIsQuitting()
+        {
+            lock (SyncRoot)
+            {
+                if (!_initialized || _getInterface == null || _sessionEnding)
+                {
+                    return false;
+                }
+
+                EVRInitError error = EVRInitError.None;
+                IntPtr systemTable = _getInterface(SystemInterfaceVersion, ref error);
+                if (systemTable == IntPtr.Zero || error != EVRInitError.None)
+                {
+                    return false;
+                }
+
+                IntPtr functionAddress = Marshal.ReadIntPtr(
+                    systemTable,
+                    PollNextEventFunctionIndex * IntPtr.Size);
+                if (functionAddress == IntPtr.Zero)
+                {
+                    return false;
+                }
+
+                var pollNextEvent = (PollNextEvent)Marshal.GetDelegateForFunctionPointer(
+                    functionAddress,
+                    typeof(PollNextEvent));
+                IntPtr eventBuffer = Marshal.AllocHGlobal(VrEventSize);
+                bool quitObserved = false;
+                try
+                {
+                    for (int index = 0; index < 128 && pollNextEvent(eventBuffer, VrEventSize); index++)
+                    {
+                        uint eventType = unchecked((uint)Marshal.ReadInt32(eventBuffer));
+                        if (eventType == QuitEventType)
+                        {
+                            quitObserved = true;
+                            break;
+                        }
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(eventBuffer);
+                }
+
+                if (!quitObserved)
+                {
+                    return false;
+                }
+
+                Reset();
+                _sessionEnding = true;
+                return true;
+            }
+        }
+
+        internal static void NotifySteamVrStopped()
+        {
+            lock (SyncRoot)
+            {
+                if (!_sessionEnding)
+                {
+                    return;
+                }
+
+                Reset();
+                _sessionEnding = false;
             }
         }
 
@@ -148,6 +229,10 @@ namespace TrackSwap.Services
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate void VRShutdownInternal();
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        private delegate bool PollNextEvent(IntPtr eventData, uint eventDataSize);
 
         private enum EVRApplicationType
         {

@@ -8,7 +8,9 @@ namespace TrackSwap.Controls
     {
         Boolean,
         Scalar,
-        Joystick
+        Joystick,
+        IconBoolean,
+        IconScalar
     }
 
     public sealed class OscSignalIndicator : FrameworkElement
@@ -56,23 +58,35 @@ namespace TrackSwap.Controls
         protected override void OnRender(DrawingContext drawingContext)
         {
             base.OnRender(drawingContext);
-            Color accent = ReadColor("AccentBrush", Color.FromRgb(91, 156, 255));
+            Color signal = ReadColor("MutedTextBrush", Color.FromRgb(146, 146, 146));
             Color border = ReadColor("BorderBrush", Color.FromRgb(44, 44, 44));
-            Color muted = ReadColor("MutedTextBrush", Color.FromRgb(146, 146, 146));
-            var accentBrush = new SolidColorBrush(accent);
+            var signalBrush = new SolidColorBrush(signal);
+            var iconSignalBrush = new SolidColorBrush(Color.FromArgb(96, signal.R, signal.G, signal.B));
             var trackBrush = new SolidColorBrush(Color.FromArgb(110, border.R, border.G, border.B));
-            var mutedPen = new Pen(new SolidColorBrush(Color.FromArgb(150, muted.R, muted.G, muted.B)), 1.0);
-            var accentPen = new Pen(accentBrush, 1.0);
+            var signalPen = new Pen(signalBrush, 1.0);
+
+            if (Mode == OscSignalIndicatorMode.IconBoolean || Mode == OscSignalIndicatorMode.IconScalar)
+            {
+                double iconAmount = Mode == OscSignalIndicatorMode.IconBoolean
+                    ? (Value > 0.5 ? 1.0 : 0.0)
+                    : Clamp(Value, 0.0, 1.0);
+                if (iconAmount > 0.0)
+                {
+                    Rect fill = new Rect(0, 0, Math.Max(0, ActualWidth) * iconAmount, Math.Max(0, ActualHeight));
+                    drawingContext.DrawRoundedRectangle(iconSignalBrush, null, fill, 2.0, 2.0);
+                }
+                return;
+            }
 
             if (Mode == OscSignalIndicatorMode.Joystick)
             {
                 double side = Math.Max(1.0, Math.Min(ActualWidth, ActualHeight) - 1.0);
                 Rect box = new Rect((ActualWidth - side) / 2.0, (ActualHeight - side) / 2.0, side, side);
-                drawingContext.DrawRectangle(null, mutedPen, box);
+                drawingContext.DrawRectangle(trackBrush, null, box);
                 double x = box.Left + (Clamp(X, -1.0, 1.0) + 1.0) * box.Width / 2.0;
                 double y = box.Top + (1.0 - Clamp(Y, -1.0, 1.0)) * box.Height / 2.0;
-                drawingContext.DrawLine(accentPen, new Point(x, box.Top), new Point(x, box.Bottom));
-                drawingContext.DrawLine(accentPen, new Point(box.Left, y), new Point(box.Right, y));
+                drawingContext.DrawLine(signalPen, new Point(x, box.Top), new Point(x, box.Bottom));
+                drawingContext.DrawLine(signalPen, new Point(box.Left, y), new Point(box.Right, y));
                 return;
             }
 
@@ -85,7 +99,7 @@ namespace TrackSwap.Controls
             if (amount > 0.0)
             {
                 Rect fill = new Rect(track.Left, track.Top, track.Width * amount, track.Height);
-                drawingContext.DrawRoundedRectangle(accentBrush, null, fill, 1.0, 1.0);
+                drawingContext.DrawRoundedRectangle(signalBrush, null, fill, 1.0, 1.0);
             }
         }
 

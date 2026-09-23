@@ -1,4 +1,5 @@
 #include "finger_animation.h"
+#include "controller_input_routing.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -17,6 +18,8 @@ int main()
     using trackswap::finger_animation::Advance;
     using trackswap::finger_animation::ComputeTargets;
     using trackswap::finger_animation::HandAnimationState;
+    using trackswap::controller_input_routing::BuildLeftInput;
+    using trackswap::controller_input_routing::BuildRightInput;
 
     ControllerInputState input{};
     input.primaryButton = 1;
@@ -36,8 +39,8 @@ int main()
     if (!Near(targets.curls.thumb, 0.3F) || !Near(targets.splays.thumb, -0.39F)) return EXIT_FAILURE;
 
     input = {};
-    input.triggerClick = 1;
-    input.gripClick = 1;
+    input.triggerValue = 1.0F;
+    input.gripValue = 1.0F;
     targets = ComputeTargets(input);
     if (!Near(targets.curls.index, 1.0F) || !Near(targets.curls.middle, 1.0F)) return EXIT_FAILURE;
 
@@ -56,6 +59,21 @@ int main()
         Near(secondary.curls.thumb, primary.curls.thumb)) return EXIT_FAILURE;
 
     input = {};
+    input.hasExplicitTouchState = 1;
+    input.joystickTouch = 1;
+    input.triggerTouch = 1;
+    const HandAnimationState assistedTouch = ComputeTargets(input);
+    if (!Near(assistedTouch.curls.thumb, 0.3F) ||
+        !Near(assistedTouch.splays.thumb, -0.45F) ||
+        !Near(assistedTouch.curls.index, 0.12F)) return EXIT_FAILURE;
+
+    input.joystickTouch = 0;
+    input.triggerTouch = 0;
+    const HandAnimationState assistedRelease = ComputeTargets(input);
+    if (!Near(assistedRelease.curls.thumb, 0.0F) ||
+        !Near(assistedRelease.curls.index, 0.0F)) return EXIT_FAILURE;
+
+    input = {};
     const HandAnimationState open = ComputeTargets(input);
     input.gripValue = 1.0F;
     const HandAnimationState closed = ComputeTargets(input);
@@ -72,5 +90,30 @@ int main()
     const float first = current.curls.thumb;
     Advance(current, target, 0.01F);
     if (current.curls.thumb <= first || current.curls.thumb >= 1.0F) return EXIT_FAILURE;
+
+    ControllerInputState leftInput{};
+    ControllerInputState rightInput{};
+    leftInput.hand = 1;
+    rightInput.hand = 2;
+    rightInput.menuButton = 1;
+    rightInput.hasExplicitTouchState = 1;
+    rightInput.menuTouch = 1;
+    ControllerInputState routedLeft = BuildLeftInput(leftInput, rightInput);
+    ControllerInputState routedRight = BuildRightInput(rightInput);
+    if (routedLeft.hand != 1 || routedLeft.menuButton == 0 || routedLeft.menuTouch == 0) return EXIT_FAILURE;
+    if (routedRight.hand != 2 || routedRight.menuButton != 0 || routedRight.menuTouch != 0) return EXIT_FAILURE;
+
+    leftInput.menuButton = 1;
+    leftInput.hasExplicitTouchState = 1;
+    leftInput.menuTouch = 1;
+    rightInput.menuButton = 0;
+    rightInput.menuTouch = 0;
+    routedLeft = BuildLeftInput(leftInput, rightInput);
+    if (routedLeft.menuButton == 0 || routedLeft.menuTouch == 0) return EXIT_FAILURE;
+
+    leftInput.menuButton = 0;
+    leftInput.menuTouch = 0;
+    routedLeft = BuildLeftInput(leftInput, rightInput);
+    if (routedLeft.menuButton != 0 || routedLeft.menuTouch != 0) return EXIT_FAILURE;
     return EXIT_SUCCESS;
 }

@@ -24,6 +24,21 @@ namespace TrackSwap
     public partial class MainWindow : Window
     {
         private const string ProxyRenderModelName = "{trackswap}trackswap_proxy_tracker";
+        private const float XInputCaptureActivationThreshold = 0.65f;
+        private const ushort XInputDPadUp = 0x0001;
+        private const ushort XInputDPadDown = 0x0002;
+        private const ushort XInputDPadLeft = 0x0004;
+        private const ushort XInputDPadRight = 0x0008;
+        private const ushort XInputMenu = 0x0010;
+        private const ushort XInputView = 0x0020;
+        private const ushort XInputLeftThumb = 0x0040;
+        private const ushort XInputRightThumb = 0x0080;
+        private const ushort XInputLeftShoulder = 0x0100;
+        private const ushort XInputRightShoulder = 0x0200;
+        private const ushort XInputA = 0x1000;
+        private const ushort XInputB = 0x2000;
+        private const ushort XInputX = 0x4000;
+        private const ushort XInputY = 0x8000;
 
         private static readonly DependencyProperty AnimatedVerticalOffsetProperty =
             DependencyProperty.RegisterAttached(
@@ -46,6 +61,8 @@ namespace TrackSwap
         private readonly DispatcherTimer _telemetryTimer;
         private readonly DispatcherTimer _oscMonitorTimer;
         private readonly DispatcherTimer _oscApplyTimer;
+        private readonly DispatcherTimer _xInputApplyTimer;
+        private readonly DispatcherTimer _xInputHoverPreviewTimer;
         private readonly DispatcherTimer _routeAutoApplyTimer;
         private Model3DGroup _sourcePreviewModel;
         private Model3DGroup _proxyPreviewModel;
@@ -85,6 +102,10 @@ namespace TrackSwap
         private bool _loadingOscFields;
         private bool _oscAutoApplyBusy;
         private bool _oscAutoApplyQueued;
+        private bool _xInputMonitorUpdatePending;
+        private bool _loadingXInputFields;
+        private bool _xInputAutoApplyBusy;
+        private bool _xInputAutoApplyQueued;
         private bool _routeAutoApplyBusy;
         private bool _routeAutoApplyQueued;
         private string _routeAutoApplyIssueText;
@@ -98,7 +119,18 @@ namespace TrackSwap
             new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly ObservableCollection<RouteListItem> _routeItems = new ObservableCollection<RouteListItem>();
         private readonly List<RouteConfiguration> _workingRoutes = new List<RouteConfiguration>();
+        private readonly Dictionary<ComboBox, Image> _xInputPreviewImages =
+            new Dictionary<ComboBox, Image>();
+        private readonly Dictionary<string, ImageSource> _xInputIconCache =
+            new Dictionary<string, ImageSource>(StringComparer.Ordinal);
+        private ComboBox _xInputCaptureComboBox;
+        private XInputBindingOption _xInputCapturePreviousOption;
+        private XInputBindingOption _xInputCaptureCommandOption;
+        private HashSet<XInputBindingSource> _xInputCaptureSuppressedSources;
+        private bool _xInputCaptureBaselineReady;
+        private DateTime _xInputCaptureDeadlineUtc;
         private OscConfiguration _workingOsc = OscConfiguration.CreateDefault();
+        private XInputConfiguration _workingXInput = XInputConfiguration.CreateDefault();
         private RouteConfiguration _selectedRoute;
         private bool _showingSettings;
         private SettingsSection _settingsSection = SettingsSection.Runtime;
@@ -170,6 +202,13 @@ namespace TrackSwap
                 new OscResetTimeoutOption(OscResetTimeout.ThirtySeconds, "30 秒"),
                 new OscResetTimeoutOption(OscResetTimeout.OneMinute, "1 分钟")
             };
+            _xInputHoverPreviewTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(33)
+            };
+            _xInputHoverPreviewTimer.Tick += (_, __) => UpdateHoveredXInputPreview();
+            InitializeXInputMappingOptions();
+            PreviewKeyDown += MainWindow_PreviewKeyDown;
             _oscApplyTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(400)
@@ -178,6 +217,15 @@ namespace TrackSwap
             {
                 _oscApplyTimer.Stop();
                 await ApplyOscSettingsAsync();
+            };
+            _xInputApplyTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(250)
+            };
+            _xInputApplyTimer.Tick += async (_, __) =>
+            {
+                _xInputApplyTimer.Stop();
+                await ApplyXInputSettingsAsync();
             };
             _routeAutoApplyTimer = new DispatcherTimer
             {
@@ -201,7 +249,7 @@ namespace TrackSwap
                 DataObject.AddPastingHandler(field, RuntimeOffsetTextBox_Pasting);
             }
             LoadOscFields(_workingOsc);
-            OscEnabledCheckBox.Click += (_, __) => ScheduleOscSettingsApply(immediate: true);
+            LoadXInputFields(_workingXInput);
             OscResetTimeoutComboBox.SelectionChanged += (_, __) => ScheduleOscSettingsApply(immediate: true);
             OscListenAddressTextBox.TextChanged += (_, __) => ScheduleOscSettingsApply(immediate: false);
             OscPortTextBox.TextChanged += (_, __) => ScheduleOscSettingsApply(immediate: false);
@@ -245,12 +293,29 @@ namespace TrackSwap
             {
                 Interval = TimeSpan.FromMilliseconds(33)
             };
-            _telemetryTimer.Tick += async (_, __) => await RefreshTelemetryAsync();
+            _telemetryTimer.Tick += async (_, __) =>
+            {
+                if (OpenVrInterop.DetachIfSteamVrIsQuitting())
+                {
+                    return;
+                }
+                await RefreshTelemetryAsync();
+            };
             _oscMonitorTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(33)
             };
-            _oscMonitorTimer.Tick += async (_, __) => await RefreshOscMonitorAsync();
+            _oscMonitorTimer.Tick += async (_, __) =>
+            {
+                if (_settingsSection == SettingsSection.XInput)
+                {
+                    await RefreshXInputMonitorAsync();
+                }
+                else
+                {
+                    await RefreshOscMonitorAsync();
+                }
+            };
 
             Loaded += async (_, __) =>
             {
@@ -277,6 +342,8 @@ namespace TrackSwap
                 _telemetryTimer.Stop();
                 _oscMonitorTimer.Stop();
                 _oscApplyTimer.Stop();
+                _xInputApplyTimer.Stop();
+                _xInputHoverPreviewTimer.Stop();
                 _routeAutoApplyTimer.Stop();
                 OpenVrInterop.Reset();
             };
@@ -320,9 +387,7 @@ namespace TrackSwap
             OscLeftJoystickIndicator.Y = left.JoystickY;
             OscLeftJoystickClickIndicator.Value = left.JoystickClick ? 1.0 : 0.0;
             OscLeftTriggerValueIndicator.Value = left.TriggerValue;
-            OscLeftTriggerClickIndicator.Value = left.TriggerClick ? 1.0 : 0.0;
             OscLeftGripValueIndicator.Value = left.GripValue;
-            OscLeftGripClickIndicator.Value = left.GripClick ? 1.0 : 0.0;
             OscLeftMenuIndicator.Value = left.MenuButton ? 1.0 : 0.0;
 
             OscRightPrimaryIndicator.Value = right.PrimaryButton ? 1.0 : 0.0;
@@ -331,10 +396,111 @@ namespace TrackSwap
             OscRightJoystickIndicator.Y = right.JoystickY;
             OscRightJoystickClickIndicator.Value = right.JoystickClick ? 1.0 : 0.0;
             OscRightTriggerValueIndicator.Value = right.TriggerValue;
-            OscRightTriggerClickIndicator.Value = right.TriggerClick ? 1.0 : 0.0;
             OscRightGripValueIndicator.Value = right.GripValue;
-            OscRightGripClickIndicator.Value = right.GripClick ? 1.0 : 0.0;
             OscRightMenuIndicator.Value = right.MenuButton ? 1.0 : 0.0;
+        }
+
+        private async Task RefreshXInputMonitorAsync()
+        {
+            if (_xInputMonitorUpdatePending || !_showingSettings || _settingsSection != SettingsSection.XInput)
+            {
+                return;
+            }
+
+            _xInputMonitorUpdatePending = true;
+            try
+            {
+                XInputRuntimeStatus status = await _runtimeControlService.GetXInputStatusAsync();
+                UpdateXInputIndicators(status.LeftInput, status.RightInput);
+                UpdateXInputTouchAssistIndicators(status.PhysicalInput);
+                UpdateXInputCapture(status.PhysicalInput);
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is TimeoutException ||
+                exception is UnauthorizedAccessException ||
+                exception is InvalidDataException)
+            {
+                UpdateXInputIndicators(null, null);
+                UpdateXInputTouchAssistIndicators(null);
+                CheckXInputCaptureTimeout();
+            }
+            finally
+            {
+                _xInputMonitorUpdatePending = false;
+            }
+        }
+
+        private void UpdateXInputIndicators(ControllerInputState left, ControllerInputState right)
+        {
+            left = left ?? new ControllerInputState();
+            right = right ?? new ControllerInputState();
+
+            XInputLeftPrimaryIndicator.Value = left.PrimaryButton ? 1.0 : 0.0;
+            XInputLeftSecondaryIndicator.Value = left.SecondaryButton ? 1.0 : 0.0;
+            UpdateXInputJoystickTransform(XInputLeftJoystickTransform, left.JoystickX, left.JoystickY);
+            XInputLeftJoystickClickIndicator.Value = left.JoystickClick ? 1.0 : 0.0;
+            XInputLeftTriggerIndicator.Value = left.TriggerValue;
+            XInputLeftGripIndicator.Value = left.GripValue;
+            XInputLeftMenuIndicator.Value = left.MenuButton ? 1.0 : 0.0;
+
+            XInputRightPrimaryIndicator.Value = right.PrimaryButton ? 1.0 : 0.0;
+            XInputRightSecondaryIndicator.Value = right.SecondaryButton ? 1.0 : 0.0;
+            UpdateXInputJoystickTransform(XInputRightJoystickTransform, right.JoystickX, right.JoystickY);
+            XInputRightJoystickClickIndicator.Value = right.JoystickClick ? 1.0 : 0.0;
+            XInputRightTriggerIndicator.Value = right.TriggerValue;
+            XInputRightGripIndicator.Value = right.GripValue;
+            XInputRightMenuIndicator.Value = right.MenuButton ? 1.0 : 0.0;
+        }
+
+        private void UpdateXInputTouchAssistIndicators(XInputPhysicalState physicalInput)
+        {
+            XInputLeftThumbTouchIndicator.Value = IsXInputBindingActive(
+                physicalInput,
+                GetXInputSource(XInputLeftThumbTouchComboBox)) ? 1.0 : 0.0;
+            XInputLeftIndexTouchIndicator.Value = IsXInputBindingActive(
+                physicalInput,
+                GetXInputSource(XInputLeftIndexTouchComboBox)) ? 1.0 : 0.0;
+            XInputRightThumbTouchIndicator.Value = IsXInputBindingActive(
+                physicalInput,
+                GetXInputSource(XInputRightThumbTouchComboBox)) ? 1.0 : 0.0;
+            XInputRightIndexTouchIndicator.Value = IsXInputBindingActive(
+                physicalInput,
+                GetXInputSource(XInputRightIndexTouchComboBox)) ? 1.0 : 0.0;
+        }
+
+        private bool IsXInputBindingActive(XInputPhysicalState state, XInputBindingSource source)
+        {
+            if (state == null || !state.Connected || source == XInputBindingSource.None)
+            {
+                return false;
+            }
+            double threshold = XInputAnalogThresholdSlider.Value / 100.0;
+            if (source == XInputBindingSource.LeftTrigger)
+            {
+                return state.LeftTrigger >= threshold;
+            }
+            if (source == XInputBindingSource.RightTrigger)
+            {
+                return state.RightTrigger >= threshold;
+            }
+            return GetActiveXInputSources(state, joystickOnly: false).Contains(source);
+        }
+
+        private static void UpdateXInputJoystickTransform(
+            TranslateTransform transform,
+            double x,
+            double y)
+        {
+            const double maximumOffset = 23.0;
+            double normalizedX = double.IsNaN(x) || double.IsInfinity(x)
+                ? 0.0
+                : Math.Max(-1.0, Math.Min(1.0, x));
+            double normalizedY = double.IsNaN(y) || double.IsInfinity(y)
+                ? 0.0
+                : Math.Max(-1.0, Math.Min(1.0, y));
+            transform.X = normalizedX * maximumOffset;
+            transform.Y = -normalizedY * maximumOffset;
         }
 
         private void RefreshAll(
@@ -734,6 +900,10 @@ namespace TrackSwap
         private void UpdateSteamVrStatus()
         {
             bool running = _statusService.IsRunning();
+            if (!running)
+            {
+                OpenVrInterop.NotifySteamVrStopped();
+            }
             if (running && _followSteamVrWithTrackSwap)
             {
                 _steamVrObservedForUiLifecycle = true;
@@ -751,6 +921,7 @@ namespace TrackSwap
             SteamVrStatusText.Foreground = FindBrush(running ? "SuccessBrush" : "MutedTextBrush");
             SteamVrDot.Fill = FindBrush(running ? "SuccessBrush" : "MutedTextBrush");
             SteamVrBadge.Background = Brushes.Transparent;
+            SteamVrBadge.ToolTip = running ? "SteamVR 正在运行" : "SteamVR 未运行";
 
             ApplyButton.IsEnabled = !running
                 && SourceComboBox.SelectedItem is DeviceOption
@@ -829,6 +1000,8 @@ namespace TrackSwap
             RuntimeStatusText.Foreground = FindBrush("SuccessBrush");
             RuntimeDot.Fill = FindBrush("SuccessBrush");
             RuntimeBadge.Background = Brushes.Transparent;
+            RuntimeBadge.ToolTip = "Runtime 已连接";
+            UpdateInputStatusIndicators(status);
             RuntimeHealthText.Text = "在线";
             RuntimeHealthText.Foreground = FindBrush("SuccessBrush");
             DriverHealthText.Text = status.DriverConnected ? "已连接" : "等待驱动";
@@ -870,6 +1043,9 @@ namespace TrackSwap
             RuntimeStatusText.Foreground = FindBrush("MutedTextBrush");
             RuntimeDot.Fill = FindBrush("MutedTextBrush");
             RuntimeBadge.Background = Brushes.Transparent;
+            RuntimeBadge.ToolTip = "Runtime 未连接";
+            SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "MutedTextBrush", "Runtime 未连接，无法读取 OSC 状态");
+            SetStatusIndicator(XInputStatusDot, XInputStatusText, XInputStatusBadge, "MutedTextBrush", "Runtime 未连接，无法读取 XInput 状态");
             RuntimeHealthText.Text = "离线";
             RuntimeHealthText.Foreground = FindBrush("MutedTextBrush");
             DriverHealthText.Text = "未知";
@@ -880,6 +1056,75 @@ namespace TrackSwap
             RuntimeErrorText.Text = "无法连接 TrackSwap Runtime：" + error;
             RuntimeErrorText.Visibility = Visibility.Visible;
             StartRuntimeButton.IsEnabled = true;
+        }
+
+        private void UpdateInputStatusIndicators(RuntimeStatusSnapshot status)
+        {
+            UpdateOscStatusIndicator(status?.Osc, status?.Configuration?.Osc);
+            UpdateXInputStatusIndicator(status?.XInput);
+        }
+
+        private void UpdateOscStatusIndicator(OscRuntimeStatus status, OscConfiguration configuration)
+        {
+            if (status == null || !status.Enabled)
+            {
+                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "MutedTextBrush", "OSC 未启用；选择 OSC 作为控制输入来源后会自动启用");
+                return;
+            }
+
+            string endpoint = string.IsNullOrWhiteSpace(status.Endpoint) ? "当前端点" : status.Endpoint;
+            if (!string.IsNullOrWhiteSpace(status.LastError))
+            {
+                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "WarningBrush", "OSC 无法监听 " + endpoint + "：" + status.LastError);
+                return;
+            }
+            if (!status.Listening)
+            {
+                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "WarningBrush", "OSC 正在准备监听 " + endpoint);
+                return;
+            }
+
+            bool hasRecentSignal = status.LastMessageAtUtc.HasValue;
+            OscResetTimeout resetTimeout = configuration?.ResetTimeout ?? OscResetTimeout.FiveSeconds;
+            if (hasRecentSignal && resetTimeout != OscResetTimeout.Never)
+            {
+                hasRecentSignal = DateTimeOffset.UtcNow - status.LastMessageAtUtc.Value <=
+                    TimeSpan.FromSeconds((int)resetTimeout);
+            }
+
+            SetStatusIndicator(
+                OscStatusDot,
+                OscStatusText,
+                OscStatusBadge,
+                hasRecentSignal ? "SuccessBrush" : "WarningBrush",
+                hasRecentSignal
+                    ? "OSC 正在接收 " + endpoint + " 的信号"
+                    : "OSC 正在监听 " + endpoint + "，等待信号");
+        }
+
+        private void UpdateXInputStatusIndicator(XInputRuntimeStatus status)
+        {
+            if (status == null || !status.Enabled)
+            {
+                SetStatusIndicator(XInputStatusDot, XInputStatusText, XInputStatusBadge, "MutedTextBrush", "XInput 未启用；选择 XInput 作为控制输入来源后会自动启用");
+                return;
+            }
+
+            SetStatusIndicator(
+                XInputStatusDot,
+                XInputStatusText,
+                XInputStatusBadge,
+                status.Connected ? "SuccessBrush" : "WarningBrush",
+                status.Connected ? "XInput 控制器已连接" : "正在等待 XInput 控制器");
+        }
+
+        private void SetStatusIndicator(System.Windows.Shapes.Ellipse dot, TextBlock text, Border badge, string brushKey, string toolTip)
+        {
+            Brush brush = FindBrush(brushKey);
+            dot.Fill = brush;
+            text.Foreground = brush;
+            badge.Background = Brushes.Transparent;
+            badge.ToolTip = toolTip;
         }
 
         private void RefreshOverrideList()
@@ -994,6 +1239,8 @@ namespace TrackSwap
             {
                 _workingOsc = CloneOscConfiguration(configuration.Osc ?? OscConfiguration.CreateDefault());
                 LoadOscFields(_workingOsc);
+                _workingXInput = CloneXInputConfiguration(configuration.XInput ?? XInputConfiguration.CreateDefault());
+                LoadXInputFields(_workingXInput);
                 _workingRoutes.Clear();
                 int unnamedIndex = 0;
                 foreach (RouteConfiguration route in configuration.Routes ?? new List<RouteConfiguration>())
@@ -1047,6 +1294,7 @@ namespace TrackSwap
 
         private void RefreshRouteList(string selectedRouteId = null)
         {
+            bool preserveSettingsPage = _showingSettings;
             _routeItems.Clear();
             RouteCountText.Text = _workingRoutes.Count.ToString("00", CultureInfo.InvariantCulture) +
                 " / " + ProtocolConstants.MaximumRoutes.ToString("00", CultureInfo.InvariantCulture);
@@ -1080,7 +1328,7 @@ namespace TrackSwap
             RouteListItem selection = _routeItems.FirstOrDefault(item =>
                 string.Equals(item.Route.RouteId, selectedRouteId, StringComparison.Ordinal)) ??
                 _routeItems.FirstOrDefault();
-            RouteListBox.SelectedItem = selection;
+            RouteListBox.SelectedItem = preserveSettingsPage ? null : selection;
             UpdateContentVisibility();
         }
 
@@ -1361,6 +1609,10 @@ namespace TrackSwap
             {
                 ShowSettingsSection(SettingsSection.Osc);
             }
+            else if (sender == SettingsXInputCategoryButton)
+            {
+                ShowSettingsSection(SettingsSection.XInput);
+            }
             else if (sender == SettingsAdvancedCategoryButton)
             {
                 ShowSettingsSection(SettingsSection.Advanced);
@@ -1369,17 +1621,23 @@ namespace TrackSwap
 
         private void ShowSettingsSection(SettingsSection section)
         {
+            if (section != SettingsSection.XInput)
+            {
+                CancelXInputCapture();
+            }
             _settingsSection = section;
             RuntimeSettingsPanel.Visibility = section == SettingsSection.Runtime ? Visibility.Visible : Visibility.Collapsed;
             SteamVrSettingsPanel.Visibility = section == SettingsSection.SteamVr ? Visibility.Visible : Visibility.Collapsed;
             DeviceSettingsPanel.Visibility = section == SettingsSection.Devices ? Visibility.Visible : Visibility.Collapsed;
             OscSettingsPanel.Visibility = section == SettingsSection.Osc ? Visibility.Visible : Visibility.Collapsed;
+            XInputSettingsPanel.Visibility = section == SettingsSection.XInput ? Visibility.Visible : Visibility.Collapsed;
             AdvancedSettingsPanel.Visibility = section == SettingsSection.Advanced ? Visibility.Visible : Visibility.Collapsed;
 
             UpdateSettingsCategoryButton(SettingsRuntimeCategoryButton, section == SettingsSection.Runtime);
             UpdateSettingsCategoryButton(SettingsSteamVrCategoryButton, section == SettingsSection.SteamVr);
             UpdateSettingsCategoryButton(SettingsDevicesCategoryButton, section == SettingsSection.Devices);
             UpdateSettingsCategoryButton(SettingsOscCategoryButton, section == SettingsSection.Osc);
+            UpdateSettingsCategoryButton(SettingsXInputCategoryButton, section == SettingsSection.XInput);
             UpdateSettingsCategoryButton(SettingsAdvancedCategoryButton, section == SettingsSection.Advanced);
         }
 
@@ -1548,7 +1806,8 @@ namespace TrackSwap
                         Routes = (active.Routes ?? new List<RouteConfiguration>())
                             .Select(CloneRoute)
                             .ToList(),
-                        Osc = CloneOscConfiguration(active.Osc ?? OscConfiguration.CreateDefault())
+                        Osc = CloneOscConfiguration(active.Osc ?? OscConfiguration.CreateDefault()),
+                        XInput = CloneXInputConfiguration(active.XInput ?? XInputConfiguration.CreateDefault())
                     };
                     await _runtimeControlService.ApplyConfigurationAsync(configuration);
                     _loadedRuntimeRevision = -1;
@@ -1872,7 +2131,8 @@ namespace TrackSwap
                     AllowDuplicatePoseSources = _allowDuplicatePoseSources,
                     ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                     Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
-                    Osc = CloneOscConfiguration(_workingOsc)
+                    Osc = CloneOscConfiguration(_workingOsc),
+                    XInput = CloneXInputConfiguration(_workingXInput)
                 };
                 IReadOnlyList<string> dependencyErrors =
                     ConfigurationValidator.ValidateSourceRoleDependencies(
@@ -2015,7 +2275,8 @@ namespace TrackSwap
                 AllowDuplicatePoseSources = _allowDuplicatePoseSources,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
-                Osc = CloneOscConfiguration(_workingOsc)
+                Osc = CloneOscConfiguration(_workingOsc),
+                XInput = CloneXInputConfiguration(_workingXInput)
             };
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
             if (errors.Count != 0)
@@ -2079,7 +2340,8 @@ namespace TrackSwap
                         .Where(route => !route.PendingDeletion && IsRouteComplete(route))
                         .Select(CloneRoute)
                         .ToList(),
-                    Osc = CloneOscConfiguration(_workingOsc)
+                    Osc = CloneOscConfiguration(_workingOsc),
+                    XInput = CloneXInputConfiguration(_workingXInput)
                 };
                 IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
                 if (errors.Count != 0)
@@ -2598,7 +2860,8 @@ namespace TrackSwap
                 AllowDuplicatePoseSources = _allowDuplicatePoseSources,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Select(CloneRoute).ToList(),
-                Osc = CloneOscConfiguration(_workingOsc)
+                Osc = CloneOscConfiguration(_workingOsc),
+                XInput = CloneXInputConfiguration(_workingXInput)
             };
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
             errors = errors
@@ -4233,7 +4496,6 @@ namespace TrackSwap
             _loadingOscFields = true;
             try
             {
-                OscEnabledCheckBox.IsChecked = configuration.Enabled;
                 OscListenAddressTextBox.Text = configuration.ListenAddress;
                 OscPortTextBox.Text = configuration.Port.ToString(CultureInfo.InvariantCulture);
                 OscResetTimeoutComboBox.SelectedItem = OscResetTimeoutComboBox.Items
@@ -4256,9 +4518,7 @@ namespace TrackSwap
             TextBox joystickY = left ? OscLeftJoystickYTextBox : OscRightJoystickYTextBox;
             TextBox joystickClick = left ? OscLeftJoystickClickTextBox : OscRightJoystickClickTextBox;
             TextBox triggerValue = left ? OscLeftTriggerValueTextBox : OscRightTriggerValueTextBox;
-            TextBox triggerClick = left ? OscLeftTriggerClickTextBox : OscRightTriggerClickTextBox;
             TextBox gripValue = left ? OscLeftGripValueTextBox : OscRightGripValueTextBox;
-            TextBox gripClick = left ? OscLeftGripClickTextBox : OscRightGripClickTextBox;
             TextBox menu = left ? OscLeftMenuTextBox : OscRightMenuTextBox;
             primary.Text = addresses.PrimaryButton;
             secondary.Text = addresses.SecondaryButton;
@@ -4266,9 +4526,7 @@ namespace TrackSwap
             joystickY.Text = addresses.JoystickY;
             joystickClick.Text = addresses.JoystickClick;
             triggerValue.Text = addresses.TriggerValue;
-            triggerClick.Text = addresses.TriggerClick;
             gripValue.Text = addresses.GripValue;
-            gripClick.Text = addresses.GripClick;
             menu.Text = addresses.MenuButton;
         }
 
@@ -4303,7 +4561,7 @@ namespace TrackSwap
             }
             var osc = new OscConfiguration
             {
-                Enabled = OscEnabledCheckBox.IsChecked == true,
+                Enabled = OscConfiguration.IsRequiredForRoutes(_workingRoutes),
                 ListenAddress = OscListenAddressTextBox.Text.Trim(),
                 Port = port,
                 ResetTimeout = timeout.Timeout
@@ -4314,7 +4572,8 @@ namespace TrackSwap
                 AllowDuplicatePoseSources = _allowDuplicatePoseSources,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
-                Osc = osc
+                Osc = osc,
+                XInput = CloneXInputConfiguration(_workingXInput)
             };
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
             if (errors.Count != 0)
@@ -4356,6 +4615,691 @@ namespace TrackSwap
             };
         }
 
+        private void InitializeXInputMappingOptions()
+        {
+            _loadingXInputFields = true;
+            try
+            {
+                var joystickOptions = new[]
+                {
+                    new XInputBindingOption(XInputBindingSource.None, "无", null),
+                    new XInputBindingOption(XInputBindingSource.None, "操作手柄以绑定…", null, isCaptureCommand: true),
+                    new XInputBindingOption(XInputBindingSource.LeftStick, "左摇杆", "XboxSeriesX_Left_Stick.png"),
+                    new XInputBindingOption(XInputBindingSource.RightStick, "右摇杆", "XboxSeriesX_Right_Stick.png")
+                };
+                var inputOptions = new[]
+                {
+                    new XInputBindingOption(XInputBindingSource.None, "无", null),
+                    new XInputBindingOption(XInputBindingSource.None, "操作手柄以绑定…", null, isCaptureCommand: true),
+                    new XInputBindingOption(XInputBindingSource.A, "A 键", "XboxSeriesX_A.png"),
+                    new XInputBindingOption(XInputBindingSource.B, "B 键", "XboxSeriesX_B.png"),
+                    new XInputBindingOption(XInputBindingSource.X, "X 键", "XboxSeriesX_X.png"),
+                    new XInputBindingOption(XInputBindingSource.Y, "Y 键", "XboxSeriesX_Y.png"),
+                    new XInputBindingOption(XInputBindingSource.DPadUp, "方向键 上", "XboxSeriesX_Dpad_Up.png"),
+                    new XInputBindingOption(XInputBindingSource.DPadDown, "方向键 下", "XboxSeriesX_Dpad_Down.png"),
+                    new XInputBindingOption(XInputBindingSource.DPadLeft, "方向键 左", "XboxSeriesX_Dpad_Left.png"),
+                    new XInputBindingOption(XInputBindingSource.DPadRight, "方向键 右", "XboxSeriesX_Dpad_Right.png"),
+                    new XInputBindingOption(XInputBindingSource.LeftStickClick, "左摇杆按下", "XboxSeriesX_Left_Stick_Click.png"),
+                    new XInputBindingOption(XInputBindingSource.RightStickClick, "右摇杆按下", "XboxSeriesX_Right_Stick_Click.png"),
+                    new XInputBindingOption(XInputBindingSource.LeftShoulder, "左肩键 LB", "XboxSeriesX_LB.png"),
+                    new XInputBindingOption(XInputBindingSource.RightShoulder, "右肩键 RB", "XboxSeriesX_RB.png"),
+                    new XInputBindingOption(XInputBindingSource.LeftTrigger, "左扳机 LT", "XboxSeriesX_LT.png"),
+                    new XInputBindingOption(XInputBindingSource.RightTrigger, "右扳机 RT", "XboxSeriesX_RT.png"),
+                    new XInputBindingOption(XInputBindingSource.View, "视图按钮", "XboxSeriesX_View.png"),
+                    new XInputBindingOption(XInputBindingSource.Menu, "菜单按钮", "XboxSeriesX_Menu.png")
+                };
+
+                DataTemplate itemTemplate = (DataTemplate)FindResource("XInputBindingOptionTemplate");
+                XInputLeftJoystickComboBox.ItemsSource = joystickOptions;
+                XInputLeftJoystickComboBox.ItemTemplate = itemTemplate;
+                XInputRightJoystickComboBox.ItemsSource = joystickOptions;
+                XInputRightJoystickComboBox.ItemTemplate = itemTemplate;
+                foreach (ComboBox comboBox in GetXInputButtonComboBoxes())
+                {
+                    comboBox.ItemsSource = inputOptions;
+                    comboBox.ItemTemplate = itemTemplate;
+                    comboBox.VerticalAlignment = VerticalAlignment.Center;
+                }
+
+                var touchDefaultOptions = new[]
+                {
+                    new XInputTouchDefaultOption(true, "默认接触"),
+                    new XInputTouchDefaultOption(false, "默认抬起")
+                };
+                XInputLeftThumbDefaultComboBox.ItemsSource = touchDefaultOptions;
+                XInputLeftIndexDefaultComboBox.ItemsSource = touchDefaultOptions;
+                XInputRightThumbDefaultComboBox.ItemsSource = touchDefaultOptions;
+                XInputRightIndexDefaultComboBox.ItemsSource = touchDefaultOptions;
+
+                XInputHapticModeComboBox.ItemsSource = new[]
+                {
+                    new XInputHapticModeOption(XInputHapticMode.PreserveHandedness, "保留手别"),
+                    new XInputHapticModeOption(XInputHapticMode.MirrorHandedness, "保留手别（镜像）"),
+                    new XInputHapticModeOption(XInputHapticMode.Unified, "统一震动")
+                };
+
+                RegisterXInputPreview(XInputLeftPrimaryComboBox, XInputLeftPrimaryPreviewImage);
+                RegisterXInputPreview(XInputLeftSecondaryComboBox, XInputLeftSecondaryPreviewImage);
+                RegisterXInputPreview(XInputLeftJoystickComboBox, XInputLeftJoystickPreviewImage);
+                RegisterXInputPreview(XInputLeftJoystickClickComboBox, XInputLeftJoystickClickPreviewImage);
+                RegisterXInputPreview(XInputLeftTriggerComboBox, XInputLeftTriggerPreviewImage);
+                RegisterXInputPreview(XInputLeftGripComboBox, XInputLeftGripPreviewImage);
+                RegisterXInputPreview(XInputLeftMenuComboBox, XInputLeftMenuPreviewImage);
+                RegisterXInputPreview(XInputLeftThumbTouchComboBox, XInputLeftThumbTouchPreviewImage);
+                RegisterXInputPreview(XInputLeftIndexTouchComboBox, XInputLeftIndexTouchPreviewImage);
+                RegisterXInputPreview(XInputRightPrimaryComboBox, XInputRightPrimaryPreviewImage);
+                RegisterXInputPreview(XInputRightSecondaryComboBox, XInputRightSecondaryPreviewImage);
+                RegisterXInputPreview(XInputRightJoystickComboBox, XInputRightJoystickPreviewImage);
+                RegisterXInputPreview(XInputRightJoystickClickComboBox, XInputRightJoystickClickPreviewImage);
+                RegisterXInputPreview(XInputRightTriggerComboBox, XInputRightTriggerPreviewImage);
+                RegisterXInputPreview(XInputRightGripComboBox, XInputRightGripPreviewImage);
+                RegisterXInputPreview(XInputRightMenuComboBox, XInputRightMenuPreviewImage);
+                RegisterXInputPreview(XInputRightThumbTouchComboBox, XInputRightThumbTouchPreviewImage);
+                RegisterXInputPreview(XInputRightIndexTouchComboBox, XInputRightIndexTouchPreviewImage);
+            }
+            finally
+            {
+                _loadingXInputFields = false;
+            }
+        }
+
+        private IEnumerable<ComboBox> GetXInputButtonComboBoxes()
+        {
+            yield return XInputLeftPrimaryComboBox;
+            yield return XInputLeftSecondaryComboBox;
+            yield return XInputLeftJoystickClickComboBox;
+            yield return XInputLeftTriggerComboBox;
+            yield return XInputLeftGripComboBox;
+            yield return XInputLeftMenuComboBox;
+            yield return XInputLeftThumbTouchComboBox;
+            yield return XInputLeftIndexTouchComboBox;
+            yield return XInputRightPrimaryComboBox;
+            yield return XInputRightSecondaryComboBox;
+            yield return XInputRightJoystickClickComboBox;
+            yield return XInputRightTriggerComboBox;
+            yield return XInputRightGripComboBox;
+            yield return XInputRightMenuComboBox;
+            yield return XInputRightThumbTouchComboBox;
+            yield return XInputRightIndexTouchComboBox;
+        }
+
+        private void LoadXInputFields(XInputConfiguration configuration)
+        {
+            XInputConfiguration source = CloneXInputConfiguration(configuration);
+            _loadingXInputFields = true;
+            try
+            {
+                XInputAnalogThresholdSlider.Value = source.AnalogPressThreshold * 100.0;
+                XInputAnalogThresholdText.Text = Math.Round(source.AnalogPressThreshold * 100.0)
+                    .ToString("0", CultureInfo.InvariantCulture) + "%";
+                XInputHapticModeComboBox.SelectedItem = XInputHapticModeComboBox.Items
+                    .Cast<XInputHapticModeOption>()
+                    .FirstOrDefault(option => option.Mode == source.HapticMode);
+                LoadXInputMapping(source.Left, true);
+                LoadXInputMapping(source.Right, false);
+            }
+            finally
+            {
+                _loadingXInputFields = false;
+            }
+        }
+
+        private void LoadXInputMapping(XInputHandMapping mapping, bool left)
+        {
+            XInputHandMapping defaults = left
+                ? XInputConfiguration.CreateDefaultLeftMapping()
+                : XInputConfiguration.CreateDefaultRightMapping();
+            XInputTouchAssistMapping thumbTouch = mapping.ThumbTouch ?? defaults.ThumbTouch;
+            XInputTouchAssistMapping indexTouch = mapping.IndexTouch ?? defaults.IndexTouch;
+            SelectXInputOption(left ? XInputLeftPrimaryComboBox : XInputRightPrimaryComboBox, mapping.PrimaryButton);
+            SelectXInputOption(left ? XInputLeftSecondaryComboBox : XInputRightSecondaryComboBox, mapping.SecondaryButton);
+            SelectXInputOption(left ? XInputLeftJoystickComboBox : XInputRightJoystickComboBox, mapping.Joystick);
+            SelectXInputOption(left ? XInputLeftJoystickClickComboBox : XInputRightJoystickClickComboBox, mapping.JoystickClick);
+            SelectXInputOption(left ? XInputLeftTriggerComboBox : XInputRightTriggerComboBox, mapping.Trigger);
+            SelectXInputOption(left ? XInputLeftGripComboBox : XInputRightGripComboBox, mapping.Grip);
+            SelectXInputOption(left ? XInputLeftMenuComboBox : XInputRightMenuComboBox, mapping.MenuButton);
+            SelectXInputOption(left ? XInputLeftThumbTouchComboBox : XInputRightThumbTouchComboBox, thumbTouch.ToggleSource);
+            SelectXInputTouchDefault(left ? XInputLeftThumbDefaultComboBox : XInputRightThumbDefaultComboBox, thumbTouch.DefaultTouched);
+            SelectXInputOption(left ? XInputLeftIndexTouchComboBox : XInputRightIndexTouchComboBox, indexTouch.ToggleSource);
+            SelectXInputTouchDefault(left ? XInputLeftIndexDefaultComboBox : XInputRightIndexDefaultComboBox, indexTouch.DefaultTouched);
+        }
+
+        private static void SelectXInputOption(ComboBox comboBox, XInputBindingSource source)
+        {
+            comboBox.SelectedItem = comboBox.Items.Cast<XInputBindingOption>()
+                .FirstOrDefault(option => option.Source == source);
+        }
+
+        private static void SelectXInputTouchDefault(ComboBox comboBox, bool touched)
+        {
+            comboBox.SelectedItem = comboBox.Items.Cast<XInputTouchDefaultOption>()
+                .FirstOrDefault(option => option.Touched == touched);
+        }
+
+        private void XInputAnalogThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (XInputAnalogThresholdText != null)
+            {
+                XInputAnalogThresholdText.Text = Math.Round(e.NewValue)
+                    .ToString("0", CultureInfo.InvariantCulture) + "%";
+            }
+            ScheduleXInputSettingsApply(immediate: false);
+        }
+
+        private void XInputHapticModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ScheduleXInputSettingsApply(immediate: true);
+        }
+
+        private void XInputMappingComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is ComboBox comboBox)
+            {
+                if (!_loadingXInputFields &&
+                    comboBox.SelectedItem is XInputBindingOption selected &&
+                    selected.IsCaptureCommand)
+                {
+                    XInputBindingOption previous = e.RemovedItems
+                        .OfType<XInputBindingOption>()
+                        .FirstOrDefault(option => !option.IsCaptureCommand);
+                    BeginXInputCapture(comboBox, previous, selected);
+                    return;
+                }
+                if (!_loadingXInputFields && comboBox == _xInputCaptureComboBox)
+                {
+                    ClearXInputCaptureState();
+                }
+                UpdateXInputPreview(comboBox);
+            }
+            ScheduleXInputSettingsApply(immediate: true);
+        }
+
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape && _xInputCaptureComboBox != null)
+            {
+                CancelXInputCapture();
+                e.Handled = true;
+            }
+        }
+
+        private void BeginXInputCapture(
+            ComboBox comboBox,
+            XInputBindingOption previous,
+            XInputBindingOption command)
+        {
+            CancelXInputCapture();
+            _xInputCaptureComboBox = comboBox;
+            _xInputCapturePreviousOption = previous ?? comboBox.Items
+                .Cast<XInputBindingOption>()
+                .First(option => option.Source == XInputBindingSource.None && !option.IsCaptureCommand);
+            _xInputCaptureCommandOption = command;
+            _xInputCaptureSuppressedSources = new HashSet<XInputBindingSource>();
+            _xInputCaptureBaselineReady = false;
+            _xInputCaptureDeadlineUtc = DateTime.UtcNow.AddSeconds(5);
+            command.SetDisplayName("等待手柄输入…");
+            comboBox.ToolTip = IsXInputJoystickComboBox(comboBox)
+                ? "请明显推动左摇杆或右摇杆；按 Esc 取消"
+                : "请按下手柄按钮或扣动扳机；按 Esc 取消";
+            UpdateXInputPreview(comboBox);
+        }
+
+        private void UpdateXInputCapture(XInputPhysicalState physicalInput)
+        {
+            if (_xInputCaptureComboBox == null)
+            {
+                return;
+            }
+            if (CheckXInputCaptureTimeout())
+            {
+                return;
+            }
+            if (physicalInput == null || !physicalInput.Connected)
+            {
+                _xInputCaptureBaselineReady = false;
+                _xInputCaptureSuppressedSources.Clear();
+                return;
+            }
+
+            HashSet<XInputBindingSource> active = GetActiveXInputSources(
+                physicalInput,
+                IsXInputJoystickComboBox(_xInputCaptureComboBox));
+            if (!_xInputCaptureBaselineReady)
+            {
+                _xInputCaptureSuppressedSources = active;
+                _xInputCaptureBaselineReady = true;
+                return;
+            }
+
+            _xInputCaptureSuppressedSources.RemoveWhere(source => !active.Contains(source));
+            XInputBindingSource? captured = active
+                .Where(source => !_xInputCaptureSuppressedSources.Contains(source))
+                .Cast<XInputBindingSource?>()
+                .FirstOrDefault();
+            if (captured.HasValue)
+            {
+                CompleteXInputCapture(captured.Value);
+            }
+        }
+
+        private bool CheckXInputCaptureTimeout()
+        {
+            if (_xInputCaptureComboBox != null && DateTime.UtcNow >= _xInputCaptureDeadlineUtc)
+            {
+                CancelXInputCapture();
+                return true;
+            }
+            return false;
+        }
+
+        private void CompleteXInputCapture(XInputBindingSource source)
+        {
+            ComboBox comboBox = _xInputCaptureComboBox;
+            XInputBindingOption option = comboBox?.Items
+                .Cast<XInputBindingOption>()
+                .FirstOrDefault(candidate => !candidate.IsCaptureCommand && candidate.Source == source);
+            if (comboBox == null || option == null)
+            {
+                CancelXInputCapture();
+                return;
+            }
+
+            ClearXInputCaptureState();
+            _loadingXInputFields = true;
+            try
+            {
+                comboBox.SelectedItem = option;
+            }
+            finally
+            {
+                _loadingXInputFields = false;
+            }
+            UpdateXInputPreview(comboBox);
+            ScheduleXInputSettingsApply(immediate: true);
+        }
+
+        private void CancelXInputCapture()
+        {
+            ComboBox comboBox = _xInputCaptureComboBox;
+            XInputBindingOption previous = _xInputCapturePreviousOption;
+            ClearXInputCaptureState();
+            if (comboBox == null || previous == null)
+            {
+                return;
+            }
+
+            _loadingXInputFields = true;
+            try
+            {
+                comboBox.SelectedItem = previous;
+            }
+            finally
+            {
+                _loadingXInputFields = false;
+            }
+            UpdateXInputPreview(comboBox);
+        }
+
+        private void ClearXInputCaptureState()
+        {
+            ComboBox comboBox = _xInputCaptureComboBox;
+            if (_xInputCaptureCommandOption != null)
+            {
+                _xInputCaptureCommandOption.SetDisplayName("操作手柄以绑定…");
+            }
+            if (comboBox != null)
+            {
+                comboBox.ToolTip = null;
+            }
+            _xInputCaptureComboBox = null;
+            _xInputCapturePreviousOption = null;
+            _xInputCaptureCommandOption = null;
+            _xInputCaptureSuppressedSources = null;
+            _xInputCaptureBaselineReady = false;
+        }
+
+        private bool IsXInputJoystickComboBox(ComboBox comboBox)
+        {
+            return comboBox == XInputLeftJoystickComboBox ||
+                comboBox == XInputRightJoystickComboBox;
+        }
+
+        private static HashSet<XInputBindingSource> GetActiveXInputSources(
+            XInputPhysicalState state,
+            bool joystickOnly)
+        {
+            var active = new HashSet<XInputBindingSource>();
+            if (joystickOnly)
+            {
+                if (GetVectorMagnitude(state.LeftStickX, state.LeftStickY) >= XInputCaptureActivationThreshold)
+                {
+                    active.Add(XInputBindingSource.LeftStick);
+                }
+                if (GetVectorMagnitude(state.RightStickX, state.RightStickY) >= XInputCaptureActivationThreshold)
+                {
+                    active.Add(XInputBindingSource.RightStick);
+                }
+                return active;
+            }
+
+            AddPressedXInputSource(active, state.Buttons, XInputA, XInputBindingSource.A);
+            AddPressedXInputSource(active, state.Buttons, XInputB, XInputBindingSource.B);
+            AddPressedXInputSource(active, state.Buttons, XInputX, XInputBindingSource.X);
+            AddPressedXInputSource(active, state.Buttons, XInputY, XInputBindingSource.Y);
+            AddPressedXInputSource(active, state.Buttons, XInputDPadUp, XInputBindingSource.DPadUp);
+            AddPressedXInputSource(active, state.Buttons, XInputDPadDown, XInputBindingSource.DPadDown);
+            AddPressedXInputSource(active, state.Buttons, XInputDPadLeft, XInputBindingSource.DPadLeft);
+            AddPressedXInputSource(active, state.Buttons, XInputDPadRight, XInputBindingSource.DPadRight);
+            AddPressedXInputSource(active, state.Buttons, XInputLeftThumb, XInputBindingSource.LeftStickClick);
+            AddPressedXInputSource(active, state.Buttons, XInputRightThumb, XInputBindingSource.RightStickClick);
+            AddPressedXInputSource(active, state.Buttons, XInputLeftShoulder, XInputBindingSource.LeftShoulder);
+            AddPressedXInputSource(active, state.Buttons, XInputRightShoulder, XInputBindingSource.RightShoulder);
+            AddPressedXInputSource(active, state.Buttons, XInputView, XInputBindingSource.View);
+            AddPressedXInputSource(active, state.Buttons, XInputMenu, XInputBindingSource.Menu);
+            if (state.LeftTrigger >= XInputCaptureActivationThreshold)
+            {
+                active.Add(XInputBindingSource.LeftTrigger);
+            }
+            if (state.RightTrigger >= XInputCaptureActivationThreshold)
+            {
+                active.Add(XInputBindingSource.RightTrigger);
+            }
+            return active;
+        }
+
+        private static void AddPressedXInputSource(
+            ISet<XInputBindingSource> active,
+            ushort buttons,
+            ushort mask,
+            XInputBindingSource source)
+        {
+            if ((buttons & mask) != 0)
+            {
+                active.Add(source);
+            }
+        }
+
+        private static double GetVectorMagnitude(float x, float y)
+        {
+            return Math.Sqrt(x * x + y * y);
+        }
+
+        private void RegisterXInputPreview(ComboBox comboBox, Image previewImage)
+        {
+            _xInputPreviewImages[comboBox] = previewImage;
+            comboBox.DropDownOpened += (_, __) =>
+            {
+                UpdateXInputPreview(comboBox);
+                _xInputHoverPreviewTimer.Start();
+            };
+            comboBox.DropDownClosed += (_, __) =>
+            {
+                UpdateXInputPreview(comboBox);
+                if (!_xInputPreviewImages.Keys.Any(candidate => candidate.IsDropDownOpen))
+                {
+                    _xInputHoverPreviewTimer.Stop();
+                }
+            };
+        }
+
+        private void UpdateHoveredXInputPreview()
+        {
+            ComboBox comboBox = _xInputPreviewImages.Keys.FirstOrDefault(
+                candidate => candidate.IsDropDownOpen);
+            if (comboBox == null)
+            {
+                _xInputHoverPreviewTimer.Stop();
+                return;
+            }
+
+            foreach (object option in comboBox.Items)
+            {
+                if (option is XInputBindingOption bindingOption &&
+                    comboBox.ItemContainerGenerator.ContainerFromItem(option) is ComboBoxItem item &&
+                    item.IsMouseOver)
+                {
+                    SetXInputPreview(comboBox, bindingOption);
+                    return;
+                }
+            }
+        }
+
+        private void UpdateXInputPreview(ComboBox comboBox)
+        {
+            SetXInputPreview(comboBox, comboBox.SelectedItem as XInputBindingOption);
+        }
+
+        private void SetXInputPreview(ComboBox comboBox, XInputBindingOption option)
+        {
+            if (!_xInputPreviewImages.TryGetValue(comboBox, out Image image))
+            {
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(option?.IconUri))
+            {
+                image.Source = null;
+                return;
+            }
+            if (!_xInputIconCache.TryGetValue(option.IconUri, out ImageSource source))
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.UriSource = new Uri(option.IconUri, UriKind.Absolute);
+                bitmap.EndInit();
+                bitmap.Freeze();
+                source = bitmap;
+                _xInputIconCache[option.IconUri] = source;
+            }
+            image.Source = source;
+        }
+
+        private void ResetXInputAnalogThresholdButton_Click(object sender, RoutedEventArgs e)
+        {
+            XInputAnalogThresholdSlider.Value = XInputConfiguration.DefaultAnalogPressThreshold * 100.0;
+        }
+
+        private void ResetLeftXInputBindingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ResetXInputHandBindings(
+                left: true,
+                "确定要将左手的全部按键绑定和触摸辅助设置恢复为默认值吗？",
+                "重置左手绑定");
+        }
+
+        private void ResetRightXInputBindingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ResetXInputHandBindings(
+                left: false,
+                "确定要将右手的全部按键绑定和触摸辅助设置恢复为默认值吗？",
+                "重置右手绑定");
+        }
+
+        private void ResetXInputHandBindings(bool left, string message, string title)
+        {
+            MessageBoxResult result = MessageBox.Show(
+                this,
+                message,
+                title,
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            CancelXInputCapture();
+            _loadingXInputFields = true;
+            try
+            {
+                LoadXInputMapping(
+                    left
+                        ? XInputConfiguration.CreateDefaultLeftMapping()
+                        : XInputConfiguration.CreateDefaultRightMapping(),
+                    left);
+            }
+            finally
+            {
+                _loadingXInputFields = false;
+            }
+            ScheduleXInputSettingsApply(immediate: true);
+        }
+
+        private void ScheduleXInputSettingsApply(bool immediate)
+        {
+            if (_loadingXInputFields || _isClosing || _xInputApplyTimer == null)
+            {
+                return;
+            }
+            _xInputApplyTimer.Stop();
+            _xInputApplyTimer.Interval = immediate
+                ? TimeSpan.FromMilliseconds(1)
+                : TimeSpan.FromMilliseconds(250);
+            _xInputApplyTimer.Start();
+        }
+
+        private async Task ApplyXInputSettingsAsync()
+        {
+            if (_xInputAutoApplyBusy)
+            {
+                _xInputAutoApplyQueued = true;
+                return;
+            }
+            if (_runtimeStatus == null)
+            {
+                return;
+            }
+
+            XInputConfiguration xInput = BuildXInputConfigurationFromFields();
+            var configuration = new RuntimeConfiguration
+            {
+                Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
+                ControllerHandSelectionPriority = _controllerHandSelectionPriority,
+                Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
+                Osc = CloneOscConfiguration(_workingOsc),
+                XInput = xInput
+            };
+            IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+            if (errors.Count != 0)
+            {
+                MessageBox.Show(this, string.Join(Environment.NewLine, errors), "XInput 设置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            _xInputAutoApplyBusy = true;
+            try
+            {
+                await _runtimeControlService.ApplyConfigurationAsync(configuration);
+                _workingXInput = CloneXInputConfiguration(xInput);
+                _loadedRuntimeRevision = -1;
+                await RefreshStatusAsync();
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(this, exception.Message, "保存 XInput 设置失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                _xInputAutoApplyBusy = false;
+                if (_xInputAutoApplyQueued)
+                {
+                    _xInputAutoApplyQueued = false;
+                    ScheduleXInputSettingsApply(immediate: true);
+                }
+            }
+        }
+
+        private XInputConfiguration BuildXInputConfigurationFromFields()
+        {
+            return new XInputConfiguration
+            {
+                AnalogPressThreshold = (float)(XInputAnalogThresholdSlider.Value / 100.0),
+                HapticMode = (XInputHapticModeComboBox.SelectedItem as XInputHapticModeOption)?.Mode
+                    ?? XInputHapticMode.PreserveHandedness,
+                Left = BuildXInputMapping(true),
+                Right = BuildXInputMapping(false)
+            };
+        }
+
+        private XInputHandMapping BuildXInputMapping(bool left)
+        {
+            return new XInputHandMapping
+            {
+                PrimaryButton = GetXInputSource(left ? XInputLeftPrimaryComboBox : XInputRightPrimaryComboBox),
+                SecondaryButton = GetXInputSource(left ? XInputLeftSecondaryComboBox : XInputRightSecondaryComboBox),
+                Joystick = GetXInputSource(left ? XInputLeftJoystickComboBox : XInputRightJoystickComboBox),
+                JoystickClick = GetXInputSource(left ? XInputLeftJoystickClickComboBox : XInputRightJoystickClickComboBox),
+                Trigger = GetXInputSource(left ? XInputLeftTriggerComboBox : XInputRightTriggerComboBox),
+                Grip = GetXInputSource(left ? XInputLeftGripComboBox : XInputRightGripComboBox),
+                MenuButton = GetXInputSource(left ? XInputLeftMenuComboBox : XInputRightMenuComboBox),
+                ThumbTouch = new XInputTouchAssistMapping
+                {
+                    ToggleSource = GetXInputSource(left ? XInputLeftThumbTouchComboBox : XInputRightThumbTouchComboBox),
+                    DefaultTouched = GetXInputTouchDefault(left ? XInputLeftThumbDefaultComboBox : XInputRightThumbDefaultComboBox)
+                },
+                IndexTouch = new XInputTouchAssistMapping
+                {
+                    ToggleSource = GetXInputSource(left ? XInputLeftIndexTouchComboBox : XInputRightIndexTouchComboBox),
+                    DefaultTouched = GetXInputTouchDefault(left ? XInputLeftIndexDefaultComboBox : XInputRightIndexDefaultComboBox)
+                }
+            };
+        }
+
+        private static bool GetXInputTouchDefault(ComboBox comboBox)
+        {
+            XInputTouchDefaultOption option = comboBox.SelectedItem as XInputTouchDefaultOption;
+            return option == null || option.Touched;
+        }
+
+        private XInputBindingSource GetXInputSource(ComboBox comboBox)
+        {
+            if (comboBox == _xInputCaptureComboBox && _xInputCapturePreviousOption != null)
+            {
+                return _xInputCapturePreviousOption.Source;
+            }
+            return (comboBox.SelectedItem as XInputBindingOption)?.Source ?? XInputBindingSource.None;
+        }
+
+        private static XInputConfiguration CloneXInputConfiguration(XInputConfiguration configuration)
+        {
+            XInputConfiguration source = configuration ?? XInputConfiguration.CreateDefault();
+            return new XInputConfiguration
+            {
+                AnalogPressThreshold = source.AnalogPressThreshold,
+                HapticMode = source.HapticMode,
+                Left = CloneXInputMapping(source.Left ?? XInputConfiguration.CreateDefaultLeftMapping()),
+                Right = CloneXInputMapping(source.Right ?? XInputConfiguration.CreateDefaultRightMapping())
+            };
+        }
+
+        private static XInputHandMapping CloneXInputMapping(XInputHandMapping mapping)
+        {
+            return new XInputHandMapping
+            {
+                PrimaryButton = mapping.PrimaryButton,
+                SecondaryButton = mapping.SecondaryButton,
+                Joystick = mapping.Joystick,
+                JoystickClick = mapping.JoystickClick,
+                Trigger = mapping.Trigger,
+                Grip = mapping.Grip,
+                MenuButton = mapping.MenuButton,
+                ThumbTouch = CloneXInputTouchAssist(mapping.ThumbTouch),
+                IndexTouch = CloneXInputTouchAssist(mapping.IndexTouch)
+            };
+        }
+
+        private static XInputTouchAssistMapping CloneXInputTouchAssist(XInputTouchAssistMapping mapping)
+        {
+            return mapping == null
+                ? new XInputTouchAssistMapping()
+                : new XInputTouchAssistMapping
+                {
+                    ToggleSource = mapping.ToggleSource,
+                    DefaultTouched = mapping.DefaultTouched
+                };
+        }
+
         private enum GizmoMode
         {
             None,
@@ -4377,6 +5321,7 @@ namespace TrackSwap
             SteamVr,
             Devices,
             Osc,
+            XInput,
             Advanced
         }
 
@@ -4466,6 +5411,73 @@ namespace TrackSwap
                 DisplayName = displayName;
             }
             public OscResetTimeout Timeout { get; }
+            public string DisplayName { get; }
+            public override string ToString() { return DisplayName; }
+        }
+
+        private sealed class XInputBindingOption : System.ComponentModel.INotifyPropertyChanged
+        {
+            private const string IconBaseUri =
+                "pack://application:,,,/TrackSwap;component/Assets/ThirdParty/Xelu/Xbox%20Series/";
+            private string _displayName;
+
+            public XInputBindingOption(
+                XInputBindingSource source,
+                string displayName,
+                string iconFileName,
+                bool isCaptureCommand = false)
+            {
+                Source = source;
+                _displayName = displayName;
+                IconUri = string.IsNullOrWhiteSpace(iconFileName)
+                    ? null
+                    : IconBaseUri + iconFileName;
+                IsCaptureCommand = isCaptureCommand;
+            }
+
+            public XInputBindingSource Source { get; }
+            public string DisplayName => _displayName;
+            public string IconUri { get; }
+            public bool IsCaptureCommand { get; }
+            public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+            public void SetDisplayName(string value)
+            {
+                if (string.Equals(_displayName, value, StringComparison.Ordinal))
+                {
+                    return;
+                }
+                _displayName = value;
+                PropertyChanged?.Invoke(
+                    this,
+                    new System.ComponentModel.PropertyChangedEventArgs(nameof(DisplayName)));
+            }
+
+            public override string ToString() { return DisplayName; }
+        }
+
+        private sealed class XInputTouchDefaultOption
+        {
+            public XInputTouchDefaultOption(bool touched, string displayName)
+            {
+                Touched = touched;
+                DisplayName = displayName;
+            }
+
+            public bool Touched { get; }
+            public string DisplayName { get; }
+            public override string ToString() { return DisplayName; }
+        }
+
+        private sealed class XInputHapticModeOption
+        {
+            public XInputHapticModeOption(XInputHapticMode mode, string displayName)
+            {
+                Mode = mode;
+                DisplayName = displayName;
+            }
+
+            public XInputHapticMode Mode { get; }
             public string DisplayName { get; }
             public override string ToString() { return DisplayName; }
         }

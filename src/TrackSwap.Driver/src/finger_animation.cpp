@@ -27,34 +27,44 @@ HandAnimationState ComputeTargets(const control_protocol::ControllerInputState& 
 {
     const float stickActivity = Clamp01(std::sqrt(
         input.joystickX * input.joystickX + input.joystickY * input.joystickY));
+    const bool explicitTouch = input.hasExplicitTouchState != 0;
+    const bool secondaryContact = explicitTouch ? input.secondaryTouch != 0 : input.secondaryButton != 0;
+    const bool primaryContact = explicitTouch ? input.primaryTouch != 0 : input.primaryButton != 0;
+    const bool joystickContact = explicitTouch
+        ? input.joystickTouch != 0
+        : input.joystickClick != 0 || stickActivity > 0.05F;
+    const bool menuContact = explicitTouch ? input.menuTouch != 0 : input.menuButton != 0;
     float thumbCurl = 0.0F;
     float thumbSplay = 0.0F;
-    if (input.secondaryButton != 0)
+    if (secondaryContact)
     {
         thumbCurl = 0.35F;
         thumbSplay = 0.45F;
     }
-    else if (input.primaryButton != 0)
+    else if (primaryContact)
     {
         thumbCurl = 0.5F;
         thumbSplay = 0.05F;
     }
-    else if (input.joystickClick != 0 || stickActivity > 0.05F)
+    else if (joystickContact)
     {
         thumbCurl = 0.3F + 0.1F * Clamp01(-input.joystickY);
         thumbSplay = -0.45F + 0.1F * std::clamp(input.joystickX, -1.0F, 1.0F);
     }
-    else if (input.menuButton != 0)
+    else if (menuContact)
     {
         thumbCurl = 0.75F;
         thumbSplay = 0.15F;
     }
+    else if (explicitTouch && input.thumbRestTouch != 0)
+    {
+        thumbCurl = 0.22F;
+        thumbSplay = 0.28F;
+    }
     const float index = input.triggerValue > 0.0F
         ? Clamp01(input.triggerValue)
-        : (input.triggerClick != 0 ? 1.0F : 0.0F);
-    const float grip = input.gripValue > 0.0F
-        ? Clamp01(input.gripValue)
-        : (input.gripClick != 0 ? 1.0F : 0.0F);
+        : (explicitTouch && input.triggerTouch != 0 ? 0.12F : 0.0F);
+    const float grip = Clamp01(input.gripValue);
     return {
         { thumbCurl, index, grip, grip, grip },
         {

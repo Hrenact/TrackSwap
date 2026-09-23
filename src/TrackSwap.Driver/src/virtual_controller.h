@@ -38,6 +38,7 @@ public:
     void QueueInput(const control_protocol::ControllerInputState& input);
     control_protocol::TelemetrySnapshot GetTelemetry() const;
     std::uint8_t LogicalSlot() const;
+    bool MatchesHapticComponent(vr::VRInputComponentHandle_t handle) const;
     void Update();
 
     vr::EVRInitError Activate(std::uint32_t objectId) override;
@@ -92,14 +93,13 @@ private:
     vr::VRInputComponentHandle_t joystickClickHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t joystickTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t triggerValueHandle_ = vr::k_ulInvalidInputComponentHandle;
-    vr::VRInputComponentHandle_t triggerClickHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t triggerTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t gripValueHandle_ = vr::k_ulInvalidInputComponentHandle;
-    vr::VRInputComponentHandle_t gripClickHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t gripTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t menuHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t menuTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t thumbrestTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t hapticHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t skeletonHandle_ = vr::k_ulInvalidInputComponentHandle;
     MyHandSimulation handSimulation_;
     finger_animation::HandAnimationState handAnimation_{};

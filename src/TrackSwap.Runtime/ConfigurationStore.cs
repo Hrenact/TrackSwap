@@ -27,14 +27,18 @@ internal sealed class ConfigurationStore
             removedLegacyOscAddresses |= RemoveProperty(osc, "left");
             removedLegacyOscAddresses |= RemoveProperty(osc, "right");
         }
+        bool addedXInputTouchAssistDefaults = EnsureXInputTouchAssistDefaults(root);
         RuntimeConfiguration? configuration = root.ToObject<RuntimeConfiguration>(
             JsonSerializer.Create(RuntimeJson.Settings));
         EnsureValid(configuration);
-        if (removedLegacyOscAddresses)
+        bool expectedOscEnabled = OscConfiguration.IsRequiredForRoutes(configuration!.Routes);
+        bool normalizedOscEnabled = configuration.Osc.Enabled != expectedOscEnabled;
+        configuration.Osc.Enabled = expectedOscEnabled;
+        if (removedLegacyOscAddresses || addedXInputTouchAssistDefaults || normalizedOscEnabled)
         {
-            Save(configuration!);
+            Save(configuration);
         }
-        return configuration!;
+        return configuration;
     }
 
     public void Save(RuntimeConfiguration configuration)
@@ -98,6 +102,59 @@ internal sealed class ConfigurationStore
         }
         property.Remove();
         return true;
+    }
+
+    private static bool EnsureXInputTouchAssistDefaults(JObject root)
+    {
+        if (root.GetValue("xInput", StringComparison.OrdinalIgnoreCase) is not JObject xInput)
+        {
+            return false;
+        }
+
+        JsonSerializer serializer = JsonSerializer.Create(RuntimeJson.Settings);
+        bool changed = false;
+        changed |= EnsureXInputHandDefaults(
+            xInput,
+            "left",
+            XInputConfiguration.CreateDefaultLeftMapping(),
+            serializer);
+        changed |= EnsureXInputHandDefaults(
+            xInput,
+            "right",
+            XInputConfiguration.CreateDefaultRightMapping(),
+            serializer);
+        return changed;
+    }
+
+    private static bool EnsureXInputHandDefaults(
+        JObject xInput,
+        string propertyName,
+        XInputHandMapping defaults,
+        JsonSerializer serializer)
+    {
+        JToken? handToken = xInput.GetValue(propertyName, StringComparison.OrdinalIgnoreCase);
+        if (handToken == null)
+        {
+            xInput[propertyName] = JToken.FromObject(defaults, serializer);
+            return true;
+        }
+        if (handToken is not JObject hand)
+        {
+            return false;
+        }
+
+        bool changed = false;
+        if (hand.GetValue("thumbTouch", StringComparison.OrdinalIgnoreCase) == null)
+        {
+            hand["thumbTouch"] = JToken.FromObject(defaults.ThumbTouch, serializer);
+            changed = true;
+        }
+        if (hand.GetValue("indexTouch", StringComparison.OrdinalIgnoreCase) == null)
+        {
+            hand["indexTouch"] = JToken.FromObject(defaults.IndexTouch, serializer);
+            changed = true;
+        }
+        return changed;
     }
 
 }

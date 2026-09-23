@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace TrackSwap.Protocol
 {
@@ -22,6 +24,15 @@ namespace TrackSwap.Protocol
         {
             return new OscConfiguration();
         }
+
+        public static bool IsRequiredForRoutes(IEnumerable<RouteConfiguration>? routes)
+        {
+            return routes?.Any(route =>
+                route != null &&
+                route.Enabled &&
+                route.Mode == RouteMode.VirtualController &&
+                route.ControlInputSource == ControlInputSource.Osc) == true;
+        }
     }
 
     public sealed class OscControllerAddresses
@@ -35,9 +46,7 @@ namespace TrackSwap.Protocol
             JoystickY = prefix + "joystick/y";
             JoystickClick = prefix + "joystick/click";
             TriggerValue = prefix + "trigger/value";
-            TriggerClick = prefix + "trigger/click";
             GripValue = prefix + "grip/value";
-            GripClick = prefix + "grip/click";
             MenuButton = prefix + "button/menu";
         }
 
@@ -47,9 +56,7 @@ namespace TrackSwap.Protocol
         public string JoystickY { get; }
         public string JoystickClick { get; }
         public string TriggerValue { get; }
-        public string TriggerClick { get; }
         public string GripValue { get; }
-        public string GripClick { get; }
         public string MenuButton { get; }
 
         public static OscControllerAddresses ForHand(ControllerHand hand)
@@ -73,10 +80,16 @@ namespace TrackSwap.Protocol
         public float TriggerValue { get; set; }
         public float GripValue { get; set; }
         public bool JoystickClick { get; set; }
-        public bool TriggerClick { get; set; }
-        public bool GripClick { get; set; }
         public bool PrimaryButton { get; set; }
         public bool SecondaryButton { get; set; }
         public bool MenuButton { get; set; }
+        public bool HasExplicitTouchState { get; set; }
+        public bool JoystickTouch { get; set; }
+        public bool TriggerTouch { get; set; }
+        public bool GripTouch { get; set; }
+        public bool PrimaryTouch { get; set; }
+        public bool SecondaryTouch { get; set; }
+        public bool MenuTouch { get; set; }
+        public bool ThumbRestTouch { get; set; }
     }
 }

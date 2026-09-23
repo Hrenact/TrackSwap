@@ -149,6 +149,7 @@ namespace TrackSwap.Protocol
 
             ValidateCycles(configuration.Routes, errors);
             ValidateOsc(configuration.Osc, errors);
+            ValidateXInput(configuration.XInput, errors);
 
             return errors;
         }
@@ -172,6 +173,75 @@ namespace TrackSwap.Protocol
             if (!Enum.IsDefined(typeof(OscResetTimeout), configuration.ResetTimeout))
             {
                 errors.Add("OSC 无信号复位时间无效。");
+            }
+        }
+
+        private static void ValidateXInput(XInputConfiguration? configuration, ICollection<string> errors)
+        {
+            if (configuration == null)
+            {
+                errors.Add("XInput 配置不能为空。");
+                return;
+            }
+            if (float.IsNaN(configuration.AnalogPressThreshold) ||
+                float.IsInfinity(configuration.AnalogPressThreshold) ||
+                configuration.AnalogPressThreshold < XInputConfiguration.MinimumAnalogPressThreshold ||
+                configuration.AnalogPressThreshold > XInputConfiguration.MaximumAnalogPressThreshold)
+            {
+                errors.Add("XInput 模拟输入触发阈值必须在 5% 到 95% 之间。");
+            }
+            if (!Enum.IsDefined(typeof(XInputHapticMode), configuration.HapticMode))
+            {
+                errors.Add("XInput 震动映射无效。");
+            }
+            ValidateXInputMapping(configuration.Left, "左手", errors);
+            ValidateXInputMapping(configuration.Right, "右手", errors);
+        }
+
+        private static void ValidateXInputMapping(
+            XInputHandMapping? mapping,
+            string handName,
+            ICollection<string> errors)
+        {
+            if (mapping == null)
+            {
+                errors.Add($"XInput {handName}映射不能为空。");
+                return;
+            }
+            if (!XInputConfiguration.IsJoystickSource(mapping.Joystick))
+            {
+                errors.Add($"XInput {handName}摇杆必须映射到左摇杆、右摇杆或无。");
+            }
+            XInputBindingSource[] buttonSources =
+            {
+                mapping.PrimaryButton,
+                mapping.SecondaryButton,
+                mapping.JoystickClick,
+                mapping.Trigger,
+                mapping.Grip,
+                mapping.MenuButton
+            };
+            if (buttonSources.Any(source => !XInputConfiguration.IsButtonOrScalarSource(source)))
+            {
+                errors.Add($"XInput {handName}按键映射包含不受支持的输入来源。");
+            }
+            ValidateXInputTouchAssist(mapping.ThumbTouch, handName + "大拇指", errors);
+            ValidateXInputTouchAssist(mapping.IndexTouch, handName + "食指", errors);
+        }
+
+        private static void ValidateXInputTouchAssist(
+            XInputTouchAssistMapping? mapping,
+            string fingerName,
+            ICollection<string> errors)
+        {
+            if (mapping == null)
+            {
+                errors.Add($"XInput {fingerName}触摸辅助不能为空。");
+                return;
+            }
+            if (!XInputConfiguration.IsButtonOrScalarSource(mapping.ToggleSource))
+            {
+                errors.Add($"XInput {fingerName}触摸辅助包含不受支持的输入来源。");
             }
         }
 

@@ -39,6 +39,11 @@ namespace TrackSwap.Services
             return SendAsync<OscRuntimeStatus>("getOscStatus", new { });
         }
 
+        public Task<XInputRuntimeStatus> GetXInputStatusAsync()
+        {
+            return SendAsync<XInputRuntimeStatus>("getXInputStatus", new { });
+        }
+
         public Task<CalibrationCaptureResponse> CaptureCalibrationAsync(CalibrationCaptureRequest request)
         {
             return SendAsync<CalibrationCaptureResponse>("captureCalibration", request);
@@ -110,7 +115,7 @@ namespace TrackSwap.Services
             }
             if (executable == null)
             {
-                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v007 程序包。";
+                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v008 程序包。";
                 return false;
             }
 

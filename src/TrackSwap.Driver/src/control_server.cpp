@@ -247,7 +247,9 @@ void ControlServer::Run()
             control_protocol::Header request{};
             std::array<char, control_protocol::MaximumPayloadBytes + 1> payload{};
             control_protocol::TelemetryBatch telemetry{};
+            control_protocol::HapticFeedbackBatch hapticEvents{};
             bool telemetryResponse = false;
+            bool hapticResponse = false;
             bool valid = ReadExactly(pipe, &request, sizeof(request), stopping_) &&
                 request.magic == control_protocol::Magic &&
                 request.version == control_protocol::Version &&
@@ -414,9 +416,18 @@ void ControlServer::Run()
                         std::isfinite(input.joystickY) && input.joystickY >= -1.0F && input.joystickY <= 1.0F &&
                         std::isfinite(input.triggerValue) && input.triggerValue >= 0.0F && input.triggerValue <= 1.0F &&
                         std::isfinite(input.gripValue) && input.gripValue >= 0.0F && input.gripValue <= 1.0F &&
-                        input.joystickClick <= 1 && input.triggerClick <= 1 && input.gripClick <= 1 &&
+                        input.joystickClick <= 1 &&
                         input.primaryButton <= 1 && input.secondaryButton <= 1 && input.menuButton <= 1;
                     if (valid) valid = registry_->QueueControllerInput(input);
+                }
+            }
+            else if (valid && request.messageType == control_protocol::GetHapticEventsMessageType)
+            {
+                valid = request.payloadBytes == 1;
+                if (valid)
+                {
+                    hapticEvents = registry_->GetHapticEvents();
+                    hapticResponse = true;
                 }
             }
             else
@@ -429,9 +440,13 @@ void ControlServer::Run()
             const char* responseText = valid ? Accepted : Rejected;
             const void* responsePayload = telemetryResponse
                 ? static_cast<const void*>(&telemetry)
+                : hapticResponse
+                    ? static_cast<const void*>(&hapticEvents)
                 : static_cast<const void*>(responseText);
             const std::uint32_t responseBytes = telemetryResponse
                 ? static_cast<std::uint32_t>(sizeof(telemetry))
+                : hapticResponse
+                    ? static_cast<std::uint32_t>(sizeof(hapticEvents))
                 : static_cast<std::uint32_t>(std::strlen(responseText));
             control_protocol::Header response{
                 control_protocol::Magic,

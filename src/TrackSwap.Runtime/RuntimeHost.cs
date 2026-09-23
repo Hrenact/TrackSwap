@@ -19,7 +19,7 @@ internal static class RuntimeHost
             Path.Combine(configurationDirectory, "calibration-profiles.json"));
         var telemetrySampler = new TelemetrySampler();
         using var oscInput = new OscInputService(configuration.Osc, configuration.Routes);
-        using var xInput = new XInputInputService(configuration.Routes);
+        using var xInput = new XInputInputService(configuration.Routes, configuration.XInput);
         using var cancellation = new CancellationTokenSource();
         var server = new RuntimePipeServer(
             store,

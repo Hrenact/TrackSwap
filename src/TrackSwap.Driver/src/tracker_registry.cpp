@@ -1,6 +1,10 @@
 #include "tracker_registry.h"
 
+#include "controller_input_routing.h"
+
 #include <openvr_driver.h>
+
+#include <cmath>
 
 namespace trackswap
 {
@@ -51,7 +55,15 @@ bool TrackerRegistry::QueueControllerInput(const control_protocol::ControllerInp
     const std::size_t index = input.hand == static_cast<std::uint8_t>(ControllerHand::Left) ? 0U :
         input.hand == static_cast<std::uint8_t>(ControllerHand::Right) ? 1U : 2U;
     if (index >= controllers_.size()) return false;
-    controllers_[index]->QueueInput(input);
+    std::lock_guard<std::mutex> lock(controllerInputMutex_);
+    controllerInputs_[index] = input;
+    controllers_[0]->QueueInput(controller_input_routing::BuildLeftInput(
+        controllerInputs_[0],
+        controllerInputs_[1]));
+    if (index == 1U)
+    {
+        controllers_[1]->QueueInput(controller_input_routing::BuildRightInput(controllerInputs_[1]));
+    }
     return true;
 }
 
@@ -135,8 +147,64 @@ control_protocol::TelemetryBatch TrackerRegistry::GetTelemetry() const
     return batch;
 }
 
+control_protocol::HapticFeedbackBatch TrackerRegistry::GetHapticEvents()
+{
+    control_protocol::HapticFeedbackBatch batch{};
+    std::size_t readIndex = hapticReadIndex_.load(std::memory_order_relaxed);
+    const std::size_t writeIndex = hapticWriteIndex_.load(std::memory_order_acquire);
+    while (readIndex != writeIndex && batch.count < control_protocol::MaximumHapticEvents)
+    {
+        batch.events[batch.count++] = hapticQueue_[readIndex];
+        readIndex = (readIndex + 1) % HapticQueueCapacity;
+    }
+    hapticReadIndex_.store(readIndex, std::memory_order_release);
+    return batch;
+}
+
+void TrackerRegistry::QueueHapticEvent(const vr::VREvent_t& event)
+{
+    std::uint8_t hand = 0;
+    if (controllers_[0]->MatchesHapticComponent(event.data.hapticVibration.componentHandle))
+    {
+        hand = static_cast<std::uint8_t>(ControllerHand::Left);
+    }
+    else if (controllers_[1]->MatchesHapticComponent(event.data.hapticVibration.componentHandle))
+    {
+        hand = static_cast<std::uint8_t>(ControllerHand::Right);
+    }
+    if (hand == 0 ||
+        !std::isfinite(event.data.hapticVibration.fDurationSeconds) ||
+        !std::isfinite(event.data.hapticVibration.fFrequency) ||
+        !std::isfinite(event.data.hapticVibration.fAmplitude))
+    {
+        return;
+    }
+
+    const std::size_t writeIndex = hapticWriteIndex_.load(std::memory_order_relaxed);
+    const std::size_t nextIndex = (writeIndex + 1) % HapticQueueCapacity;
+    if (nextIndex == hapticReadIndex_.load(std::memory_order_acquire))
+    {
+        return;
+    }
+    hapticQueue_[writeIndex] = {
+        ++hapticSequence_,
+        hand,
+        event.data.hapticVibration.fDurationSeconds,
+        event.data.hapticVibration.fFrequency,
+        event.data.hapticVibration.fAmplitude};
+    hapticWriteIndex_.store(nextIndex, std::memory_order_release);
+}
+
 void TrackerRegistry::RunFrame()
 {
+    vr::VREvent_t event{};
+    while (vr::VRServerDriverHost()->PollNextEvent(&event, sizeof(event)))
+    {
+        if (event.eventType == vr::VREvent_Input_HapticVibration)
+        {
+            QueueHapticEvent(event);
+        }
+    }
     for (std::size_t slot = 0; slot < directTrackers_.size(); ++slot)
     {
         if (!directRegistered_[slot] && directRegistrationRequested_[slot].exchange(false))

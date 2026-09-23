@@ -38,6 +38,12 @@
                 <TextBlock Text="{Binding StatusDisplayName}" Foreground="{StaticResource TextBrush}" TextTrimming="CharacterEllipsis" />
             </StackPanel>
         </DataTemplate>
+        <DataTemplate x:Key="XInputBindingOptionTemplate">
+            <TextBlock VerticalAlignment="Center"
+                       Foreground="{StaticResource TextBrush}"
+                       Text="{Binding DisplayName}"
+                       TextTrimming="CharacterEllipsis" />
+        </DataTemplate>
         <Style x:Key="SidebarRouteItemStyle" TargetType="ListBoxItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="0" />
@@ -156,14 +162,17 @@
         </Style>
     </Window.Resources>
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="28" />
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="240" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
-        <Border Grid.Column="0" Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+        <Border Grid.Row="0" Grid.Column="0" Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
             <Grid Margin="20,24,16,18">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -172,21 +181,7 @@
                 <StackPanel Margin="8,0,0,0">
                     <TextBlock Text="配置列表" FontSize="18" FontWeight="Medium" />
                 </StackPanel>
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,24,0,24">
-                    <Border x:Name="SteamVrBadge" Background="Transparent" Padding="0">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="SteamVrDot" Width="8" Height="8" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
-                            <TextBlock x:Name="SteamVrStatusText" Text="SteamVR" Margin="7,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
-                        </StackPanel>
-                    </Border>
-                    <Border x:Name="RuntimeBadge" Background="Transparent" Padding="0" Margin="14,0,0,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="RuntimeDot" Width="8" Height="8" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
-                            <TextBlock x:Name="RuntimeStatusText" Text="Runtime" Margin="7,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-                <Grid Grid.Row="2" Margin="7,0,1,9">
+                <Grid Grid.Row="1" Margin="7,20,1,9">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -194,7 +189,7 @@
                     <TextBlock x:Name="RouteCountText" Text="00 / 16" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="12" VerticalAlignment="Center" />
                     <Button Grid.Column="1" x:Name="AddRouteButton" Content="＋ 新增" Padding="7,5" Background="Transparent" BorderThickness="0" Click="AddRouteButton_Click" />
                 </Grid>
-                <ListBox Grid.Row="3" x:Name="RouteListBox" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource SidebarRouteItemStyle}" SelectionChanged="RouteListBox_SelectionChanged" PreviewMouseRightButtonDown="RouteListBox_PreviewMouseRightButtonDown" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox Grid.Row="2" x:Name="RouteListBox" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource SidebarRouteItemStyle}" SelectionChanged="RouteListBox_SelectionChanged" PreviewMouseRightButtonDown="RouteListBox_PreviewMouseRightButtonDown" ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
@@ -223,10 +218,10 @@
                         </ContextMenu>
                     </ListBox.ContextMenu>
                 </ListBox>
-                <Button Grid.Row="4" x:Name="SettingsNavigationButton" Content="设置" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Center" Click="SettingsNavigationButton_Click" />
+                <Button Grid.Row="3" x:Name="SettingsNavigationButton" Content="设置" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Center" Click="SettingsNavigationButton_Click" />
             </Grid>
         </Border>
-        <Grid Grid.Column="1">
+        <Grid Grid.Row="0" Grid.Column="1">
             <Grid x:Name="RuntimeLoadingStateGrid" Visibility="Collapsed">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="30" MaxWidth="520">
                     <TextBlock Text="正在读取配置…" FontSize="20" FontWeight="Medium" HorizontalAlignment="Center" />
@@ -434,6 +429,7 @@
                         <Button x:Name="SettingsSteamVrCategoryButton" Content="SteamVR" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsDevicesCategoryButton" Content="设备记录" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsOscCategoryButton" Content="OSC" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                        <Button x:Name="SettingsXInputCategoryButton" Content="XInput" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsAdvancedCategoryButton" Content="高级选项" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                     </StackPanel>
                     <Border Grid.Column="1" Background="{StaticResource BorderBrush}" />
@@ -468,8 +464,8 @@
                                                 <TextBlock x:Name="RuntimeAppliedStateText" Text="未知" Margin="0,4,0,0" />
                                             </StackPanel>
                                         </Grid>
-                                        <Grid Margin="0,12,0,0">
-                                            <Grid.ColumnDefinitions>
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
@@ -634,14 +630,16 @@
                                 <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <StackPanel>
                                         <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="170"/><ColumnDefinition Width="12"/><ColumnDefinition Width="110"/><ColumnDefinition Width="12"/><ColumnDefinition Width="170"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="170"/></Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="OSC 接收器" FontSize="15" FontWeight="Medium" />
-                                                <CheckBox x:Name="OscEnabledCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="启用 OSC 输入" Margin="0,10,0,0" />
+                                                <Grid Margin="0,10,0,0" HorizontalAlignment="Left">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="12"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions>
+                                                    <StackPanel><TextBlock Text="监听地址" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscListenAddressTextBox" Margin="0,6,0,0"/></StackPanel>
+                                                    <StackPanel Grid.Column="2"><TextBlock Text="端口" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscPortTextBox" Margin="0,6,0,0"/></StackPanel>
+                                                </Grid>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="1"><TextBlock Text="监听地址" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscListenAddressTextBox" Margin="0,6,0,0"/></StackPanel>
-                                            <StackPanel Grid.Column="3"><TextBlock Text="端口" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscPortTextBox" Margin="0,6,0,0"/></StackPanel>
-                                            <StackPanel Grid.Column="5"><TextBlock Text="无信号时复位" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><ComboBox x:Name="OscResetTimeoutComboBox" Margin="0,6,0,0"/></StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Bottom"><TextBlock Text="无信号时复位" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><ComboBox x:Name="OscResetTimeoutComboBox" Margin="0,6,0,0"/></StackPanel>
                                         </Grid>
                                     </StackPanel>
                                 </Border>
@@ -665,13 +663,9 @@
                                             <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftJoystickClickIndicator" Height="32"/><TextBox x:Name="OscLeftJoystickClickTextBox" Grid.Column="2"/></Grid>
                                             <TextBlock Text="扳机值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
                                             <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftTriggerValueIndicator" Mode="Scalar" Height="32"/><TextBox x:Name="OscLeftTriggerValueTextBox" Grid.Column="2"/></Grid>
-                                            <TextBlock Text="扳机按下" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
-                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftTriggerClickIndicator" Height="32"/><TextBox x:Name="OscLeftTriggerClickTextBox" Grid.Column="2"/></Grid>
                                             <TextBlock Text="抓握值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
                                             <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftGripValueIndicator" Mode="Scalar" Height="32"/><TextBox x:Name="OscLeftGripValueTextBox" Grid.Column="2"/></Grid>
-                                            <TextBlock Text="抓握按下" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
-                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftGripClickIndicator" Height="32"/><TextBox x:Name="OscLeftGripClickTextBox" Grid.Column="2"/></Grid>
-                                            <TextBlock Text="菜单键" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <TextBlock Text="系统键" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
                                             <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftMenuIndicator" Height="32"/><TextBox x:Name="OscLeftMenuTextBox" Grid.Column="2"/></Grid>
                                         </StackPanel>
                                     </Border>
@@ -688,14 +682,113 @@
                                             <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightJoystickClickIndicator" Height="32"/><TextBox x:Name="OscRightJoystickClickTextBox" Grid.Column="2"/></Grid>
                                             <TextBlock Text="扳机值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
                                             <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightTriggerValueIndicator" Mode="Scalar" Height="32"/><TextBox x:Name="OscRightTriggerValueTextBox" Grid.Column="2"/></Grid>
-                                            <TextBlock Text="扳机按下" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
-                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightTriggerClickIndicator" Height="32"/><TextBox x:Name="OscRightTriggerClickTextBox" Grid.Column="2"/></Grid>
                                             <TextBlock Text="抓握值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
                                             <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightGripValueIndicator" Mode="Scalar" Height="32"/><TextBox x:Name="OscRightGripValueTextBox" Grid.Column="2"/></Grid>
-                                            <TextBlock Text="抓握按下" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
-                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightGripClickIndicator" Height="32"/><TextBox x:Name="OscRightGripClickTextBox" Grid.Column="2"/></Grid>
-                                            <TextBlock Text="菜单键" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <TextBlock Text="系统键（输出至左手）" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
                                             <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightMenuIndicator" Height="32"/><TextBox x:Name="OscRightMenuTextBox" Grid.Column="2"/></Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel x:Name="XInputSettingsPanel" Visibility="Collapsed">
+                                <TextBlock Text="XInput" FontSize="18" FontWeight="Medium" />
+                                <TextBlock Text="将一个标准游戏手柄的输入映射到左右虚拟控制器。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="220" />
+                                            <ColumnDefinition Width="54" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,24,0">
+                                            <TextBlock Text="模拟输入触发阈值" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"><Run Text="LT、RT 映射到按键类输入时使用此阈值，"/><LineBreak/><Run Text="并在松开时自动保留 5% 回差。"/></TextBlock>
+                                        </StackPanel>
+                                        <Slider Grid.Column="1"
+                                                x:Name="XInputAnalogThresholdSlider"
+                                                Minimum="5"
+                                                Maximum="95"
+                                                TickFrequency="1"
+                                                IsSnapToTickEnabled="True"
+                                                VerticalAlignment="Center"
+                                                ValueChanged="XInputAnalogThresholdSlider_ValueChanged" />
+                                        <TextBlock Grid.Column="2" x:Name="XInputAnalogThresholdText" Text="50%" Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Consolas" />
+                                        <Button Grid.Column="3" Content="恢复默认" Margin="8,0,0,0" VerticalAlignment="Center" Click="ResetXInputAnalogThresholdButton_Click" />
+                                    </Grid>
+                                </Border>
+                                <Border Margin="0,12,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="260" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,24,0">
+                                            <TextBlock Text="震动映射" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Text="决定左右虚拟控制器的震动如何映射到游戏手柄的两颗马达。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  x:Name="XInputHapticModeComboBox"
+                                                  VerticalAlignment="Center"
+                                                  SelectionChanged="XInputHapticModeComboBox_SelectionChanged" />
+                                    </Grid>
+                                </Border>
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.Resources>
+                                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                            <Setter Property="VerticalAlignment" Value="Center" />
+                                        </Style>
+                                    </Grid.Resources>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="左手映射" FontSize="15" FontWeight="Medium" VerticalAlignment="Center"/><Button Grid.Column="1" Content="重置绑定" Padding="10,5" Click="ResetLeftXInputBindingsButton_Click"/></Grid>
+                                            <TextBlock Text="X" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputLeftPrimaryIndicator" Mode="IconBoolean"/><Image x:Name="XInputLeftPrimaryPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputLeftPrimaryComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="Y" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputLeftSecondaryIndicator" Mode="IconBoolean"/><Image x:Name="XInputLeftSecondaryPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputLeftSecondaryComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="摇杆 X / Y" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Image x:Name="XInputLeftJoystickPreviewImage" Width="40" Height="40" Stretch="Uniform"><Image.RenderTransform><TranslateTransform x:Name="XInputLeftJoystickTransform"/></Image.RenderTransform></Image></Border><ComboBox x:Name="XInputLeftJoystickComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="摇杆按下" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputLeftJoystickClickIndicator" Mode="IconBoolean"/><Image x:Name="XInputLeftJoystickClickPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputLeftJoystickClickComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="扳机值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputLeftTriggerIndicator" Mode="IconScalar"/><Image x:Name="XInputLeftTriggerPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputLeftTriggerComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="抓握值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputLeftGripIndicator" Mode="IconScalar"/><Image x:Name="XInputLeftGripPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputLeftGripComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="系统键" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputLeftMenuIndicator" Mode="IconBoolean"/><Image x:Name="XInputLeftMenuPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputLeftMenuComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <Border Height="1" Margin="0,16,0,14" Background="{StaticResource BorderBrush}"/>
+                                            <TextBlock Text="触摸辅助" FontSize="15" FontWeight="Medium" Margin="0,0,0,12"/>
+                                            <TextBlock Text="大拇指" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputLeftThumbTouchIndicator" Mode="IconBoolean"/><Image x:Name="XInputLeftThumbTouchPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputLeftThumbTouchComboBox" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="XInputMappingComboBox_SelectionChanged"/><ComboBox x:Name="XInputLeftThumbDefaultComboBox" Grid.Column="4" VerticalAlignment="Center" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="食指" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputLeftIndexTouchIndicator" Mode="IconBoolean"/><Image x:Name="XInputLeftIndexTouchPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputLeftIndexTouchComboBox" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="XInputMappingComboBox_SelectionChanged"/><ComboBox x:Name="XInputLeftIndexDefaultComboBox" Grid.Column="4" VerticalAlignment="Center" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="2" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="右手映射" FontSize="15" FontWeight="Medium" VerticalAlignment="Center"/><Button Grid.Column="1" Content="重置绑定" Padding="10,5" Click="ResetRightXInputBindingsButton_Click"/></Grid>
+                                            <TextBlock Text="A" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputRightPrimaryIndicator" Mode="IconBoolean"/><Image x:Name="XInputRightPrimaryPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputRightPrimaryComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="B" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputRightSecondaryIndicator" Mode="IconBoolean"/><Image x:Name="XInputRightSecondaryPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputRightSecondaryComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="摇杆 X / Y" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Image x:Name="XInputRightJoystickPreviewImage" Width="40" Height="40" Stretch="Uniform"><Image.RenderTransform><TranslateTransform x:Name="XInputRightJoystickTransform"/></Image.RenderTransform></Image></Border><ComboBox x:Name="XInputRightJoystickComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="摇杆按下" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputRightJoystickClickIndicator" Mode="IconBoolean"/><Image x:Name="XInputRightJoystickClickPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputRightJoystickClickComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="扳机值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputRightTriggerIndicator" Mode="IconScalar"/><Image x:Name="XInputRightTriggerPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputRightTriggerComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="抓握值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputRightGripIndicator" Mode="IconScalar"/><Image x:Name="XInputRightGripPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputRightGripComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="系统键（输出至左手）" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputRightMenuIndicator" Mode="IconBoolean"/><Image x:Name="XInputRightMenuPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputRightMenuComboBox" Grid.Column="2" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <Border Height="1" Margin="0,16,0,14" Background="{StaticResource BorderBrush}"/>
+                                            <TextBlock Text="触摸辅助" FontSize="15" FontWeight="Medium" Margin="0,0,0,12"/>
+                                            <TextBlock Text="大拇指" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputRightThumbTouchIndicator" Mode="IconBoolean"/><Image x:Name="XInputRightThumbTouchPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputRightThumbTouchComboBox" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="XInputMappingComboBox_SelectionChanged"/><ComboBox x:Name="XInputRightThumbDefaultComboBox" Grid.Column="4" VerticalAlignment="Center" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="食指" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="46"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><Border Width="46" Height="46" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True"><Grid><controls:OscSignalIndicator x:Name="XInputRightIndexTouchIndicator" Mode="IconBoolean"/><Image x:Name="XInputRightIndexTouchPreviewImage" Width="40" Height="40" Stretch="Uniform"/></Grid></Border><ComboBox x:Name="XInputRightIndexTouchComboBox" Grid.Column="2" VerticalAlignment="Center" SelectionChanged="XInputMappingComboBox_SelectionChanged"/><ComboBox x:Name="XInputRightIndexDefaultComboBox" Grid.Column="4" VerticalAlignment="Center" SelectionChanged="XInputMappingComboBox_SelectionChanged"/></Grid>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -783,5 +876,33 @@
                 <ScrollViewer x:Name="MainScrollViewer" Height="0" Visibility="Collapsed" />
             </Grid>
         </Grid>
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="#161616" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                <Border x:Name="SteamVrBadge" Background="Transparent" Padding="0" ToolTip="SteamVR 未运行">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="SteamVrDot" Width="7" Height="7" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="SteamVrStatusText" Text="SteamVR" Margin="6,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="RuntimeBadge" Background="Transparent" Padding="0" Margin="18,0,0,0" ToolTip="Runtime 未运行">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="RuntimeDot" Width="7" Height="7" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="RuntimeStatusText" Text="Runtime" Margin="6,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="OscStatusBadge" Background="Transparent" Padding="0" Margin="18,0,0,0" ToolTip="OSC 未启用">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="OscStatusDot" Width="7" Height="7" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="OscStatusText" Text="OSC" Margin="6,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="XInputStatusBadge" Background="Transparent" Padding="0" Margin="18,0,0,0" ToolTip="XInput 未启用">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="XInputStatusDot" Width="7" Height="7" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="XInputStatusText" Text="XInput" Margin="6,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

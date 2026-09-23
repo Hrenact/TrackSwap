@@ -292,7 +292,7 @@ public sealed class ConfigurationValidatorTests
     {
         Assert.Equal(0x50575354U, DriverControlProtocol.Magic);
         Assert.Equal(20, DriverControlProtocol.HeaderBytes);
-        Assert.Equal(5, DriverControlProtocol.Version);
+        Assert.Equal(6, DriverControlProtocol.Version);
         Assert.Equal(73, DriverControlProtocol.ApplyControllerSnapshotFixedBytes);
         Assert.Equal(
             0x8001,
@@ -325,6 +325,29 @@ public sealed class ConfigurationValidatorTests
         Assert.Contains(errors, error => error.Contains("控制字符", StringComparison.Ordinal) &&
             error.Contains("targetDevicePath", StringComparison.Ordinal));
         Assert.Contains(errors, error => error.Contains("驱动通信长度限制", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RejectsXInputThresholdOutsideSupportedRange()
+    {
+        RuntimeConfiguration configuration = CreateConfiguration();
+        configuration.XInput.AnalogPressThreshold = 0.99f;
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(errors, error => error.Contains("XInput", StringComparison.Ordinal) &&
+            error.Contains("5% 到 95%", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RejectsStickAsScalarXInputSource()
+    {
+        RuntimeConfiguration configuration = CreateConfiguration();
+        configuration.XInput.Left.Trigger = XInputBindingSource.RightStick;
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(errors, error => error.Contains("XInput 左手按键映射", StringComparison.Ordinal));
     }
 
     private static RuntimeConfiguration CreateConfiguration()

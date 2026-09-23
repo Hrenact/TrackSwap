@@ -12,5 +12,6 @@ namespace TrackSwap.Protocol
         public string? LastError { get; set; }
         public RuntimeConfiguration Configuration { get; set; } = new RuntimeConfiguration();
         public OscRuntimeStatus Osc { get; set; } = new OscRuntimeStatus();
+        public XInputRuntimeStatus XInput { get; set; } = new XInputRuntimeStatus();
     }
 }

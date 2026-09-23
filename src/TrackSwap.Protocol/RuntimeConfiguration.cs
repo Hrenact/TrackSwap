@@ -10,5 +10,6 @@ namespace TrackSwap.Protocol
         public int ControllerHandSelectionPriority { get; set; } = ProtocolConstants.DefaultControllerHandSelectionPriority;
         public List<RouteConfiguration> Routes { get; set; } = new List<RouteConfiguration>();
         public OscConfiguration Osc { get; set; } = OscConfiguration.CreateDefault();
+        public XInputConfiguration XInput { get; set; } = XInputConfiguration.CreateDefault();
     }
 }

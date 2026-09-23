@@ -2,7 +2,7 @@
 
 TrackSwap 是一个轻量的 Windows 工具，用来管理 SteamVR 的设备位姿映射。
 
-当前版本：**TrackSwap v007**
+当前版本：**TrackSwap v008**
 
 简单来说，它可以把一个设备的位置和旋转数据输出为虚拟 Tracker、替换另一个设备的位姿，或驱动一对虚拟控制器。例如：
 
@@ -92,9 +92,9 @@ SteamVR 运行时删除配置会先进入“待删除”状态，代理继续输
 
 ## OSC 虚拟控制器输入
 
-在“设置 → OSC”中可以启用接收器、选择监听地址与端口，并设置无信号时的复位时间。默认仅监听 `127.0.0.1:9015`。OSC 本身没有身份验证或加密，不建议在不可信网络接口上监听。
+在“设置 → OSC”中可以选择监听地址与端口，并设置无信号时的复位时间。只要存在已启用且选择 OSC 的虚拟控制器配置，接收器就会自动启用；不再需要单独的开关。默认仅监听 `127.0.0.1:9015`。OSC 本身没有身份验证或加密，不建议在不可信网络接口上监听。
 
-左、右手使用固定的 `/trackswap/left/` 与 `/trackswap/right/` 参数前缀，采用 Oculus Touch 的标准面键布局：左手为 X/Y，右手为 A/B；两手均支持摇杆 X/Y 与按下、扳机值与按下、抓握值与按下以及菜单键。完整参数地址会显示在设置页中，可选中复制但不可修改，也不会写入 `runtime-config.json`。设置页的状态条和摇杆十字轴以约 30 Hz 显示收到的值。
+左、右手使用固定的 `/trackswap/left/` 与 `/trackswap/right/` 参数前缀，采用 Oculus Touch 的标准面键布局：左手为 X/Y，右手为 A/B；两手均支持摇杆 X/Y 与按下、扳机值、抓握值以及菜单键。扳机和抓握只公开连续值与触摸状态，不再公开合成的 Click；两手菜单键按逻辑 OR 合并到左手 System，避免一侧松开覆盖另一侧仍按住的状态。完整参数地址会显示在设置页中，可选中复制但不可修改，也不会写入 `runtime-config.json`。设置页的状态条和摇杆十字轴以约 30 Hz 显示收到的值。
 
 虚拟控制器采用 Oculus Touch 兼容输入档案，并根据 Touch 的控件语义合成标准 SteamVR 手部骨骼：摇杆、X/Y 或 A/B 与菜单键分别给出不同的拇指落点，扳机驱动食指，抓握值驱动中指、无名指和小指；其余四指还会从伸直时略微张开，随弯曲逐步收拢。TrackSwap 会同时发布 Touch 风格的按钮、摇杆、扳机和抓握触摸状态；对缺少电容感应的 OSC 与 XInput 来源，这些触摸状态由按下或模拟量活动推断。有限复位时间到期后，对应手会回到完整中立状态。
 
@@ -102,7 +102,11 @@ SteamVR 中的设备身份保持为独立的 `TrackSwap Controller`，同时声�
 
 ## XInput 虚拟控制器输入
 
-选择“XInput”后，Runtime 会在后台使用编号最小的已连接 XInput 手柄，并把一只标准 Xbox 控制器拆分给左右虚拟手柄：左、右摇杆分别控制对应手的摇杆；左右肩键分别控制对应手的扳机；左右模拟扳机分别控制对应手的抓握；View 键作为左手菜单键，Menu 键作为右手菜单键。面键按位置直接映射为 `X/Y → 左手 X/Y`、`A/B → 右手 A/B`。手柄断开时，使用 XInput 的手会立即回到中立状态。
+选择“XInput”后，Runtime 会在后台使用编号最小的已连接 XInput 手柄。默认映射把一只标准 Xbox 控制器拆分给左右虚拟手柄：左、右摇杆分别控制对应手的摇杆；左右肩键分别控制对应手的扳机；左右模拟扳机分别控制对应手的抓握；View 与 Menu 最终合并到左手系统键；面键按位置映射为 `X/Y → 左手 X/Y`、`A/B → 右手 A/B`。这些映射可在“设置 → XInput”中分别修改，也可以选择“操作手柄以绑定…”后直接按下目标按键；手柄断开时，使用 XInput 的手会立即回到中立状态。
+
+XInput 设置还提供左右手独立的拇指与食指触摸辅助。每项都可选择物理辅助键和“默认接触 / 默认抬起”，按住辅助键时临时反转；若同一个物理键同时承担真实控制器输入，真实输入优先，触摸辅助会忽略该键。
+
+虚拟控制器同时接收游戏发出的 SteamVR 震动事件，并由 Runtime 回传到 XInput 手柄。设置中的“震动映射”可选择保留左右手对应关系、交换左右对应关系，或把当前较强的手部反馈统一发送到两颗马达。手柄断开、路由切换或 Runtime 退出时会立即停止震动。
 
 ## 备份与恢复
 
@@ -143,7 +147,7 @@ steamvr.vrsettings.trackswap-20260917-114817-123.backup
 
 项目使用 WPF、.NET Framework 4.8 和 Newtonsoft.Json。
 
-`main` 保留稳定的 v001 历史。v002、v003、v004、v005、v006、v007 已发布；后续开发继续在
+`main` 保留稳定的 v001 历史。v002、v003、v004、v005、v006、v007、v008 已发布；后续开发继续在
 `v002-runtime` 分支进行，架构契约见
 [`docs/v002-architecture.md`](docs/v002-architecture.md)，驱动开发闭环见
 [`docs/driver-development.md`](docs/driver-development.md)。普通构建不会安装或注册驱动。
@@ -187,14 +191,14 @@ dotnet build TrackSwap.sln -c Release
 生成完整的 Windows x64 发布包、ZIP 和 SHA-256 文件：
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version v007 -Clean
+.\scripts\Build-Release.ps1 -Version v008 -Clean
 ```
 
 安装 Inno Setup 6 后，生成发布包、Windows 安装程序及其 SHA-256 文件：
 
 ```powershell
 winget install --id JRSoftware.InnoSetup --exact
-.\scripts\Build-Installer.ps1 -Version v007 -Clean
+.\scripts\Build-Installer.ps1 -Version v008 -Clean
 ```
 
 安装程序采用按用户安装，默认目录为 `%LOCALAPPDATA%\Programs\TrackSwap`。安装与卸载都要求
@@ -214,7 +218,7 @@ src\TrackSwap\bin\Release\net48\TrackSwap.exe
 
 ## 版本规则
 
-TrackSwap 使用连续编号：`v001`、`v002`、`v003`、`v004`、`v005`、`v006`、`v007`……不区分主版本、次版本或预发布状态。
+TrackSwap 使用连续编号：`v001`、`v002`、`v003`、`v004`、`v005`、`v006`、`v007`、`v008`……不区分主版本、次版本或预发布状态。
 
 推送与项目版本一致的 `vNNN` Git 标签后，GitHub Actions 会自动构建 Windows x64 Release、生成 ZIP 压缩包和 SHA-256 校验文件，并发布对应的 GitHub Release。
 

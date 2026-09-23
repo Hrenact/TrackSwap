@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 
 #include "control_protocol.h"
 #include "pose_math.h"
@@ -36,6 +37,7 @@ public:
         std::uint64_t revision);
     bool QueueControllerInput(const control_protocol::ControllerInputState& input);
     control_protocol::TelemetryBatch GetTelemetry() const;
+    control_protocol::HapticFeedbackBatch GetHapticEvents();
     void RunFrame();
 
 private:
@@ -47,7 +49,16 @@ private:
     std::array<bool, control_protocol::MaximumRoutes> proxyRegistered_{};
     std::array<std::atomic<bool>, control_protocol::MaximumRoutes> activeProxy_{};
     std::array<std::unique_ptr<VirtualController>, 2> controllers_;
+    std::array<control_protocol::ControllerInputState, 2> controllerInputs_{};
+    std::mutex controllerInputMutex_;
     std::array<std::atomic<bool>, 2> controllerRegistrationRequested_{};
     std::array<bool, 2> controllerRegistered_{};
+    static constexpr std::size_t HapticQueueCapacity = control_protocol::MaximumHapticEvents + 1;
+    std::array<control_protocol::HapticFeedbackEvent, HapticQueueCapacity> hapticQueue_{};
+    std::atomic<std::size_t> hapticReadIndex_{0};
+    std::atomic<std::size_t> hapticWriteIndex_{0};
+    std::uint64_t hapticSequence_ = 0;
+
+    void QueueHapticEvent(const vr::VREvent_t& event);
 };
 } // namespace trackswap

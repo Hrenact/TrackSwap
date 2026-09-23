@@ -103,6 +103,7 @@ internal sealed class RuntimePipeServer
                 "applyConfiguration" => ApplyConfiguration(request),
                 "getStatus" => CreateStatus(request.RequestId),
                 "getOscStatus" => CreateOscStatus(request.RequestId),
+                "getXInputStatus" => CreateXInputStatus(request.RequestId),
                 "getTelemetry" => GetTelemetry(request),
                 "captureCalibration" => CaptureCalibration(request, cancellationToken),
                 "listCalibrationProfiles" => ListCalibrationProfiles(request.RequestId),
@@ -219,11 +220,12 @@ internal sealed class RuntimePipeServer
         {
             throw new InvalidDataException("配置修订号必须递增。");
         }
+        candidate.Osc.Enabled = OscConfiguration.IsRequiredForRoutes(candidate.Routes);
         store.Save(candidate);
         configuration = candidate;
         synchronizer.Update(candidate);
         oscInput?.Update(candidate.Osc, candidate.Routes);
-        xInput?.Update(candidate.Routes);
+        xInput?.Update(candidate.XInput, candidate.Routes);
         return new MessageEnvelope
         {
             MessageType = "configurationApplied",
@@ -246,7 +248,8 @@ internal sealed class RuntimePipeServer
             {
                 Enabled = configuration.Osc.Enabled,
                 Endpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.Port
-            }
+            },
+            XInput = xInput?.GetStatus() ?? new XInputRuntimeStatus()
         };
         return new MessageEnvelope
         {
@@ -266,6 +269,17 @@ internal sealed class RuntimePipeServer
         return new MessageEnvelope
         {
             MessageType = "oscStatus",
+            RequestId = requestId,
+            PayloadJson = JsonConvert.SerializeObject(status, RuntimeJson.Settings)
+        };
+    }
+
+    private MessageEnvelope CreateXInputStatus(string requestId)
+    {
+        XInputRuntimeStatus status = xInput?.GetStatus() ?? new XInputRuntimeStatus();
+        return new MessageEnvelope
+        {
+            MessageType = "xInputStatus",
             RequestId = requestId,
             PayloadJson = JsonConvert.SerializeObject(status, RuntimeJson.Settings)
         };

@@ -29,6 +29,7 @@ internal sealed class OscInputService : IDisposable
         IEnumerable<RouteConfiguration>? initialRoutes = null)
     {
         configuration = Clone(initialConfiguration);
+        configuration.Enabled = OscConfiguration.IsRequiredForRoutes(initialRoutes);
         UpdateActiveInputsLocked(initialRoutes);
     }
 
@@ -39,6 +40,7 @@ internal sealed class OscInputService : IDisposable
             bool resetLeft = leftInputEnabled || HasOscInputRoute(routes, ControllerHand.Left);
             bool resetRight = rightInputEnabled || HasOscInputRoute(routes, ControllerHand.Right);
             configuration = Clone(value);
+            configuration.Enabled = OscConfiguration.IsRequiredForRoutes(routes);
             UpdateActiveInputsLocked(routes);
             configurationVersion++;
             listener?.Dispose();
@@ -240,8 +242,6 @@ internal sealed class OscInputService : IDisposable
         else if (value.Address == addresses.TriggerValue) state.TriggerValue = unsigned;
         else if (value.Address == addresses.GripValue) state.GripValue = unsigned;
         else if (value.Address == addresses.JoystickClick) state.JoystickClick = pressed;
-        else if (value.Address == addresses.TriggerClick) state.TriggerClick = pressed;
-        else if (value.Address == addresses.GripClick) state.GripClick = pressed;
         else if (value.Address == addresses.PrimaryButton) state.PrimaryButton = pressed;
         else if (value.Address == addresses.SecondaryButton) state.SecondaryButton = pressed;
         else if (value.Address == addresses.MenuButton) state.MenuButton = pressed;
@@ -269,11 +269,17 @@ internal sealed class OscInputService : IDisposable
             TriggerValue = value.TriggerValue,
             GripValue = value.GripValue,
             JoystickClick = value.JoystickClick,
-            TriggerClick = value.TriggerClick,
-            GripClick = value.GripClick,
             PrimaryButton = value.PrimaryButton,
             SecondaryButton = value.SecondaryButton,
-            MenuButton = value.MenuButton
+            MenuButton = value.MenuButton,
+            HasExplicitTouchState = value.HasExplicitTouchState,
+            JoystickTouch = value.JoystickTouch,
+            TriggerTouch = value.TriggerTouch,
+            GripTouch = value.GripTouch,
+            PrimaryTouch = value.PrimaryTouch,
+            SecondaryTouch = value.SecondaryTouch,
+            MenuTouch = value.MenuTouch,
+            ThumbRestTouch = value.ThumbRestTouch
         };
     }
 

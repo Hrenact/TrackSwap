@@ -27,9 +27,35 @@ namespace TrackSwap.Services
                     ApplicationsInterfaceVersion);
 
                 AddApplicationManifest addManifest = GetTableFunction<AddApplicationManifest>(applicationsTable, 0);
+                RemoveApplicationManifest removeManifest = GetTableFunction<RemoveApplicationManifest>(applicationsTable, 1);
                 IdentifyApplication identifyApplication = GetTableFunction<IdentifyApplication>(applicationsTable, 11);
                 SetApplicationAutoLaunch setAutoLaunch = GetTableFunction<SetApplicationAutoLaunch>(applicationsTable, 17);
-                EVRApplicationError addError = addManifest(Path.GetFullPath(manifestPath), false);
+                string fullManifestPath = Path.GetFullPath(manifestPath);
+
+                if (!enabled)
+                {
+                    EVRApplicationError disableError = setAutoLaunch(ApplicationKey, false);
+                    if (disableError != EVRApplicationError.None &&
+                        disableError != EVRApplicationError.UnknownApplication)
+                    {
+                        throw new InvalidOperationException("SteamVR 自动启动设置失败，错误码：" + (int)disableError);
+                    }
+
+                    // SteamVR may terminate any process whose executable belongs to a
+                    // registered dashboard-overlay manifest when the session ends,
+                    // even if that application's auto-launch flag is disabled. Remove
+                    // the manifest entirely so a manually opened TrackSwap process is
+                    // outside SteamVR's lifecycle ownership.
+                    EVRApplicationError removeError = removeManifest(fullManifestPath);
+                    if (removeError != EVRApplicationError.None &&
+                        removeError != EVRApplicationError.UnknownApplication)
+                    {
+                        throw new InvalidOperationException("SteamVR 应用清单注销失败，错误码：" + (int)removeError);
+                    }
+                    return disableError == EVRApplicationError.None;
+                }
+
+                EVRApplicationError addError = addManifest(fullManifestPath, false);
                 if (addError != EVRApplicationError.None &&
                     addError != EVRApplicationError.AppKeyAlreadyExists)
                 {
@@ -39,7 +65,7 @@ namespace TrackSwap.Services
                 identifyApplication(
                     unchecked((uint)System.Diagnostics.Process.GetCurrentProcess().Id),
                     ApplicationKey);
-                EVRApplicationError launchError = setAutoLaunch(ApplicationKey, enabled);
+                EVRApplicationError launchError = setAutoLaunch(ApplicationKey, true);
                 if (launchError == EVRApplicationError.UnknownApplication)
                 {
                     // SteamVR can defer a newly-added permanent manifest until its next
@@ -68,6 +94,10 @@ namespace TrackSwap.Services
         private delegate EVRApplicationError AddApplicationManifest(
             string applicationManifestFullPath,
             [MarshalAs(UnmanagedType.I1)] bool temporary);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Ansi)]
+        private delegate EVRApplicationError RemoveApplicationManifest(
+            string applicationManifestFullPath);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private delegate EVRApplicationError SetApplicationAutoLaunch(

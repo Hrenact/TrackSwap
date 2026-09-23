@@ -112,11 +112,17 @@ internal static class DriverControlClient
             writer.Write(state.TriggerValue);
             writer.Write(state.GripValue);
             writer.Write(state.JoystickClick ? (byte)1 : (byte)0);
-            writer.Write(state.TriggerClick ? (byte)1 : (byte)0);
-            writer.Write(state.GripClick ? (byte)1 : (byte)0);
             writer.Write(state.PrimaryButton ? (byte)1 : (byte)0);
             writer.Write(state.SecondaryButton ? (byte)1 : (byte)0);
             writer.Write(state.MenuButton ? (byte)1 : (byte)0);
+            writer.Write(state.HasExplicitTouchState ? (byte)1 : (byte)0);
+            writer.Write(state.JoystickTouch ? (byte)1 : (byte)0);
+            writer.Write(state.TriggerTouch ? (byte)1 : (byte)0);
+            writer.Write(state.GripTouch ? (byte)1 : (byte)0);
+            writer.Write(state.PrimaryTouch ? (byte)1 : (byte)0);
+            writer.Write(state.SecondaryTouch ? (byte)1 : (byte)0);
+            writer.Write(state.MenuTouch ? (byte)1 : (byte)0);
+            writer.Write(state.ThumbRestTouch ? (byte)1 : (byte)0);
         }
         return SendAccepted(DriverControlProtocol.ApplyControllerInputMessageType, payloadStream.ToArray(), timeout);
     }
@@ -128,6 +134,56 @@ internal static class DriverControlClient
             new byte[] { 0 },
             timeout);
         return ParseTelemetryBatch(payload);
+    }
+
+    public static IReadOnlyList<HapticFeedbackEvent> GetHapticEvents(TimeSpan timeout)
+    {
+        byte[] payload = SendBytes(
+            DriverControlProtocol.GetHapticEventsMessageType,
+            new byte[] { 0 },
+            timeout);
+        return ParseHapticFeedbackBatch(payload);
+    }
+
+    internal static IReadOnlyList<HapticFeedbackEvent> ParseHapticFeedbackBatch(byte[] payload)
+    {
+        if (payload == null || payload.Length != DriverControlProtocol.HapticFeedbackBatchBytes)
+        {
+            throw new IOException("驱动返回了无效的震动事件批次大小。");
+        }
+        int count = payload[0];
+        if (count < 0 || count > DriverControlProtocol.MaximumHapticEvents)
+        {
+            throw new IOException("驱动返回了无效的震动事件数量。");
+        }
+        var events = new List<HapticFeedbackEvent>(count);
+        using var stream = new MemoryStream(payload, 1, payload.Length - 1, writable: false);
+        using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: false);
+        for (int index = 0; index < DriverControlProtocol.MaximumHapticEvents; index++)
+        {
+            ulong sequence = reader.ReadUInt64();
+            ControllerHand hand = (ControllerHand)reader.ReadByte();
+            float durationSeconds = reader.ReadSingle();
+            float frequency = reader.ReadSingle();
+            float amplitude = reader.ReadSingle();
+            if (index >= count)
+            {
+                continue;
+            }
+            if (hand != ControllerHand.Left && hand != ControllerHand.Right)
+            {
+                throw new IOException("驱动返回了无效的震动事件手别。");
+            }
+            events.Add(new HapticFeedbackEvent
+            {
+                Sequence = sequence,
+                Hand = hand,
+                DurationSeconds = durationSeconds,
+                Frequency = frequency,
+                Amplitude = amplitude
+            });
+        }
+        return events;
     }
 
     internal static IReadOnlyList<PoseTelemetrySnapshot> ParseTelemetryBatch(byte[] payload)

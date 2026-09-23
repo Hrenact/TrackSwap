@@ -10,6 +10,7 @@
   "/input/grip": "Grip",
   "/input/system": "System Button",
   "/input/thumbrest": "Thumb Rest",
+  "/output/haptic": "Haptic Feedback",
   "/pose/raw": "Controller Pose",
   "/pose/base": "Controller Base",
   "/pose/handgrip": "Hand Grip Pose",

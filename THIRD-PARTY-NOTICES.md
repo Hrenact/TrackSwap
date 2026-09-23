@@ -2,6 +2,21 @@
 
 TrackSwap includes or interoperates with the following third-party software.
 
+## Xelu Free Controller Prompts
+
+Project: https://github.com/Haaldor/Xelu_prompts_SVG
+
+The Xbox Series controller prompt artwork under
+`src/TrackSwap/Assets/ThirdParty/Xelu/Xbox Series` originates from Nicolae
+(Xelu) Berbece's controller prompt pack. The SVG extraction and exported image
+collection were prepared by Haaldor. The included Xbox Series assets are made
+available under Creative Commons CC0 1.0 Universal. TrackSwap preserves the
+source package readme and the complete CC0 legal text beside the assets in
+`src/TrackSwap/Assets/ThirdParty/Xelu`.
+
+Only the Xbox Series subset is used here; the source package's separate warning
+about the font used by its Steam Deck artwork does not apply to these files.
+
 ## Inno Setup
 
 Project: https://jrsoftware.org/isinfo.php
