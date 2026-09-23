@@ -14,11 +14,12 @@ internal static class RuntimeHost
         RuntimeConfiguration configuration = store.Load();
         var synchronizer = new DriverSynchronizer(configuration);
         string configurationDirectory = Path.GetDirectoryName(store.Path)
-            ?? throw new InvalidDataException("Runtime configuration path has no parent directory.");
+            ?? throw new InvalidDataException("Runtime 配置路径没有上级目录。");
         var profileStore = new CalibrationProfileStore(
             Path.Combine(configurationDirectory, "calibration-profiles.json"));
         var telemetrySampler = new TelemetrySampler();
         using var oscInput = new OscInputService(configuration.Osc, configuration.Routes);
+        using var xInput = new XInputInputService(configuration.Routes);
         using var cancellation = new CancellationTokenSource();
         var server = new RuntimePipeServer(
             store,
@@ -28,7 +29,8 @@ internal static class RuntimeHost
             new OpenVrCalibrationService(),
             telemetrySampler,
             requestShutdown: cancellation.Cancel,
-            oscInput: oscInput);
+            oscInput: oscInput,
+            xInput: xInput);
         Console.CancelKeyPress += (_, eventArgs) =>
         {
             eventArgs.Cancel = true;
@@ -44,6 +46,7 @@ internal static class RuntimeHost
                 synchronizer.RunAsync(cancellation.Token),
                 telemetrySampler.RunAsync(cancellation.Token),
                 oscInput.RunAsync(cancellation.Token),
+                xInput.RunAsync(cancellation.Token),
                 server.RunAsync(cancellation.Token)
             };
             if (lifecycleMode.HasValue)

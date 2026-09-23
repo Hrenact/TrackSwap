@@ -39,6 +39,11 @@ try {
     "/devices/trackswap/TRKSWAP-PROXY-00": "/devices/test/target",
     "/devices/other/source": "/devices/other/target"
   },
+  "steam.app.438100": {
+    "trackswap_controller_250820_CurrentURL_steamvrinput": "vr-input-workshop://3806100634",
+    "trackswap_controller_250820_NeedToUpdateAutosave_steamvrinput": false,
+    "oculus_touch_250820_CurrentURL_steamvrinput": "keep-this-binding"
+  },
   "other": { "keep": true }
 }
 '@ | Set-Content `
@@ -90,6 +95,12 @@ try {
             '/devices/trackswap/TRKSWAP-PROXY-00' -or
         $uninstalledSettings.TrackingOverrides.'/devices/other/source' -ne
             '/devices/other/target' -or
+        $uninstalledSettings.'steam.app.438100'.PSObject.Properties.Name -contains
+            'trackswap_controller_250820_CurrentURL_steamvrinput' -or
+        $uninstalledSettings.'steam.app.438100'.PSObject.Properties.Name -contains
+            'trackswap_controller_250820_NeedToUpdateAutosave_steamvrinput' -or
+        $uninstalledSettings.'steam.app.438100'.oculus_touch_250820_CurrentURL_steamvrinput -ne
+            'keep-this-binding' -or
         -not $uninstalledSettings.other.keep) {
         throw ('Tracking override cleanup assertions failed: ' +
             ($uninstalledSettings | ConvertTo-Json -Depth 8 -Compress))

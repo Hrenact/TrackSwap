@@ -15,7 +15,7 @@ namespace trackswap
 class VirtualTracker final : public vr::ITrackedDeviceServerDriver
 {
 public:
-    explicit VirtualTracker(std::uint8_t slot);
+    VirtualTracker(std::uint8_t slot, bool proxyDevice);
 
     const char* SerialNumber() const;
 
@@ -78,6 +78,7 @@ private:
     control_protocol::TelemetrySnapshot telemetry_{};
     vr::DriverPose_t lastPose_{};
     std::uint8_t slot_ = 0;
+    bool proxyDevice_ = false;
     std::string serialNumber_;
     std::string registeredDeviceType_;
 };

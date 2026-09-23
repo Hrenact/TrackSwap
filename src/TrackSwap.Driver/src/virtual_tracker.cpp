@@ -32,9 +32,11 @@ trackswap::control_protocol::TelemetryPose ToTelemetryPose(const vr::TrackedDevi
 
 namespace trackswap
 {
-VirtualTracker::VirtualTracker(std::uint8_t slot)
+VirtualTracker::VirtualTracker(std::uint8_t slot, bool proxyDevice)
     : slot_(slot),
-      serialNumber_("TRKSWAP-PROXY-" + (slot < 10 ? std::string("0") : std::string()) + std::to_string(slot)),
+      proxyDevice_(proxyDevice),
+      serialNumber_((proxyDevice ? "TRKSWAP-PROXY-" : "TRKSWAP-TRACKER-") +
+          (slot < 10 ? std::string("0") : std::string()) + std::to_string(slot)),
       registeredDeviceType_("trackswap/" + serialNumber_)
 {
 }
@@ -131,9 +133,12 @@ vr::EVRInitError VirtualTracker::Activate(std::uint32_t objectId)
     objectId_ = objectId;
     const vr::PropertyContainerHandle_t properties =
         vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap Virtual Tracker");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_ModelNumber_String,
+        proxyDevice_ ? "TrackSwap Proxy Tracker" : "TrackSwap Virtual Tracker");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
-    SetRenderModelVisible(targetDevicePath_[0] == '\0', true);
+    SetRenderModelVisible(!proxyDevice_, true);
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_tracker");
     vr::VRProperties()->SetStringProperty(
@@ -350,7 +355,7 @@ void VirtualTracker::ApplyPendingSource()
         targetDevicePath_ = pendingTarget;
         if (!enabledChanged || pendingEnabled)
         {
-            SetRenderModelVisible(targetDevicePath_[0] == '\0');
+            SetRenderModelVisible(!proxyDevice_);
         }
         targetId_ = vr::k_unTrackedDeviceIndexInvalid;
         targetSearchCountdown_ = 0;

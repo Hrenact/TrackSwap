@@ -69,7 +69,7 @@ namespace TrackSwap.Services
             var payload = JsonConvert.DeserializeObject<AppliedRevision>(response.PayloadJson, JsonSettings);
             if (payload == null)
             {
-                throw new InvalidDataException("Runtime returned an empty apply response.");
+                throw new InvalidDataException("Runtime 返回了空的应用响应。");
             }
 
             return payload.Revision;
@@ -110,7 +110,7 @@ namespace TrackSwap.Services
             }
             if (executable == null)
             {
-                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v006 程序包。";
+                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v007 程序包。";
                 return false;
             }
 
@@ -149,7 +149,7 @@ namespace TrackSwap.Services
             T result = JsonConvert.DeserializeObject<T>(response.PayloadJson, JsonSettings);
             if (result == null)
             {
-                throw new InvalidDataException("Runtime returned an empty response.");
+                throw new InvalidDataException("Runtime 返回了空响应。");
             }
 
             return result;
@@ -185,7 +185,7 @@ namespace TrackSwap.Services
                     }
                     catch (OperationCanceledException exception)
                     {
-                        throw new TimeoutException("Runtime control request timed out.", exception);
+                        throw new TimeoutException("向 Runtime 发送控制请求超时。", exception);
                     }
 
                     string responseLine;
@@ -195,13 +195,13 @@ namespace TrackSwap.Services
                     }
                     catch (OperationCanceledException exception)
                     {
-                        throw new TimeoutException("Runtime control response timed out.", exception);
+                        throw new TimeoutException("等待 Runtime 控制响应超时。", exception);
                     }
                     MessageEnvelope response = JsonConvert.DeserializeObject<MessageEnvelope>(responseLine, JsonSettings);
                     if (response == null || response.ProtocolVersion != ProtocolConstants.CurrentProtocolVersion ||
                         !string.Equals(response.RequestId, requestId, StringComparison.Ordinal))
                     {
-                        throw new InvalidDataException("Runtime returned an invalid control envelope.");
+                        throw new InvalidDataException("Runtime 返回了无效的控制消息。");
                     }
 
                     return response;
@@ -222,7 +222,7 @@ namespace TrackSwap.Services
                 int read = await stream.ReadAsync(buffer, 0, 1, cancellationToken);
                 if (read == 0)
                 {
-                    throw new EndOfStreamException("Runtime closed the control connection before replying.");
+                    throw new EndOfStreamException("Runtime 在回复前关闭了控制连接。");
                 }
                 if (buffer[0] == (byte)'\n')
                 {
@@ -231,7 +231,7 @@ namespace TrackSwap.Services
                 bytes.Add(buffer[0]);
             }
 
-            throw new InvalidDataException("Runtime control response exceeds the configured limit.");
+            throw new InvalidDataException("Runtime 控制响应超过允许的大小限制。");
         }
 
         private static Exception CreateUnexpectedResponseException(MessageEnvelope response)
@@ -248,7 +248,7 @@ namespace TrackSwap.Services
             {
             }
 
-            return new InvalidDataException("Unexpected Runtime response: " + response.MessageType);
+            return new InvalidDataException("Runtime 返回了非预期响应：" + response.MessageType);
         }
 
         private sealed class AppliedRevision

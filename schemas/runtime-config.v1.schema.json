@@ -10,7 +10,7 @@
     "revision": { "type": "integer", "minimum": 0 },
     "routes": {
       "type": "array",
-      "maxItems": 8,
+      "maxItems": 16,
       "items": { "$ref": "#/$defs/route" }
     }
   },
@@ -24,7 +24,7 @@
         "name": { "type": "string", "maxLength": 64, "pattern": "^[^\\u0000-\\u001F\\u007F]*$" },
         "enabled": { "type": "boolean" },
         "pendingDeletion": { "type": "boolean" },
-        "virtualDeviceSlot": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "virtualDeviceSlot": { "type": "integer", "minimum": 0, "maximum": 15 },
         "sourceDevicePath": { "type": "string", "pattern": "^/devices/[^\\u0000-\\u001F\\u007F]+$" },
         "targetDevicePath": {
           "oneOf": [
@@ -40,9 +40,9 @@
       "additionalProperties": false,
       "required": ["translationX", "translationY", "translationZ", "rotationX", "rotationY", "rotationZ", "rotationW"],
       "properties": {
-        "translationX": { "type": "number", "minimum": -10, "maximum": 10 },
-        "translationY": { "type": "number", "minimum": -10, "maximum": 10 },
-        "translationZ": { "type": "number", "minimum": -10, "maximum": 10 },
+        "translationX": { "type": "number", "minimum": -1000, "maximum": 1000, "description": "Source-local translation in centimetres." },
+        "translationY": { "type": "number", "minimum": -1000, "maximum": 1000, "description": "Source-local translation in centimetres." },
+        "translationZ": { "type": "number", "minimum": -1000, "maximum": 1000, "description": "Source-local translation in centimetres." },
         "rotationX": { "type": "number" },
         "rotationY": { "type": "number" },
         "rotationZ": { "type": "number" },

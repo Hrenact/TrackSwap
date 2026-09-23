@@ -33,9 +33,9 @@ public sealed class CalibrationMathTests
 
         CalibrationComputation result = CalibrationMath.Average(samples);
 
-        Assert.Equal(0.1, result.Offset.TranslationX, 9);
-        Assert.Equal(-0.2, result.Offset.TranslationY, 9);
-        Assert.Equal(0.3, result.Offset.TranslationZ, 9);
+        Assert.Equal(10, result.Offset.TranslationX, 9);
+        Assert.Equal(-20, result.Offset.TranslationY, 9);
+        Assert.Equal(30, result.Offset.TranslationZ, 9);
         Assert.Equal(1, Math.Abs(result.Offset.RotationW), 9);
         Assert.Equal(0, result.TranslationRmsMetres, 9);
         Assert.Equal(0, result.RotationRmsDegrees, 9);

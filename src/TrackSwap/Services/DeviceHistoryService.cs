@@ -116,7 +116,7 @@ namespace TrackSwap.Services
         {
             return !string.IsNullOrWhiteSpace(devicePath) &&
                 devicePath.StartsWith("/devices/", StringComparison.Ordinal) &&
-                devicePath.IndexOf(ProtocolConstants.VirtualSerialPrefix, StringComparison.OrdinalIgnoreCase) < 0;
+                !ProtocolConstants.IsTrackSwapVirtualDevicePath(devicePath);
         }
 
         private sealed class DeviceHistoryRecord

@@ -1,5 +1,4 @@
 using System;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -34,45 +33,13 @@ namespace TrackSwap.Services
         private static OpenVrRenderModel LoadCore(string runtimePath, string renderModelName)
         {
             ValidateInteropLayout();
-            if (string.IsNullOrWhiteSpace(runtimePath))
-            {
-                throw new InvalidOperationException("未找到 SteamVR Runtime 路径。");
-            }
-
-            string libraryPath = Path.Combine(runtimePath, "bin", "win64", "openvr_api.dll");
-            if (!File.Exists(libraryPath))
-            {
-                throw new FileNotFoundException("未找到 OpenVR 运行库。", libraryPath);
-            }
-
-            IntPtr module = LoadLibrary(libraryPath);
-            if (module == IntPtr.Zero)
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "无法载入 OpenVR 运行库。");
-            }
-
-            bool initialized = false;
             IntPtr nativeModelPointer = IntPtr.Zero;
             IntPtr nativeTexturePointer = IntPtr.Zero;
             FreeRenderModel freeModel = null;
             FreeTexture freeTexture = null;
             try
             {
-                VRInitInternal init = GetExport<VRInitInternal>(module, "VR_InitInternal2");
-                VRGetGenericInterface getInterface = GetExport<VRGetGenericInterface>(module, "VR_GetGenericInterface");
-                EVRInitError initError = EVRInitError.None;
-                init(ref initError, EVRApplicationType.Utility, null);
-                if (initError != EVRInitError.None)
-                {
-                    throw new InvalidOperationException("OpenVR 初始化失败，错误码：" + (int)initError);
-                }
-
-                initialized = true;
-                IntPtr table = getInterface(RenderModelsInterfaceVersion, ref initError);
-                if (table == IntPtr.Zero || initError != EVRInitError.None)
-                {
-                    throw new InvalidOperationException("无法获取 OpenVR RenderModels 接口，错误码：" + (int)initError);
-                }
+                IntPtr table = OpenVrInterop.GetInterface(runtimePath, RenderModelsInterfaceVersion);
 
                 LoadRenderModelAsync loadModel = GetTableFunction<LoadRenderModelAsync>(table, 0);
                 freeModel = GetTableFunction<FreeRenderModel>(table, 1);
@@ -148,18 +115,6 @@ namespace TrackSwap.Services
                 {
                     freeModel(nativeModelPointer);
                 }
-                if (initialized)
-                {
-                    try
-                    {
-                        GetExport<VRShutdownInternal>(module, "VR_ShutdownInternal")();
-                    }
-                    catch
-                    {
-                        // SteamVR may be shutting down while a preview model is loading.
-                    }
-                }
-                FreeLibrary(module);
             }
         }
 
@@ -320,16 +275,6 @@ namespace TrackSwap.Services
             return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
-        private static T GetExport<T>(IntPtr module, string name) where T : class
-        {
-            IntPtr address = GetProcAddress(module, name);
-            if (address == IntPtr.Zero)
-            {
-                throw new EntryPointNotFoundException(name);
-            }
-            return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
-        }
-
         private static T GetTableFunction<T>(IntPtr table, int index) where T : class
         {
             IntPtr address = Marshal.ReadIntPtr(table, index * IntPtr.Size);
@@ -377,25 +322,6 @@ namespace TrackSwap.Services
             public ushort MipLevels;
         }
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr LoadLibrary(string fileName);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool FreeLibrary(IntPtr module);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
-        private static extern IntPtr GetProcAddress(IntPtr module, string procedureName);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate uint VRInitInternal(ref EVRInitError error, EVRApplicationType applicationType, string startupInfo);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate IntPtr VRGetGenericInterface(string interfaceVersion, ref EVRInitError error);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate void VRShutdownInternal();
-
         [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private delegate EVRRenderModelError LoadRenderModelAsync(string renderModelName, out IntPtr renderModel);
 
@@ -424,16 +350,6 @@ namespace TrackSwap.Services
             string componentName,
             StringBuilder componentRenderModelName,
             uint componentRenderModelNameCapacity);
-
-        private enum EVRApplicationType
-        {
-            Utility = 4
-        }
-
-        private enum EVRInitError
-        {
-            None = 0
-        }
 
         private enum EVRRenderModelError
         {

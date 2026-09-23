@@ -6,11 +6,15 @@ namespace trackswap
 {
 TrackerRegistry::TrackerRegistry()
 {
-    for (std::uint8_t slot = 0; slot < trackers_.size(); ++slot)
+    for (std::uint8_t slot = 0; slot < directTrackers_.size(); ++slot)
     {
-        trackers_[slot] = std::make_unique<VirtualTracker>(slot);
-        registrationRequested_[slot].store(false);
-        registered_[slot] = false;
+        directTrackers_[slot] = std::make_unique<VirtualTracker>(slot, false);
+        proxyTrackers_[slot] = std::make_unique<VirtualTracker>(slot, true);
+        directRegistrationRequested_[slot].store(false);
+        proxyRegistrationRequested_[slot].store(false);
+        directRegistered_[slot] = false;
+        proxyRegistered_[slot] = false;
+        activeProxy_[slot].store(false);
     }
     controllers_[0] = std::make_unique<VirtualController>(ControllerHand::Left);
     controllers_[1] = std::make_unique<VirtualController>(ControllerHand::Right);
@@ -26,13 +30,20 @@ bool TrackerRegistry::QueueControllerSnapshot(
     bool enabled,
     std::uint8_t logicalSlot,
     const char* sourceDevicePath,
+    std::int32_t handSelectionPriority,
     const pose_math::RigidOffset& offset,
     std::uint64_t revision)
 {
     const std::size_t index = hand == ControllerHand::Left ? 0U : hand == ControllerHand::Right ? 1U : 2U;
     if (index >= controllers_.size()) return false;
     if (enabled) controllerRegistrationRequested_[index].store(true);
-    return controllers_[index]->QueueSnapshot(enabled, logicalSlot, sourceDevicePath, offset, revision);
+    return controllers_[index]->QueueSnapshot(
+        enabled,
+        logicalSlot,
+        sourceDevicePath,
+        handSelectionPriority,
+        offset,
+        revision);
 }
 
 bool TrackerRegistry::QueueControllerInput(const control_protocol::ControllerInputState& input)
@@ -46,23 +57,25 @@ bool TrackerRegistry::QueueControllerInput(const control_protocol::ControllerInp
 
 bool TrackerRegistry::QueueSource(std::uint8_t slot, const char* sourceDevicePath)
 {
-    if (slot >= trackers_.size())
+    if (slot >= directTrackers_.size())
     {
         return false;
     }
-    registrationRequested_[slot].store(true);
-    trackers_[slot]->QueueSource(sourceDevicePath);
+    const bool proxy = activeProxy_[slot].load();
+    (proxy ? proxyRegistrationRequested_[slot] : directRegistrationRequested_[slot]).store(true);
+    (proxy ? proxyTrackers_[slot] : directTrackers_[slot])->QueueSource(sourceDevicePath);
     return true;
 }
 
 bool TrackerRegistry::QueueOffset(std::uint8_t slot, const pose_math::RigidOffset& offset)
 {
-    if (slot >= trackers_.size())
+    if (slot >= directTrackers_.size())
     {
         return false;
     }
-    registrationRequested_[slot].store(true);
-    trackers_[slot]->QueueOffset(offset);
+    const bool proxy = activeProxy_[slot].load();
+    (proxy ? proxyRegistrationRequested_[slot] : directRegistrationRequested_[slot]).store(true);
+    (proxy ? proxyTrackers_[slot] : directTrackers_[slot])->QueueOffset(offset);
     return true;
 }
 
@@ -74,29 +87,42 @@ bool TrackerRegistry::QueueSnapshot(
     const pose_math::RigidOffset& offset,
     std::uint64_t revision)
 {
-    if (slot >= trackers_.size())
+    if (slot >= directTrackers_.size())
     {
         return false;
     }
+    const bool proxy = enabled && targetDevicePath != nullptr && targetDevicePath[0] != '\0';
+    activeProxy_[slot].store(proxy);
     if (enabled)
     {
-        registrationRequested_[slot].store(true);
+        (proxy ? proxyRegistrationRequested_[slot] : directRegistrationRequested_[slot]).store(true);
     }
-    return trackers_[slot]->QueueSnapshot(
+    VirtualTracker* active = proxy ? proxyTrackers_[slot].get() : directTrackers_[slot].get();
+    VirtualTracker* inactive = proxy ? directTrackers_[slot].get() : proxyTrackers_[slot].get();
+    const bool activeQueued = active->QueueSnapshot(
         enabled,
         sourceDevicePath,
         targetDevicePath,
         offset,
         revision);
+    const bool inactiveQueued = inactive->QueueSnapshot(
+        false,
+        "",
+        "",
+        offset,
+        revision);
+    return activeQueued && inactiveQueued;
 }
 
 control_protocol::TelemetryBatch TrackerRegistry::GetTelemetry() const
 {
     control_protocol::TelemetryBatch batch{};
-    batch.count = static_cast<std::uint8_t>(trackers_.size());
-    for (std::size_t slot = 0; slot < trackers_.size(); ++slot)
+    batch.count = static_cast<std::uint8_t>(directTrackers_.size());
+    for (std::size_t slot = 0; slot < directTrackers_.size(); ++slot)
     {
-        batch.snapshots[slot] = trackers_[slot]->GetTelemetry();
+        batch.snapshots[slot] = activeProxy_[slot].load()
+            ? proxyTrackers_[slot]->GetTelemetry()
+            : directTrackers_[slot]->GetTelemetry();
     }
     for (const auto& controller : controllers_)
     {
@@ -111,21 +137,35 @@ control_protocol::TelemetryBatch TrackerRegistry::GetTelemetry() const
 
 void TrackerRegistry::RunFrame()
 {
-    for (std::size_t slot = 0; slot < trackers_.size(); ++slot)
+    for (std::size_t slot = 0; slot < directTrackers_.size(); ++slot)
     {
-        if (!registered_[slot] && registrationRequested_[slot].exchange(false))
+        if (!directRegistered_[slot] && directRegistrationRequested_[slot].exchange(false))
         {
-            registered_[slot] = vr::VRServerDriverHost()->TrackedDeviceAdded(
-                trackers_[slot]->SerialNumber(),
+            directRegistered_[slot] = vr::VRServerDriverHost()->TrackedDeviceAdded(
+                directTrackers_[slot]->SerialNumber(),
                 vr::TrackedDeviceClass_GenericTracker,
-                trackers_[slot].get());
-            vr::VRDriverLog()->Log(registered_[slot]
-                ? "TrackSwap registered a requested virtual tracker."
-                : "TrackSwap failed to register a requested virtual tracker.");
+                directTrackers_[slot].get());
+            vr::VRDriverLog()->Log(directRegistered_[slot]
+                ? "TrackSwap registered a requested direct virtual tracker."
+                : "TrackSwap failed to register a requested direct virtual tracker.");
         }
-        if (registered_[slot])
+        if (directRegistered_[slot])
         {
-            trackers_[slot]->Update();
+            directTrackers_[slot]->Update();
+        }
+        if (!proxyRegistered_[slot] && proxyRegistrationRequested_[slot].exchange(false))
+        {
+            proxyRegistered_[slot] = vr::VRServerDriverHost()->TrackedDeviceAdded(
+                proxyTrackers_[slot]->SerialNumber(),
+                vr::TrackedDeviceClass_GenericTracker,
+                proxyTrackers_[slot].get());
+            vr::VRDriverLog()->Log(proxyRegistered_[slot]
+                ? "TrackSwap registered a requested replacement proxy."
+                : "TrackSwap failed to register a requested replacement proxy.");
+        }
+        if (proxyRegistered_[slot])
+        {
+            proxyTrackers_[slot]->Update();
         }
     }
     for (std::size_t index = 0; index < controllers_.size(); ++index)

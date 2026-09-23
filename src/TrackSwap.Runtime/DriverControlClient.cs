@@ -6,13 +6,14 @@ namespace TrackSwap.Runtime;
 
 internal static class DriverControlClient
 {
+    private const double CentimetresPerMetre = 100.0;
     private static readonly object PipeSync = new();
     public static string SwitchSource(string sourceDevicePath, TimeSpan timeout)
     {
         byte[] payload = Encoding.UTF8.GetBytes(sourceDevicePath);
         if (payload.Length == 0 || payload.Length > DriverControlProtocol.MaximumPayloadBytes)
         {
-            throw new IOException("The encoded source path exceeds the driver control limit.");
+            throw new IOException("编码后的来源路径超过驱动通信长度限制。");
         }
 
         return SendAccepted(DriverControlProtocol.SetSourceMessageType, payload, timeout);
@@ -23,13 +24,7 @@ internal static class DriverControlClient
         using var payloadStream = new MemoryStream();
         using (var writer = new BinaryWriter(payloadStream, Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write(offset.TranslationX);
-            writer.Write(offset.TranslationY);
-            writer.Write(offset.TranslationZ);
-            writer.Write(offset.RotationX);
-            writer.Write(offset.RotationY);
-            writer.Write(offset.RotationZ);
-            writer.Write(offset.RotationW);
+            WriteOffsetForOpenVr(writer, offset);
         }
         return SendAccepted(DriverControlProtocol.SetOffsetMessageType, payloadStream.ToArray(), timeout);
     }
@@ -46,7 +41,7 @@ internal static class DriverControlClient
             sourcePath.Length > ushort.MaxValue || targetPath.Length > ushort.MaxValue ||
             sourcePath.Length + targetPath.Length > DriverControlProtocol.MaximumCombinedDevicePathBytes)
         {
-            throw new IOException("The encoded source or target path is invalid.");
+            throw new IOException("编码后的来源或目标路径无效。");
         }
 
         using var payloadStream = new MemoryStream();
@@ -60,13 +55,7 @@ internal static class DriverControlClient
             writer.Write(sourcePath);
             writer.Write(targetPath);
             PoseOffset offset = route?.Offset ?? PoseOffset.Identity();
-            writer.Write(offset.TranslationX);
-            writer.Write(offset.TranslationY);
-            writer.Write(offset.TranslationZ);
-            writer.Write(offset.RotationX);
-            writer.Write(offset.RotationY);
-            writer.Write(offset.RotationZ);
-            writer.Write(offset.RotationW);
+            WriteOffsetForOpenVr(writer, offset);
         }
         return SendAccepted(DriverControlProtocol.ApplySnapshotMessageType, payloadStream.ToArray(), timeout);
     }
@@ -74,6 +63,7 @@ internal static class DriverControlClient
     public static string ApplyControllerSnapshot(
         ControllerHand hand,
         RouteConfiguration? route,
+        int handSelectionPriority,
         ulong revision,
         TimeSpan timeout)
     {
@@ -81,9 +71,11 @@ internal static class DriverControlClient
         byte[] sourcePath = enabled ? Encoding.UTF8.GetBytes(route!.SourceDevicePath) : Array.Empty<byte>();
         if ((hand != ControllerHand.Left && hand != ControllerHand.Right) ||
             (enabled && (route!.Mode != RouteMode.VirtualController || route.ControllerHand != hand || sourcePath.Length == 0)) ||
-            sourcePath.Length > ushort.MaxValue || sourcePath.Length > DriverControlProtocol.MaximumPayloadBytes - 69)
+            sourcePath.Length > ushort.MaxValue ||
+            sourcePath.Length > DriverControlProtocol.MaximumPayloadBytes -
+                DriverControlProtocol.ApplyControllerSnapshotFixedBytes)
         {
-            throw new IOException("The virtual controller snapshot is invalid.");
+            throw new IOException("虚拟控制器快照无效。");
         }
 
         using var payloadStream = new MemoryStream();
@@ -93,16 +85,11 @@ internal static class DriverControlClient
             writer.Write(enabled ? (byte)1 : (byte)0);
             writer.Write(enabled ? (byte)route!.VirtualDeviceSlot : byte.MaxValue);
             writer.Write(revision);
+            writer.Write(handSelectionPriority);
             writer.Write((ushort)sourcePath.Length);
             writer.Write(sourcePath);
             PoseOffset offset = route?.Offset ?? PoseOffset.Identity();
-            writer.Write(offset.TranslationX);
-            writer.Write(offset.TranslationY);
-            writer.Write(offset.TranslationZ);
-            writer.Write(offset.RotationX);
-            writer.Write(offset.RotationY);
-            writer.Write(offset.RotationZ);
-            writer.Write(offset.RotationW);
+            WriteOffsetForOpenVr(writer, offset);
         }
         return SendAccepted(DriverControlProtocol.ApplyControllerSnapshotMessageType, payloadStream.ToArray(), timeout);
     }
@@ -114,7 +101,7 @@ internal static class DriverControlClient
     {
         if ((hand != ControllerHand.Left && hand != ControllerHand.Right) || state == null)
         {
-            throw new IOException("The virtual controller input state is invalid.");
+            throw new IOException("虚拟控制器输入状态无效。");
         }
         using var payloadStream = new MemoryStream();
         using (var writer = new BinaryWriter(payloadStream, Encoding.UTF8, leaveOpen: true))
@@ -147,12 +134,12 @@ internal static class DriverControlClient
     {
         if (payload == null || payload.Length != DriverControlProtocol.TelemetryBatchBytes)
         {
-            throw new IOException("The driver returned an invalid telemetry batch size.");
+            throw new IOException("驱动返回了无效的遥测数据批次大小。");
         }
         int count = payload[0];
         if (count < 0 || count > ProtocolConstants.MaximumRoutes)
         {
-            throw new IOException("The driver returned an invalid telemetry route count.");
+            throw new IOException("驱动返回了无效的遥测路由数量。");
         }
         var snapshots = new List<PoseTelemetrySnapshot>(count);
         for (int slot = 0; slot < count; slot++)
@@ -175,7 +162,7 @@ internal static class DriverControlClient
     {
         if (payload == null || payload.Length != DriverControlProtocol.TelemetrySnapshotBytes)
         {
-            throw new IOException("The driver returned an invalid telemetry snapshot size.");
+            throw new IOException("驱动返回了无效的遥测快照大小。");
         }
         using var stream = new MemoryStream(payload, writable: false);
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: false);
@@ -207,6 +194,22 @@ internal static class DriverControlClient
         };
     }
 
+    private static void WriteOffsetForOpenVr(BinaryWriter writer, PoseOffset offset)
+    {
+        writer.Write(ToOpenVrMetres(offset.TranslationX));
+        writer.Write(ToOpenVrMetres(offset.TranslationY));
+        writer.Write(ToOpenVrMetres(offset.TranslationZ));
+        writer.Write(offset.RotationX);
+        writer.Write(offset.RotationY);
+        writer.Write(offset.RotationZ);
+        writer.Write(offset.RotationW);
+    }
+
+    internal static double ToOpenVrMetres(double centimetres)
+    {
+        return centimetres / CentimetresPerMetre;
+    }
+
     private static string SendAccepted(ushort requestType, byte[] payload, TimeSpan timeout)
     {
         string responseText = Encoding.UTF8.GetString(SendBytes(requestType, payload, timeout));
@@ -229,7 +232,7 @@ internal static class DriverControlClient
     {
         if (payload.Length == 0 || payload.Length > DriverControlProtocol.MaximumPayloadBytes)
         {
-            throw new IOException("The driver control payload size is invalid.");
+            throw new IOException("驱动控制载荷大小无效。");
         }
 
         return SendBytesCoreAsync(requestType, payload, timeout).GetAwaiter().GetResult();
@@ -249,7 +252,7 @@ internal static class DriverControlClient
         }
         catch (OperationCanceledException exception)
         {
-            throw new TimeoutException("Timed out connecting to the TrackSwap driver.", exception);
+            throw new TimeoutException("连接 TrackSwap 驱动超时。", exception);
         }
         pipe.ReadMode = PipeTransmissionMode.Byte;
 
@@ -277,7 +280,7 @@ internal static class DriverControlClient
         }
         catch (OperationCanceledException exception)
         {
-            throw new TimeoutException("Timed out waiting for the TrackSwap driver.", exception);
+            throw new TimeoutException("等待 TrackSwap 驱动响应超时。", exception);
         }
 
         using var headerStream = new MemoryStream(header, writable: false);
@@ -293,7 +296,7 @@ internal static class DriverControlClient
             responseRequestId != requestId ||
             payloadBytes > DriverControlProtocol.MaximumPayloadBytes)
         {
-            throw new IOException("The driver returned an invalid control response.");
+            throw new IOException("驱动返回了无效的控制响应。");
         }
 
         byte[] response = new byte[payloadBytes];
@@ -303,7 +306,7 @@ internal static class DriverControlClient
         }
         catch (OperationCanceledException exception)
         {
-            throw new TimeoutException("Timed out reading the TrackSwap driver response.", exception);
+            throw new TimeoutException("读取 TrackSwap 驱动响应超时。", exception);
         }
 
         try
@@ -329,7 +332,7 @@ internal static class DriverControlClient
                 cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
-                throw new IOException("The driver closed the control pipe before completing its response.");
+                throw new IOException("驱动在完整响应到达前关闭了控制管道。");
             }
             total += read;
         }

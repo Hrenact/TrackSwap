@@ -26,11 +26,11 @@ namespace TrackSwap.Protocol
 
     public sealed class OscControllerAddresses
     {
-        private OscControllerAddresses(string hand)
+        private OscControllerAddresses(string hand, string primaryButton, string secondaryButton)
         {
             string prefix = "/trackswap/" + hand + "/";
-            PrimaryButton = prefix + "button/a";
-            SecondaryButton = prefix + "button/b";
+            PrimaryButton = prefix + "button/" + primaryButton;
+            SecondaryButton = prefix + "button/" + secondaryButton;
             JoystickX = prefix + "joystick/x";
             JoystickY = prefix + "joystick/y";
             JoystickClick = prefix + "joystick/click";
@@ -56,11 +56,11 @@ namespace TrackSwap.Protocol
         {
             if (hand == ControllerHand.Left)
             {
-                return new OscControllerAddresses("left");
+                return new OscControllerAddresses("left", "x", "y");
             }
             if (hand == ControllerHand.Right)
             {
-                return new OscControllerAddresses("right");
+                return new OscControllerAddresses("right", "a", "b");
             }
             throw new ArgumentOutOfRangeException(nameof(hand));
         }

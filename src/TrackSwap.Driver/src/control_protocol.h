@@ -7,7 +7,7 @@ namespace trackswap::control_protocol
 {
 constexpr wchar_t PipePath[] = LR"(\\.\pipe\TrackSwap.Driver.v1)";
 constexpr std::uint32_t Magic = 0x50575354;
-constexpr std::uint16_t Version = 3;
+constexpr std::uint16_t Version = 5;
 constexpr std::uint16_t SetSourceMessageType = 1;
 constexpr std::uint16_t SetOffsetMessageType = 2;
 constexpr std::uint16_t ApplySnapshotMessageType = 3;
@@ -16,7 +16,7 @@ constexpr std::uint16_t ApplyControllerSnapshotMessageType = 5;
 constexpr std::uint16_t ApplyControllerInputMessageType = 6;
 constexpr std::uint16_t ResponseFlag = 0x8000;
 constexpr std::size_t MaximumPayloadBytes = 4096;
-constexpr std::size_t MaximumRoutes = 8;
+constexpr std::size_t MaximumRoutes = 16;
 
 #pragma pack(push, 1)
 struct Header
@@ -71,6 +71,6 @@ struct ControllerInputState
 static_assert(sizeof(Header) == 20, "Driver control header layout changed.");
 static_assert(sizeof(TelemetryPose) == 62, "Driver telemetry pose layout changed.");
 static_assert(sizeof(TelemetrySnapshot) == 202, "Driver telemetry snapshot layout changed.");
-static_assert(sizeof(TelemetryBatch) == 1617, "Driver telemetry batch layout changed.");
+static_assert(sizeof(TelemetryBatch) == 3233, "Driver telemetry batch layout changed.");
 static_assert(sizeof(ControllerInputState) == 23, "Controller input layout changed.");
 } // namespace trackswap::control_protocol

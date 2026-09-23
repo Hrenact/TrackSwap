@@ -7,7 +7,7 @@ namespace TrackSwap.Protocol
 {
     public static class ConfigurationValidator
     {
-        private const double MaximumTranslationMetres = 10.0;
+        private const double MaximumTranslationCentimetres = 1000.0;
         private const double MinimumQuaternionLengthSquared = 1e-12;
 
         public static IReadOnlyList<string> Validate(RuntimeConfiguration? configuration)
@@ -15,29 +15,29 @@ namespace TrackSwap.Protocol
             var errors = new List<string>();
             if (configuration == null)
             {
-                errors.Add("Configuration is required.");
+                errors.Add("配置不能为空。");
                 return errors;
             }
 
             if (configuration.SchemaVersion != ProtocolConstants.CurrentConfigurationSchemaVersion)
             {
-                errors.Add($"Unsupported schema version {configuration.SchemaVersion}.");
+                errors.Add($"不支持配置架构版本 {configuration.SchemaVersion}。");
             }
 
             if (configuration.Revision < 0)
             {
-                errors.Add("Revision cannot be negative.");
+                errors.Add("配置修订号不能为负数。");
             }
 
             if (configuration.Routes == null)
             {
-                errors.Add("Routes are required.");
+                errors.Add("路由列表不能为空。");
                 return errors;
             }
 
             if (configuration.Routes.Count > ProtocolConstants.MaximumRoutes)
             {
-                errors.Add($"At most {ProtocolConstants.MaximumRoutes} routes are supported.");
+                errors.Add($"最多支持 {ProtocolConstants.MaximumRoutes} 条路由。");
             }
 
             var routeIds = new HashSet<string>(StringComparer.Ordinal);
@@ -51,23 +51,23 @@ namespace TrackSwap.Protocol
             {
                 if (route == null)
                 {
-                    errors.Add("Routes cannot contain null entries.");
+                    errors.Add("路由列表不能包含空项。");
                     continue;
                 }
 
-                string prefix = string.IsNullOrWhiteSpace(route.RouteId) ? "Route" : $"Route '{route.RouteId}'";
+                string prefix = string.IsNullOrWhiteSpace(route.RouteId) ? "路由" : $"路由“{route.RouteId}”";
                 if (string.IsNullOrWhiteSpace(route.RouteId))
                 {
-                    errors.Add("Every route must have a stable routeId.");
+                    errors.Add("每条路由都必须具有稳定的 routeId。");
                 }
                 else if (route.RouteId.Length > ProtocolConstants.MaximumRouteIdCharacters ||
                     route.RouteId.Any(char.IsControl))
                 {
-                    errors.Add($"{prefix} routeId is too long or contains control characters.");
+                    errors.Add($"{prefix}的 routeId 过长或包含控制字符。");
                 }
                 else if (!routeIds.Add(route.RouteId))
                 {
-                    errors.Add($"Duplicate routeId '{route.RouteId}'.");
+                    errors.Add($"routeId“{route.RouteId}”重复。");
                 }
 
                 if (!string.IsNullOrWhiteSpace(route.Name))
@@ -75,27 +75,27 @@ namespace TrackSwap.Protocol
                     string name = route.Name.Trim();
                     if (name.Length > 64 || name.Any(char.IsControl))
                     {
-                        errors.Add($"{prefix} name is too long or contains control characters.");
+                        errors.Add($"{prefix}的名称过长或包含控制字符。");
                     }
                     else if (!routeNames.Add(name))
                     {
-                        errors.Add($"Duplicate route name '{name}'.");
+                        errors.Add($"配置名称“{name}”重复。");
                     }
                 }
 
                 if (route.VirtualDeviceSlot < 0 || route.VirtualDeviceSlot >= ProtocolConstants.MaximumRoutes)
                 {
-                    errors.Add($"{prefix} has an invalid virtualDeviceSlot.");
+                    errors.Add($"{prefix}的 virtualDeviceSlot 无效。");
                 }
                 else if (!slots.Add(route.VirtualDeviceSlot))
                 {
-                    errors.Add($"Virtual device slot {route.VirtualDeviceSlot} is assigned more than once.");
+                    errors.Add($"虚拟设备槽位 {route.VirtualDeviceSlot} 被重复使用。");
                 }
 
                 ValidateSourcePath(route.SourceDevicePath, prefix, errors);
-                if (!Enum.IsDefined(typeof(RouteMode), route.Mode))
+                if (!Enum.IsDefined(typeof(RouteMode), route.Mode) || route.Mode == RouteMode.Unspecified)
                 {
-                    errors.Add($"{prefix} has an unsupported route mode.");
+                    errors.Add($"{prefix}使用了不受支持的运行模式。");
                 }
                 if (route.Mode == RouteMode.ReplaceTarget)
                 {
@@ -103,22 +103,23 @@ namespace TrackSwap.Protocol
                 }
                 else if (!string.IsNullOrEmpty(route.TargetDevicePath) && route.TargetDevicePath.Any(char.IsControl))
                 {
-                    errors.Add($"{prefix} targetDevicePath cannot contain control characters.");
+                    errors.Add($"{prefix}的 targetDevicePath 不能包含控制字符。");
                 }
                 if (route.Mode == RouteMode.VirtualController)
                 {
                     if (route.ControllerHand != ControllerHand.Left && route.ControllerHand != ControllerHand.Right)
                     {
-                        errors.Add($"{prefix} must select a left or right controller hand.");
+                        errors.Add($"{prefix}必须选择左手或右手控制器。");
                     }
                     else if (!controllerHands.Add(route.ControllerHand))
                     {
-                        errors.Add($"Only one virtual {route.ControllerHand.ToString().ToLowerInvariant()} controller is supported.");
+                        errors.Add($"只能创建一只虚拟{(route.ControllerHand == ControllerHand.Left ? "左手" : "右手")}控制器。");
                     }
                     if (route.ControlInputSource != ControlInputSource.None &&
-                        route.ControlInputSource != ControlInputSource.Osc)
+                        route.ControlInputSource != ControlInputSource.Osc &&
+                        route.ControlInputSource != ControlInputSource.XInput)
                     {
-                        errors.Add($"{prefix} has an unsupported control input source.");
+                        errors.Add($"{prefix}使用了不受支持的控制输入来源。");
                     }
                 }
                 ValidateCombinedPathSize(route.SourceDevicePath, route.TargetDevicePath, prefix, errors);
@@ -127,18 +128,20 @@ namespace TrackSwap.Protocol
                     !string.IsNullOrEmpty(route.SourceDevicePath) &&
                     string.Equals(route.SourceDevicePath, route.TargetDevicePath, StringComparison.Ordinal))
                 {
-                    errors.Add($"{prefix} cannot map a device to itself.");
+                    errors.Add($"{prefix}不能把设备映射到自身。");
                 }
 
                 if (route.Mode == RouteMode.ReplaceTarget &&
                     !string.IsNullOrWhiteSpace(route.TargetDevicePath) && !targets.Add(route.TargetDevicePath))
                 {
-                    errors.Add($"Target '{route.TargetDevicePath}' is assigned more than once.");
+                    errors.Add($"替换目标“{route.TargetDevicePath}”被重复使用。");
                 }
 
-                if (!string.IsNullOrWhiteSpace(route.SourceDevicePath) && !sources.Add(route.SourceDevicePath))
+                if (!configuration.AllowDuplicatePoseSources &&
+                    !string.IsNullOrWhiteSpace(route.SourceDevicePath) &&
+                    !sources.Add(route.SourceDevicePath))
                 {
-                    errors.Add($"Source '{route.SourceDevicePath}' is assigned more than once.");
+                    errors.Add($"位姿来源“{route.SourceDevicePath}”被重复使用。");
                 }
 
                 ValidateOffset(route.Offset, prefix, errors);
@@ -154,21 +157,21 @@ namespace TrackSwap.Protocol
         {
             if (configuration == null)
             {
-                errors.Add("OSC configuration is required.");
+                errors.Add("OSC 配置不能为空。");
                 return;
             }
             if (string.IsNullOrWhiteSpace(configuration.ListenAddress) || configuration.ListenAddress.Length > 255 ||
                 configuration.ListenAddress.Any(char.IsControl))
             {
-                errors.Add("OSC listen address is invalid.");
+                errors.Add("OSC 监听地址无效。");
             }
             if (configuration.Port < 1 || configuration.Port > 65535)
             {
-                errors.Add("OSC port must be between 1 and 65535.");
+                errors.Add("OSC 端口必须在 1 到 65535 之间。");
             }
             if (!Enum.IsDefined(typeof(OscResetTimeout), configuration.ResetTimeout))
             {
-                errors.Add("OSC reset timeout is invalid.");
+                errors.Add("OSC 无信号复位时间无效。");
             }
         }
 
@@ -207,8 +210,8 @@ namespace TrackSwap.Protocol
                         ? overridingRoute.RouteId
                         : overridingRoute.Name;
                     errors.Add(
-                        $"Route '{sourceName}' uses a device assigned to '{sourceRoleTarget}', " +
-                        $"but route '{overridingName}' replaces that role. This would create a cross-route pose cascade.");
+                        $"配置“{sourceName}”使用了分配给“{sourceRoleTarget}”的设备，但配置“{overridingName}”正在替换该角色。" +
+                        "这会形成跨配置的位姿级联。");
                 }
             }
 
@@ -233,7 +236,7 @@ namespace TrackSwap.Protocol
                 {
                     if (!visited.Add(current))
                     {
-                        errors.Add($"Route cycle detected at '{current}'.");
+                        errors.Add($"检测到以“{current}”为节点的路由循环。");
                         return;
                     }
 
@@ -246,11 +249,11 @@ namespace TrackSwap.Protocol
         {
             if (path == null || string.IsNullOrWhiteSpace(path) || !path.StartsWith("/devices/", StringComparison.Ordinal))
             {
-                errors.Add($"{prefix} sourceDevicePath must be an exact /devices/ path returned by OpenVR.");
+                errors.Add($"{prefix}的 sourceDevicePath 必须是 OpenVR 返回的精确 /devices/ 路径。");
             }
             else if (path.Any(char.IsControl))
             {
-                errors.Add($"{prefix} sourceDevicePath cannot contain control characters.");
+                errors.Add($"{prefix}的 sourceDevicePath 不能包含控制字符。");
             }
         }
 
@@ -261,11 +264,11 @@ namespace TrackSwap.Protocol
                 string.Equals(path, ProtocolConstants.RightHandRolePath, StringComparison.Ordinal);
             if (path == null || (!path.StartsWith("/devices/", StringComparison.Ordinal) && !supportedRole))
             {
-                errors.Add($"{prefix} targetDevicePath must be an exact /devices/ path or a supported head/hand role path.");
+                errors.Add($"{prefix}的 targetDevicePath 必须是精确的 /devices/ 路径或受支持的头显/手柄角色路径。");
             }
             else if (path.Any(char.IsControl))
             {
-                errors.Add($"{prefix} targetDevicePath cannot contain control characters.");
+                errors.Add($"{prefix}的 targetDevicePath 不能包含控制字符。");
             }
         }
 
@@ -283,7 +286,7 @@ namespace TrackSwap.Protocol
             int encodedBytes = Encoding.UTF8.GetByteCount(sourcePath) + Encoding.UTF8.GetByteCount(targetPath);
             if (encodedBytes > DriverControlProtocol.MaximumCombinedDevicePathBytes)
             {
-                errors.Add($"{prefix} encoded source and target paths exceed the driver control limit.");
+                errors.Add($"{prefix}编码后的来源和目标路径超过驱动通信长度限制。");
             }
         }
 
@@ -291,7 +294,7 @@ namespace TrackSwap.Protocol
         {
             if (offset == null)
             {
-                errors.Add($"{prefix} offset is required.");
+                errors.Add($"{prefix}缺少位姿偏移。");
                 return;
             }
 
@@ -302,15 +305,15 @@ namespace TrackSwap.Protocol
             };
             if (values.Any(value => double.IsNaN(value) || double.IsInfinity(value)))
             {
-                errors.Add($"{prefix} offset must contain only finite values.");
+                errors.Add($"{prefix}的位姿偏移只能包含有限数值。");
                 return;
             }
 
-            if (Math.Abs(offset.TranslationX) > MaximumTranslationMetres ||
-                Math.Abs(offset.TranslationY) > MaximumTranslationMetres ||
-                Math.Abs(offset.TranslationZ) > MaximumTranslationMetres)
+            if (Math.Abs(offset.TranslationX) > MaximumTranslationCentimetres ||
+                Math.Abs(offset.TranslationY) > MaximumTranslationCentimetres ||
+                Math.Abs(offset.TranslationZ) > MaximumTranslationCentimetres)
             {
-                errors.Add($"{prefix} translation exceeds the {MaximumTranslationMetres} metre safety bound.");
+                errors.Add($"{prefix}的位置偏移超过每轴 {MaximumTranslationCentimetres} 厘米的安全范围。");
             }
 
             double lengthSquared =
@@ -320,7 +323,7 @@ namespace TrackSwap.Protocol
                 (offset.RotationW * offset.RotationW);
             if (lengthSquared < MinimumQuaternionLengthSquared)
             {
-                errors.Add($"{prefix} rotation quaternion cannot be zero length.");
+                errors.Add($"{prefix}的旋转四元数不能为零。");
             }
         }
     }

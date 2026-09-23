@@ -14,9 +14,11 @@ namespace TrackSwap.Models
 
         public RouteConfiguration Route { get; }
         public string Name => string.IsNullOrWhiteSpace(Route.Name) ? "未命名配置" : Route.Name;
-        public string ProxyName => Route.Mode == RouteMode.VirtualController
-            ? ProtocolConstants.GetControllerSerial(Route.ControllerHand)
-            : ProtocolConstants.GetVirtualSerial(Route.VirtualDeviceSlot);
+        public string ProxyName => Route.Mode == RouteMode.Unspecified
+            ? "请选择运行模式"
+            : Route.Mode == RouteMode.VirtualController
+                ? ProtocolConstants.GetControllerSerial(Route.ControllerHand)
+                : ProtocolConstants.GetOutputSerial(Route.Mode, Route.VirtualDeviceSlot);
         public string StatusText { get; }
         public Brush StatusBrush { get; }
     }

@@ -36,14 +36,16 @@ internal sealed class OscInputService : IDisposable
     {
         lock (syncRoot)
         {
+            bool resetLeft = leftInputEnabled || HasOscInputRoute(routes, ControllerHand.Left);
+            bool resetRight = rightInputEnabled || HasOscInputRoute(routes, ControllerHand.Right);
             configuration = Clone(value);
             UpdateActiveInputsLocked(routes);
             configurationVersion++;
             listener?.Dispose();
             listener = null;
             listening = false;
-            ResetLocked(ControllerHand.Left, send: true);
-            ResetLocked(ControllerHand.Right, send: true);
+            if (resetLeft) ResetLocked(ControllerHand.Left, send: true);
+            if (resetRight) ResetLocked(ControllerHand.Right, send: true);
         }
     }
 
@@ -279,8 +281,8 @@ internal sealed class OscInputService : IDisposable
     {
         lock (syncRoot)
         {
-            ResetLocked(ControllerHand.Left, send: true);
-            ResetLocked(ControllerHand.Right, send: true);
+            if (leftInputEnabled) ResetLocked(ControllerHand.Left, send: true);
+            if (rightInputEnabled) ResetLocked(ControllerHand.Right, send: true);
             listener?.Dispose();
             listener = null;
         }

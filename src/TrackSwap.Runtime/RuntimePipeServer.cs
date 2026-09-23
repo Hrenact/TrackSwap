@@ -13,6 +13,7 @@ internal sealed class RuntimePipeServer
     private readonly OpenVrCalibrationService calibrationService;
     private readonly TelemetrySampler telemetrySampler;
     private readonly OscInputService? oscInput;
+    private readonly XInputInputService? xInput;
     private readonly string pipeName;
     private readonly Action? requestShutdown;
     private RuntimeConfiguration configuration;
@@ -26,7 +27,8 @@ internal sealed class RuntimePipeServer
         TelemetrySampler telemetrySampler,
         string? pipeName = null,
         Action? requestShutdown = null,
-        OscInputService? oscInput = null)
+        OscInputService? oscInput = null,
+        XInputInputService? xInput = null)
     {
         this.store = store;
         this.synchronizer = synchronizer;
@@ -34,6 +36,7 @@ internal sealed class RuntimePipeServer
         this.calibrationService = calibrationService;
         this.telemetrySampler = telemetrySampler;
         this.oscInput = oscInput;
+        this.xInput = xInput;
         this.pipeName = pipeName ?? ProtocolConstants.PipeName;
         this.requestShutdown = requestShutdown;
         configuration = initialConfiguration;
@@ -89,7 +92,7 @@ internal sealed class RuntimePipeServer
         if (request == null || request.ProtocolVersion != ProtocolConstants.CurrentProtocolVersion ||
             string.IsNullOrWhiteSpace(request.RequestId))
         {
-            throw new InvalidDataException("Invalid runtime control envelope.");
+            throw new InvalidDataException("Runtime 控制消息无效。");
         }
 
         MessageEnvelope response;
@@ -105,7 +108,7 @@ internal sealed class RuntimePipeServer
                 "listCalibrationProfiles" => ListCalibrationProfiles(request.RequestId),
                 "deleteCalibrationProfile" => DeleteCalibrationProfile(request),
                 "shutdown" => CreateShutdownAccepted(request.RequestId),
-                _ => throw new InvalidDataException($"Unknown runtime message type '{request.MessageType}'.")
+                _ => throw new InvalidDataException($"未知的 Runtime 消息类型：“{request.MessageType}”。")
             };
         }
         catch (Exception exception) when (
@@ -141,7 +144,7 @@ internal sealed class RuntimePipeServer
             JsonConvert.DeserializeObject<CalibrationCaptureRequest>(request.PayloadJson, RuntimeJson.Settings);
         if (captureRequest == null)
         {
-            throw new InvalidDataException("Calibration request is required.");
+            throw new InvalidDataException("缺少校准请求。");
         }
         CalibrationProfile profile = calibrationService.Capture(captureRequest, cancellationToken);
         profileStore.Add(profile);
@@ -171,7 +174,7 @@ internal sealed class RuntimePipeServer
         if (telemetryRequest == null || telemetryRequest.VirtualDeviceSlot < 0 ||
             telemetryRequest.VirtualDeviceSlot >= ProtocolConstants.MaximumRoutes)
         {
-            throw new InvalidDataException("A valid virtual device slot is required for telemetry.");
+            throw new InvalidDataException("读取遥测数据需要有效的虚拟设备槽位。");
         }
         PoseTelemetrySnapshot snapshot = telemetrySampler.GetLatest(telemetryRequest.VirtualDeviceSlot);
         return new MessageEnvelope
@@ -188,11 +191,11 @@ internal sealed class RuntimePipeServer
             JsonConvert.DeserializeObject<CalibrationProfileRequest>(request.PayloadJson, RuntimeJson.Settings);
         if (profileRequest == null || string.IsNullOrWhiteSpace(profileRequest.ProfileId))
         {
-            throw new InvalidDataException("Calibration profile id is required.");
+            throw new InvalidDataException("缺少校准档案 ID。");
         }
         if (!profileStore.Delete(profileRequest.ProfileId))
         {
-            throw new InvalidDataException("Calibration profile was not found.");
+            throw new InvalidDataException("未找到校准档案。");
         }
         return new MessageEnvelope
         {
@@ -214,12 +217,13 @@ internal sealed class RuntimePipeServer
         }
         if (candidate.Revision <= configuration.Revision)
         {
-            throw new InvalidDataException("Configuration revision must increase monotonically.");
+            throw new InvalidDataException("配置修订号必须递增。");
         }
         store.Save(candidate);
         configuration = candidate;
         synchronizer.Update(candidate);
         oscInput?.Update(candidate.Osc, candidate.Routes);
+        xInput?.Update(candidate.Routes);
         return new MessageEnvelope
         {
             MessageType = "configurationApplied",
@@ -286,7 +290,7 @@ internal sealed class RuntimePipeServer
             int read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
-                throw new EndOfStreamException("Runtime control connection closed before a complete frame.");
+                throw new EndOfStreamException("Runtime 控制连接在完整消息到达前已关闭。");
             }
             if (buffer[0] == (byte)'\n')
             {
@@ -294,6 +298,6 @@ internal sealed class RuntimePipeServer
             }
             bytes.Add(buffer[0]);
         }
-        throw new InvalidDataException("Runtime control frame exceeds the configured limit.");
+        throw new InvalidDataException("Runtime 控制消息超过允许的大小限制。");
     }
 }

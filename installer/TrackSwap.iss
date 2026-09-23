@@ -1,5 +1,5 @@
 #ifndef TrackSwapVersion
-  #define TrackSwapVersion "v006"
+  #define TrackSwapVersion "v007"
 #endif
 #ifndef SourceDir
   #error SourceDir must point to a complete TrackSwap release directory.

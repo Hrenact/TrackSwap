@@ -1,0 +1,19 @@
+{
+  "language_tag": "zh_CN",
+  "trackswap_controller": "TrackSwap 控制器",
+  "/input/a": "A 键",
+  "/input/b": "B 键",
+  "/input/x": "X 键",
+  "/input/y": "Y 键",
+  "/input/joystick": "摇杆",
+  "/input/trigger": "扳机",
+  "/input/grip": "抓握",
+  "/input/system": "系统键",
+  "/input/thumbrest": "拇指休息区",
+  "/pose/raw": "控制器位姿",
+  "/pose/base": "控制器基座",
+  "/pose/handgrip": "抓握位姿",
+  "/pose/tip": "控制器指向",
+  "/input/skeleton/left": "左手骨骼",
+  "/input/skeleton/right": "右手骨骼"
+}

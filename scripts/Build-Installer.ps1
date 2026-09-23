@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]{3}$')]
-    [string]$Version = 'v006',
+    [string]$Version = 'v007',
     [switch]$Clean,
     [switch]$SkipReleaseBuild
 )

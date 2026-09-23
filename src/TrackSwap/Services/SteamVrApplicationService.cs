@@ -1,5 +1,4 @@
 using System;
-using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -21,92 +20,38 @@ namespace TrackSwap.Services
                 throw new FileNotFoundException("未找到 TrackSwap 的 SteamVR 应用清单。", manifestPath);
             }
 
-            string libraryPath = Path.Combine(runtimePath, "bin", "win64", "openvr_api.dll");
-            if (!File.Exists(libraryPath))
-            {
-                throw new FileNotFoundException("未找到 OpenVR 运行库。", libraryPath);
-            }
-
             lock (OpenVrInterop.SyncRoot)
             {
-                IntPtr module = LoadLibrary(libraryPath);
-                if (module == IntPtr.Zero)
+                IntPtr applicationsTable = OpenVrInterop.GetInterface(
+                    runtimePath,
+                    ApplicationsInterfaceVersion);
+
+                AddApplicationManifest addManifest = GetTableFunction<AddApplicationManifest>(applicationsTable, 0);
+                IdentifyApplication identifyApplication = GetTableFunction<IdentifyApplication>(applicationsTable, 11);
+                SetApplicationAutoLaunch setAutoLaunch = GetTableFunction<SetApplicationAutoLaunch>(applicationsTable, 17);
+                EVRApplicationError addError = addManifest(Path.GetFullPath(manifestPath), false);
+                if (addError != EVRApplicationError.None &&
+                    addError != EVRApplicationError.AppKeyAlreadyExists)
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "无法载入 OpenVR 运行库。");
+                    throw new InvalidOperationException("SteamVR 应用清单注册失败，错误码：" + (int)addError);
                 }
 
-                bool initialized = false;
-                try
+                identifyApplication(
+                    unchecked((uint)System.Diagnostics.Process.GetCurrentProcess().Id),
+                    ApplicationKey);
+                EVRApplicationError launchError = setAutoLaunch(ApplicationKey, enabled);
+                if (launchError == EVRApplicationError.UnknownApplication)
                 {
-                    VRInitInternal init = GetExport<VRInitInternal>(module, "VR_InitInternal2");
-                    VRGetGenericInterface getInterface = GetExport<VRGetGenericInterface>(module, "VR_GetGenericInterface");
-                    VRShutdownInternal shutdown = GetExport<VRShutdownInternal>(module, "VR_ShutdownInternal");
-
-                    EVRInitError initError = EVRInitError.None;
-                    init(ref initError, EVRApplicationType.Utility, null);
-                    if (initError != EVRInitError.None)
-                    {
-                        throw new InvalidOperationException("OpenVR 初始化失败，错误码：" + (int)initError);
-                    }
-
-                    initialized = true;
-                    IntPtr applicationsTable = getInterface(ApplicationsInterfaceVersion, ref initError);
-                    if (applicationsTable == IntPtr.Zero || initError != EVRInitError.None)
-                    {
-                        throw new InvalidOperationException("无法获取 OpenVR Applications 接口，错误码：" + (int)initError);
-                    }
-
-                    AddApplicationManifest addManifest = GetTableFunction<AddApplicationManifest>(applicationsTable, 0);
-                    IdentifyApplication identifyApplication = GetTableFunction<IdentifyApplication>(applicationsTable, 11);
-                    SetApplicationAutoLaunch setAutoLaunch = GetTableFunction<SetApplicationAutoLaunch>(applicationsTable, 17);
-                    EVRApplicationError addError = addManifest(Path.GetFullPath(manifestPath), false);
-                    if (addError != EVRApplicationError.None &&
-                        addError != EVRApplicationError.AppKeyAlreadyExists)
-                    {
-                        throw new InvalidOperationException("SteamVR 应用清单注册失败，错误码：" + (int)addError);
-                    }
-
-                    identifyApplication(
-                        unchecked((uint)System.Diagnostics.Process.GetCurrentProcess().Id),
-                        ApplicationKey);
-                    EVRApplicationError launchError = setAutoLaunch(ApplicationKey, enabled);
-                    if (launchError == EVRApplicationError.UnknownApplication)
-                    {
-                        // SteamVR can defer a newly-added permanent manifest until its next
-                        // session. The driver/runtime fallback covers the current session.
-                        return false;
-                    }
-                    if (launchError != EVRApplicationError.None)
-                    {
-                        throw new InvalidOperationException("SteamVR 自动启动设置失败，错误码：" + (int)launchError);
-                    }
-                    return true;
+                    // SteamVR can defer a newly-added permanent manifest until its next
+                    // session. The driver/runtime fallback covers the current session.
+                    return false;
                 }
-                finally
+                if (launchError != EVRApplicationError.None)
                 {
-                    if (initialized)
-                    {
-                        try
-                        {
-                            GetExport<VRShutdownInternal>(module, "VR_ShutdownInternal")();
-                        }
-                        catch
-                        {
-                        }
-                    }
-                    FreeLibrary(module);
+                    throw new InvalidOperationException("SteamVR 自动启动设置失败，错误码：" + (int)launchError);
                 }
+                return true;
             }
-        }
-
-        private static T GetExport<T>(IntPtr module, string name) where T : class
-        {
-            IntPtr address = GetProcAddress(module, name);
-            if (address == IntPtr.Zero)
-            {
-                throw new EntryPointNotFoundException(name);
-            }
-            return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
         }
 
         private static T GetTableFunction<T>(IntPtr table, int index) where T : class
@@ -118,25 +63,6 @@ namespace TrackSwap.Services
             }
             return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
         }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr LoadLibrary(string fileName);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool FreeLibrary(IntPtr module);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
-        private static extern IntPtr GetProcAddress(IntPtr module, string procedureName);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate uint VRInitInternal(ref EVRInitError error, EVRApplicationType applicationType, string startupInfo);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate IntPtr VRGetGenericInterface(string interfaceVersion, ref EVRInitError error);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate void VRShutdownInternal();
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private delegate EVRApplicationError AddApplicationManifest(
@@ -150,16 +76,6 @@ namespace TrackSwap.Services
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private delegate EVRApplicationError IdentifyApplication(uint processId, string applicationKey);
-
-        private enum EVRApplicationType
-        {
-            Utility = 4
-        }
-
-        private enum EVRInitError
-        {
-            None = 0
-        }
 
         private enum EVRApplicationError
         {

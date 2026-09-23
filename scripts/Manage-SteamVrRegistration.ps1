@@ -174,12 +174,29 @@ else {
             $removeProperty = [Newtonsoft.Json.Linq.JObject].GetMethod(
                 'Remove',
                 [Type[]]@([string]))
-            for ($slot = 0; $slot -lt 8; $slot++) {
+            for ($slot = 0; $slot -lt 16; $slot++) {
                 $sourcePath = '/devices/trackswap/TRKSWAP-PROXY-' + $slot.ToString('00')
                 $removed = [bool]$removeProperty.Invoke(
                     $overrides,
                     [object[]]@($sourcePath))
                 if ($removed) {
+                    $settingsChanged = $true
+                }
+            }
+        }
+
+        # TrackSwap's pre-Touch controller profile could leave per-application
+        # binding selections in steamvr.vrsettings. They are owned by the
+        # TrackSwap controller type, not by the game or physical controller,
+        # so a full uninstall must remove them while preserving every unrelated
+        # input binding entry.
+        foreach ($section in @($settings.Properties())) {
+            if ($section.Value -isnot [Newtonsoft.Json.Linq.JObject]) {
+                continue
+            }
+            foreach ($property in @($section.Value.Properties())) {
+                if ($property.Name -like 'trackswap_controller_*') {
+                    $property.Remove()
                     $settingsChanged = $true
                 }
             }

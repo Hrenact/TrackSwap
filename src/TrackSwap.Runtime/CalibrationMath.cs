@@ -41,7 +41,7 @@ internal static class CalibrationMath
     {
         if (relativeSamples.Count == 0)
         {
-            throw new InvalidDataException("Calibration requires at least one valid sample.");
+            throw new InvalidDataException("校准至少需要一个有效样本。");
         }
 
         CalibrationPose reference = Normalize(relativeSamples[0]);
@@ -92,9 +92,9 @@ internal static class CalibrationMath
         {
             Offset = new PoseOffset
             {
-                TranslationX = mean.X,
-                TranslationY = mean.Y,
-                TranslationZ = mean.Z,
+                TranslationX = mean.X * 100.0,
+                TranslationY = mean.Y * 100.0,
+                TranslationZ = mean.Z * 100.0,
                 RotationX = mean.Qx,
                 RotationY = mean.Qy,
                 RotationZ = mean.Qz,
@@ -112,7 +112,7 @@ internal static class CalibrationMath
             (pose.Qz * pose.Qz) + (pose.Qw * pose.Qw));
         if (length < 1e-12 || !double.IsFinite(length))
         {
-            throw new InvalidDataException("Calibration pose contains an invalid rotation.");
+            throw new InvalidDataException("校准位姿包含无效旋转。");
         }
         return pose with
         {

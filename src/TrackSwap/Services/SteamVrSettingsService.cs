@@ -273,7 +273,7 @@ namespace TrackSwap.Services
             JObject overrides = root["TrackingOverrides"] as JObject;
             var managedSources = new HashSet<string>(
                 Enumerable.Range(0, ProtocolConstants.MaximumRoutes)
-                    .Select(ProtocolConstants.GetVirtualDevicePath),
+                    .Select(ProtocolConstants.GetProxyDevicePath),
                 StringComparer.Ordinal);
 
             if (overrides != null)

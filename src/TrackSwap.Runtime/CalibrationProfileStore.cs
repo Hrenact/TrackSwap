@@ -70,7 +70,7 @@ internal sealed class CalibrationProfileStore
         string? directory = System.IO.Path.GetDirectoryName(Path);
         if (string.IsNullOrWhiteSpace(directory))
         {
-            throw new IOException("Calibration profile path has no parent directory.");
+            throw new IOException("校准档案路径没有上级目录。");
         }
         Directory.CreateDirectory(directory);
         string temporaryPath = System.IO.Path.Combine(

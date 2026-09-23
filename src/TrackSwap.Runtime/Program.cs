@@ -84,11 +84,11 @@ internal static class Program
             return ParseAndSetOffset(args);
         }
 
-        Console.WriteLine("TrackSwap Runtime v006");
+        Console.WriteLine("TrackSwap Runtime v007");
         Console.WriteLine("Use --run [config-path] [--lifecycle FollowTrackSwap|FollowSteamVr] [--owner-pid PID]");
         Console.WriteLine("to start the runtime host and IPC service. A no-argument launch is reserved for SteamVR.");
         Console.WriteLine("Use --print-contract, --validate-config <path>, --switch-source <exact-device-path>,");
-        Console.WriteLine("--set-offset <tx> <ty> <tz> <qx> <qy> <qz> <qw>, --reset-offset,");
+        Console.WriteLine("--set-offset <tx-cm> <ty-cm> <tz-cm> <qx> <qy> <qz> <qw>, --reset-offset,");
         Console.WriteLine("--runtime-status, --runtime-telemetry, --driver-telemetry, or --run [config-path].");
         return 0;
     }

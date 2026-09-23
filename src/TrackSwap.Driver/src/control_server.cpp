@@ -351,7 +351,7 @@ void ControlServer::Run()
             {
                 constexpr std::size_t FixedBytes =
                     (3 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
-                    sizeof(std::uint16_t) + (7 * sizeof(double));
+                    sizeof(std::int32_t) + sizeof(std::uint16_t) + (7 * sizeof(double));
                 valid = request.payloadBytes >= FixedBytes;
                 if (valid)
                 {
@@ -359,14 +359,23 @@ void ControlServer::Run()
                     const bool enabled = payload[1] != 0;
                     const std::uint8_t logicalSlot = static_cast<std::uint8_t>(payload[2]);
                     std::uint64_t revision = 0;
+                    std::int32_t handSelectionPriority = 0;
                     std::uint16_t sourcePathBytes = 0;
                     std::memcpy(&revision, payload.data() + 3, sizeof(revision));
-                    std::memcpy(&sourcePathBytes, payload.data() + 3 + sizeof(revision), sizeof(sourcePathBytes));
+                    std::memcpy(
+                        &handSelectionPriority,
+                        payload.data() + 3 + sizeof(revision),
+                        sizeof(handSelectionPriority));
+                    std::memcpy(
+                        &sourcePathBytes,
+                        payload.data() + 3 + sizeof(revision) + sizeof(handSelectionPriority),
+                        sizeof(sourcePathBytes));
                     valid = (hand == ControllerHand::Left || hand == ControllerHand::Right) &&
                         ((!enabled && sourcePathBytes == 0 && logicalSlot == 255) ||
                          (enabled && sourcePathBytes > 0 && logicalSlot < control_protocol::MaximumRoutes)) &&
                         request.payloadBytes == FixedBytes + sourcePathBytes;
-                    const char* sourcePath = payload.data() + 3 + sizeof(revision) + sizeof(sourcePathBytes);
+                    const char* sourcePath = payload.data() + 3 + sizeof(revision) +
+                        sizeof(handSelectionPriority) + sizeof(sourcePathBytes);
                     if (valid) valid = !enabled || IsValidSourcePath(sourcePath, sourcePathBytes);
                     std::array<double, 7> values{};
                     if (valid)
@@ -381,7 +390,13 @@ void ControlServer::Run()
                             std::array<char, control_protocol::MaximumPayloadBytes + 1> terminatedSource{};
                             std::memcpy(terminatedSource.data(), sourcePath, sourcePathBytes);
                             valid = registry_->QueueControllerSnapshot(
-                                hand, enabled, logicalSlot, terminatedSource.data(), offset, revision);
+                                hand,
+                                enabled,
+                                logicalSlot,
+                                terminatedSource.data(),
+                                handSelectionPriority,
+                                offset,
+                                revision);
                         }
                     }
                 }

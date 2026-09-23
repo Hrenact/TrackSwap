@@ -68,6 +68,7 @@ internal sealed class DriverSynchronizer
                         DriverControlClient.ApplyControllerSnapshot(
                             hand,
                             route,
+                            snapshot.ControllerHandSelectionPriority,
                             (ulong)snapshot.Revision,
                             TimeSpan.FromSeconds(1));
                     }

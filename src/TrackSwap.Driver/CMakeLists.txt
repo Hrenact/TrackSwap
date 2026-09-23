@@ -29,11 +29,18 @@ if(NOT openvr_POPULATED)
     FetchContent_Populate(openvr)
 endif()
 
+set(TRACKSWAP_OPENVR_HAND_SIMULATION_DIR
+    "${openvr_SOURCE_DIR}/samples/drivers/drivers/handskeletonsimulation/src")
+set(TRACKSWAP_OPENVR_VRMATH_DIR
+    "${openvr_SOURCE_DIR}/samples/drivers/utils/vrmath")
+
 add_library(driver_trackswap SHARED
     src/control_protocol.h
     src/control_server.cpp
     src/control_server.h
     src/driver_factory.cpp
+    src/finger_animation.cpp
+    src/finger_animation.h
     src/pose_math.cpp
     src/pose_math.h
     src/runtime_launcher.cpp
@@ -44,12 +51,20 @@ add_library(driver_trackswap SHARED
     src/virtual_controller.h
     src/virtual_tracker.cpp
     src/virtual_tracker.h
+    "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}/hand_simulation.cpp"
+    "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}/hand_simulation.h"
 )
 
 target_compile_features(driver_trackswap PRIVATE cxx_std_17)
 target_include_directories(driver_trackswap SYSTEM PRIVATE "${openvr_SOURCE_DIR}/headers")
+target_include_directories(driver_trackswap PRIVATE
+    "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}"
+    "${TRACKSWAP_OPENVR_VRMATH_DIR}")
 target_compile_definitions(driver_trackswap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(driver_trackswap PRIVATE /W4 /WX /permissive- /EHsc)
+set_source_files_properties(
+    "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}/hand_simulation.cpp"
+    PROPERTIES COMPILE_OPTIONS "/wd4244;/wd4305;/wd4505")
 
 set_target_properties(driver_trackswap PROPERTIES
     OUTPUT_NAME "driver_trackswap"
@@ -72,4 +87,16 @@ if(BUILD_TESTING)
     target_compile_definitions(trackswap_pose_math_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(trackswap_pose_math_tests PRIVATE /W4 /WX /permissive- /EHsc)
     add_test(NAME pose_math COMMAND trackswap_pose_math_tests)
+
+    add_executable(trackswap_finger_animation_tests
+        tests/finger_animation_tests.cpp
+        src/finger_animation.cpp
+        src/finger_animation.h
+        src/control_protocol.h
+    )
+    target_compile_features(trackswap_finger_animation_tests PRIVATE cxx_std_17)
+    target_include_directories(trackswap_finger_animation_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(trackswap_finger_animation_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_options(trackswap_finger_animation_tests PRIVATE /W4 /WX /permissive- /EHsc)
+    add_test(NAME finger_animation COMMAND trackswap_finger_animation_tests)
 endif()

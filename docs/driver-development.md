@@ -42,7 +42,8 @@ To recover/remove the development registration, fully exit SteamVR and run:
 .\scripts\Uninstall-Driver.ps1
 ```
 
-The provider registers `TRKSWAP-PROXY-00` through `TRKSWAP-PROXY-07` on demand.
+The provider registers direct trackers `TRKSWAP-TRACKER-00` through `TRKSWAP-TRACKER-15`
+and replacement proxies `TRKSWAP-PROXY-00` through `TRKSWAP-PROXY-15` on demand.
 Each proxy reads the exact physical OpenVR path supplied by its runtime route,
 mirrors that device's raw pose, and deliberately reports invalid/disconnected
 tracking when the source is missing or invalid. It does not alter

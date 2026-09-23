@@ -31,6 +31,7 @@ public:
         bool enabled,
         std::uint8_t logicalSlot,
         const char* sourceDevicePath,
+        std::int32_t handSelectionPriority,
         const pose_math::RigidOffset& offset,
         std::uint64_t revision);
     bool QueueControllerInput(const control_protocol::ControllerInputState& input);
@@ -38,9 +39,13 @@ public:
     void RunFrame();
 
 private:
-    std::array<std::unique_ptr<VirtualTracker>, control_protocol::MaximumRoutes> trackers_;
-    std::array<std::atomic<bool>, control_protocol::MaximumRoutes> registrationRequested_{};
-    std::array<bool, control_protocol::MaximumRoutes> registered_{};
+    std::array<std::unique_ptr<VirtualTracker>, control_protocol::MaximumRoutes> directTrackers_;
+    std::array<std::unique_ptr<VirtualTracker>, control_protocol::MaximumRoutes> proxyTrackers_;
+    std::array<std::atomic<bool>, control_protocol::MaximumRoutes> directRegistrationRequested_{};
+    std::array<std::atomic<bool>, control_protocol::MaximumRoutes> proxyRegistrationRequested_{};
+    std::array<bool, control_protocol::MaximumRoutes> directRegistered_{};
+    std::array<bool, control_protocol::MaximumRoutes> proxyRegistered_{};
+    std::array<std::atomic<bool>, control_protocol::MaximumRoutes> activeProxy_{};
     std::array<std::unique_ptr<VirtualController>, 2> controllers_;
     std::array<std::atomic<bool>, 2> controllerRegistrationRequested_{};
     std::array<bool, 2> controllerRegistered_{};

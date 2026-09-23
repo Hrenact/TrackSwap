@@ -46,9 +46,23 @@ namespace TrackSwap
         private readonly DispatcherTimer _telemetryTimer;
         private readonly DispatcherTimer _oscMonitorTimer;
         private readonly DispatcherTimer _oscApplyTimer;
+        private readonly DispatcherTimer _routeAutoApplyTimer;
         private Model3DGroup _sourcePreviewModel;
         private Model3DGroup _proxyPreviewModel;
         private Model3DGroup _targetPreviewModel;
+        private Model3DGroup _gizmoPreviewModel;
+        private readonly Dictionary<GeometryModel3D, GizmoAxis> _gizmoHitModels =
+            new Dictionary<GeometryModel3D, GizmoAxis>();
+        private GizmoMode _gizmoMode = GizmoMode.None;
+        private GizmoAxis _gizmoDragAxis = GizmoAxis.None;
+        private PoseOffset _gizmoDragStartOffset;
+        private Point _gizmoDragStartPointer;
+        private Vector _gizmoDragScreenDirection;
+        private double _gizmoDragUnitsPerPixel;
+        private bool _gizmoPreviewOverrideActive;
+        private bool _gizmoVisible;
+        private Matrix3D _gizmoWorldTransform = Matrix3D.Identity;
+        private Vector3D _previewCenterOffset;
         private Point3D _previewCameraTarget = new Point3D(0, 0, 0);
         private double _previewCameraYaw = 0.694;
         private double _previewCameraPitch = 0.397;
@@ -65,14 +79,16 @@ namespace TrackSwap
         private RuntimeStatusSnapshot _runtimeStatus;
         private long _loadedRuntimeRevision = -1;
         private bool _runtimeEditorInitialized;
-        private bool _calibrationProfilesLoaded;
-        private bool _calibrationBusy;
         private bool _deviceRefreshPending;
         private bool _telemetryUpdatePending;
         private bool _oscMonitorUpdatePending;
         private bool _loadingOscFields;
         private bool _oscAutoApplyBusy;
         private bool _oscAutoApplyQueued;
+        private bool _routeAutoApplyBusy;
+        private bool _routeAutoApplyQueued;
+        private string _routeAutoApplyIssueText;
+        private string _routeAutoApplyIssueDetail;
         private int _runtimeStatusFailureCount;
         private int _telemetryFailureCount;
         private string _previewModelDescription;
@@ -87,13 +103,14 @@ namespace TrackSwap
         private bool _showingSettings;
         private SettingsSection _settingsSection = SettingsSection.Runtime;
         private bool _showSteamVrRoleTargets;
+        private bool _allowDuplicatePoseSources;
+        private int _controllerHandSelectionPriority;
         private bool _hideSourceInPreview;
         private bool _hideTargetInPreview;
         private bool _showProxyInPreview;
         private bool _followSteamVrWithTrackSwap;
         private bool _steamVrObservedForUiLifecycle;
         private bool _steamVrUiCloseScheduled;
-        private readonly bool _startedForSteamVrSession;
         private RuntimeLifecycleMode _runtimeLifecycleMode;
         private bool _runtimeLifecycleSelectionReady;
         private bool _runtimeStartPending;
@@ -113,15 +130,17 @@ namespace TrackSwap
 
             UiPreferences preferences = _uiPreferencesService.Load();
             _showSteamVrRoleTargets = preferences.ShowSteamVrRoleTargets;
+            _allowDuplicatePoseSources = preferences.AllowDuplicatePoseSources;
+            _controllerHandSelectionPriority = preferences.ControllerHandSelectionPriority;
             _hideSourceInPreview = preferences.HideSourceInPreview;
             _hideTargetInPreview = preferences.HideTargetInPreview;
             _showProxyInPreview = preferences.ShowProxyInPreview;
             _runtimeLifecycleMode = preferences.RuntimeLifecycleMode;
-            _startedForSteamVrSession = Environment.GetCommandLineArgs().Any(argument =>
-                string.Equals(argument, "--steamvr-session", StringComparison.OrdinalIgnoreCase));
-            _followSteamVrWithTrackSwap =
-                preferences.FollowSteamVrWithTrackSwap || _startedForSteamVrSession;
+            _followSteamVrWithTrackSwap = preferences.FollowSteamVrWithTrackSwap;
             ShowSteamVrRoleTargetsCheckBox.IsChecked = _showSteamVrRoleTargets;
+            AllowDuplicatePoseSourcesCheckBox.IsChecked = _allowDuplicatePoseSources;
+            ControllerHandSelectionPriorityTextBox.Text =
+                _controllerHandSelectionPriority.ToString(CultureInfo.InvariantCulture);
             HideSourceInPreviewCheckBox.IsChecked = _hideSourceInPreview;
             HideTargetInPreviewCheckBox.IsChecked = _hideTargetInPreview;
             ShowProxyInPreviewCheckBox.IsChecked = _showProxyInPreview;
@@ -129,8 +148,8 @@ namespace TrackSwap
             RuntimeModeComboBox.ItemsSource = new[]
             {
                 new RouteModeOption(RouteMode.DirectProxy, "输出为虚拟追踪器"),
-                new RouteModeOption(RouteMode.ReplaceTarget, "替换现有设备位姿"),
-                new RouteModeOption(RouteMode.VirtualController, "输出为虚拟控制器")
+                new RouteModeOption(RouteMode.VirtualController, "输出为虚拟控制器"),
+                new RouteModeOption(RouteMode.ReplaceTarget, "替换现有设备位姿（实验性）")
             };
             RuntimeControllerHandComboBox.ItemsSource = new[]
             {
@@ -140,7 +159,8 @@ namespace TrackSwap
             RuntimeControlInputComboBox.ItemsSource = new[]
             {
                 new ControlInputOption(ControlInputSource.None, "无"),
-                new ControlInputOption(ControlInputSource.Osc, "OSC")
+                new ControlInputOption(ControlInputSource.Osc, "OSC"),
+                new ControlInputOption(ControlInputSource.XInput, "XInput")
             };
             OscResetTimeoutComboBox.ItemsSource = new[]
             {
@@ -159,6 +179,27 @@ namespace TrackSwap
                 _oscApplyTimer.Stop();
                 await ApplyOscSettingsAsync();
             };
+            _routeAutoApplyTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(450)
+            };
+            _routeAutoApplyTimer.Tick += async (_, __) =>
+            {
+                _routeAutoApplyTimer.Stop();
+                await ApplyRouteEditorAutomaticallyAsync();
+            };
+            OffsetTranslationXTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
+            OffsetTranslationYTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
+            OffsetTranslationZTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
+            OffsetRotationXTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
+            OffsetRotationYTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
+            OffsetRotationZTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
+            OffsetRotationWTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
+            foreach (TextBox field in GetOffsetTextBoxes())
+            {
+                field.PreviewTextInput += RuntimeOffsetTextBox_PreviewTextInput;
+                DataObject.AddPastingHandler(field, RuntimeOffsetTextBox_Pasting);
+            }
             LoadOscFields(_workingOsc);
             OscEnabledCheckBox.Click += (_, __) => ScheduleOscSettingsApply(immediate: true);
             OscResetTimeoutComboBox.SelectionChanged += (_, __) => ScheduleOscSettingsApply(immediate: true);
@@ -186,7 +227,6 @@ namespace TrackSwap
                 Array.Empty<TargetOption>(),
                 includeRoleTargets: _showSteamVrRoleTargets,
                 includeConcreteDevices: true);
-            CalibrationNameTextBox.Text = "校准 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
             InitializePosePreview();
             ShowSettingsSection(_settingsSection);
             UpdateContentVisibility();
@@ -221,9 +261,11 @@ namespace TrackSwap
                 _telemetryTimer.Start();
                 _oscMonitorTimer.Start();
                 await RefreshStatusAsync();
-                if (_statusService.IsRunning() && _followSteamVrWithTrackSwap)
+                if (_statusService.IsRunning())
                 {
-                    await SyncSteamVrAutoLaunchAsync(enabled: true, showWarning: false);
+                    await SyncSteamVrAutoLaunchAsync(
+                        enabled: _followSteamVrWithTrackSwap,
+                        showWarning: false);
                 }
             };
             Closed += (_, __) =>
@@ -235,6 +277,8 @@ namespace TrackSwap
                 _telemetryTimer.Stop();
                 _oscMonitorTimer.Stop();
                 _oscApplyTimer.Stop();
+                _routeAutoApplyTimer.Stop();
+                OpenVrInterop.Reset();
             };
         }
 
@@ -421,10 +465,9 @@ namespace TrackSwap
 
         private async Task RefreshDevicesAsync()
         {
-            if (_deviceRefreshPending || _isLoading || _calibrationBusy ||
+            if (_deviceRefreshPending || _isLoading ||
                 SourceComboBox.IsDropDownOpen || TargetComboBox.IsDropDownOpen ||
-                RuntimeSourceComboBox.IsDropDownOpen || RuntimeTargetComboBox.IsDropDownOpen ||
-                CalibrationTargetComboBox.IsDropDownOpen)
+                RuntimeSourceComboBox.IsDropDownOpen || RuntimeTargetComboBox.IsDropDownOpen)
             {
                 return;
             }
@@ -448,6 +491,10 @@ namespace TrackSwap
                             "实时设备扫描失败，已保留上次结果：" + exception.Message;
                         return;
                     }
+                }
+                else if (_lastDeviceRefreshSteamVrRunning)
+                {
+                    OpenVrInterop.Reset();
                 }
 
                 IReadOnlyList<DeviceOption> physicalDevices = onlineSources
@@ -510,7 +557,6 @@ namespace TrackSwap
             RuntimeTargetComboBox.ItemsSource = targets;
             RuntimeTargetComboBox.SelectedItem = targets.FirstOrDefault(target =>
                 string.Equals(target.TargetPath, selectedTargetPath, StringComparison.Ordinal));
-            RefreshCalibrationTargets();
         }
 
         private static IReadOnlyList<TargetOption> BuildTargets(
@@ -670,7 +716,7 @@ namespace TrackSwap
             return device != null &&
                 !string.IsNullOrWhiteSpace(device.DevicePath) &&
                 device.DevicePath.StartsWith("/devices/", StringComparison.Ordinal) &&
-                device.DevicePath.IndexOf(ProtocolConstants.VirtualSerialPrefix, StringComparison.OrdinalIgnoreCase) < 0;
+                !ProtocolConstants.IsTrackSwapVirtualDevicePath(device.DevicePath);
         }
 
         private static string DeviceNameFromPath(string devicePath)
@@ -715,7 +761,7 @@ namespace TrackSwap
         private async Task RefreshStatusAsync()
         {
             UpdateSteamVrStatus();
-            if (_isRuntimeStatusUpdatePending || _calibrationBusy)
+            if (_isRuntimeStatusUpdatePending)
             {
                 return;
             }
@@ -728,10 +774,6 @@ namespace TrackSwap
                 _runtimeStatusFailureCount = 0;
                 _runtimeStatus = status;
                 ShowRuntimeOnline(status);
-                if (!_calibrationProfilesLoaded && !_calibrationBusy)
-                {
-                    await RefreshCalibrationProfilesAsync();
-                }
                 if (!_statusService.IsRunning())
                 {
                     bool deletionsCompleted = true;
@@ -768,6 +810,11 @@ namespace TrackSwap
             {
                 _isRuntimeStatusUpdatePending = false;
                 UpdateRuntimeSelectionDetails();
+                if (_routeAutoApplyQueued && !_routeAutoApplyBusy && _runtimeStatus != null)
+                {
+                    _routeAutoApplyQueued = false;
+                    ScheduleRouteAutoApply(immediate: true);
+                }
                 if (_steamVrUiCloseScheduled && stoppedStateWorkCompleted && !_isClosing)
                 {
                     Close();
@@ -777,6 +824,7 @@ namespace TrackSwap
 
         private void ShowRuntimeOnline(RuntimeStatusSnapshot status)
         {
+            RuntimeLoadingStateText.Text = "正在读取 Runtime 中保存的配置，请稍候。";
             RuntimeStatusText.Text = "Runtime";
             RuntimeStatusText.Foreground = FindBrush("SuccessBrush");
             RuntimeDot.Fill = FindBrush("SuccessBrush");
@@ -804,6 +852,7 @@ namespace TrackSwap
                 LoadRuntimeConfiguration(status.Configuration);
                 _loadedRuntimeRevision = status.Configuration.Revision;
                 _runtimeEditorInitialized = true;
+                UpdateContentVisibility();
             }
             else if (_displayedDriverAppliedRevision != status.DriverAppliedRevision ||
                 _displayedDriverConnected != status.DriverConnected)
@@ -816,6 +865,7 @@ namespace TrackSwap
 
         private void ShowRuntimeOffline(string error)
         {
+            RuntimeLoadingStateText.Text = "暂时无法连接 Runtime，正在重试。你的配置仍保存在本地。";
             RuntimeStatusText.Text = "Runtime";
             RuntimeStatusText.Foreground = FindBrush("MutedTextBrush");
             RuntimeDot.Fill = FindBrush("MutedTextBrush");
@@ -868,19 +918,17 @@ namespace TrackSwap
         {
             DeviceOption source = RuntimeSourceComboBox.SelectedItem as DeviceOption;
             TargetOption target = RuntimeTargetComboBox.SelectedItem as TargetOption;
+            bool modeSelected = RuntimeModeComboBox.SelectedItem is RouteModeOption;
             bool replacesTarget = _selectedRoute?.Mode == RouteMode.ReplaceTarget;
             bool virtualController = _selectedRoute?.Mode == RouteMode.VirtualController;
             bool controllerReady = RuntimeControllerHandComboBox.SelectedItem is ControllerHandOption &&
                 RuntimeControlInputComboBox.SelectedItem is ControlInputOption;
             RuntimeSourcePathText.Text = source?.DevicePath ?? "未选择物理来源";
-            RuntimeTargetPathText.Text = replacesTarget
+            RuntimeTargetPathText.Text = !modeSelected
+                ? "未选择运行模式"
+                : replacesTarget
                 ? target?.TargetPath ?? "未选择替换目标"
                 : virtualController ? "虚拟控制器模式不使用替换目标" : "直接输出模式不使用替换目标";
-            ApplyRuntimeButton.IsEnabled = _runtimeStatus != null && _selectedRoute != null &&
-                !_selectedRoute.PendingDeletion && source != null &&
-                (!replacesTarget || IsAllowedRuntimeTarget(target)) &&
-                (!virtualController || controllerReady);
-
             RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
                 _selectedRoute != null && string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
             bool sourceWillChange = activeRoute != null && source != null &&
@@ -902,9 +950,9 @@ namespace TrackSwap
             {
                 bool applied = _runtimeStatus != null && _runtimeStatus.DriverConnected &&
                     _runtimeStatus.ConfigurationRevision == _runtimeStatus.DriverAppliedRevision &&
-                    activeRoute != null && RouteRoutingMatches(activeRoute, _selectedRoute);
-                bool routeSaved = activeRoute != null && RouteRoutingMatches(activeRoute, _selectedRoute);
-                string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                    activeRoute != null && RouteConfigurationMatches(activeRoute, _selectedRoute);
+                bool routeSaved = activeRoute != null && RouteConfigurationMatches(activeRoute, _selectedRoute);
+                string proxyPath = ProtocolConstants.GetProxyDevicePath(_selectedRoute.VirtualDeviceSlot);
                 TrackingOverrideOption proxyMapping = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath)
                     ? _settingsService.ReadOverrides(_settingsPath).FirstOrDefault(mapping =>
                         string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal))
@@ -913,98 +961,29 @@ namespace TrackSwap
                     string.Equals(proxyMapping.TargetPath, _selectedRoute.TargetDevicePath, StringComparison.Ordinal);
                 bool staticStateReady = replacesTarget ? exactMapping : proxyMapping == null;
                 bool steamVrRunning = _statusService.IsRunning();
-                string state = _selectedRoute.PendingDeletion ? "待删除" : !_selectedRoute.Enabled ? "已停用" : !routeSaved
+                bool synchronized = routeSaved && staticStateReady && (!steamVrRunning || applied);
+                SelectedRouteSyncText.Text = _selectedRoute.PendingDeletion
+                    ? "待删除"
+                    : synchronized ? "配置已同步" : !routeSaved
                     ? "待应用"
                     : !staticStateReady
-                    ? replacesTarget ? "待映射" : "待解除映射"
-                    : !steamVrRunning ? "已配置" : applied ? "已应用" : "待应用";
-                SelectedRouteStateText.Text = state;
-                bool synchronized = routeSaved && staticStateReady && (!steamVrRunning || applied);
-                SelectedRouteStateText.Foreground = FindBrush(_selectedRoute.PendingDeletion ? "WarningBrush" : !_selectedRoute.Enabled ? "MutedTextBrush" : synchronized ? "SuccessBrush" : "WarningBrush");
-                RouteSyncText.Text = _selectedRoute.PendingDeletion
-                    ? "退出 SteamVR 后将自动清理绑定并删除"
-                    : synchronized ? "配置已同步" : !routeSaved
-                    ? "应用更改以保存配置"
-                    : !staticStateReady
                     ? replacesTarget
-                        ? steamVrRunning ? "退出 SteamVR 后将自动写入静态映射" : "正在等待自动写入静态映射"
-                        : steamVrRunning ? "退出 SteamVR 后将自动移除静态映射" : "正在等待移除静态映射"
+                        ? "待写入映射"
+                        : "待移除映射"
                     : "配置待同步";
-                RouteSyncText.Foreground = FindBrush(_selectedRoute.PendingDeletion || !synchronized ? "WarningBrush" : "SuccessBrush");
-                SelectedRouteSummaryText.Text = _selectedRoute.PendingDeletion
-                    ? "该配置仍保持输出；可通过右键菜单取消删除。"
-                    : blockedRoleTarget
-                    ? "旧配置使用 SteamVR 角色目标；请选择明确的在线实体设备完成迁移。"
-                    : source == null || (replacesTarget && target == null) || (virtualController && !controllerReady)
-                    ? replacesTarget ? "选择来源与替换目标以完成配置。" : virtualController
-                        ? "选择位姿来源、控制器侧别与控制输入来源以完成配置。"
-                        : "选择位姿来源以完成配置。"
-                    : replacesTarget
-                        ? DeviceOption.BaseDisplayName(source.DisplayName) + " 提供定位，" +
-                            DeviceOption.BaseDisplayName(target.DisplayName) + " 保留输入。"
-                        : virtualController
-                            ? DeviceOption.BaseDisplayName(source.DisplayName) + " 提供定位，" +
-                                (_selectedRoute.ControlInputSource == ControlInputSource.Osc
-                                    ? "OSC 提供输入"
-                                    : "不接收控制输入") + "，输出至 " +
-                                ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand) + "。"
-                            : DeviceOption.BaseDisplayName(source.DisplayName) + " 提供定位，输出至 " +
-                                ProtocolConstants.GetVirtualSerial(_selectedRoute.VirtualDeviceSlot) + "。";
+                SelectedRouteSyncText.Foreground = FindBrush(
+                    _selectedRoute.PendingDeletion || !synchronized ? "WarningBrush" : "SuccessBrush");
+                if (!string.IsNullOrWhiteSpace(_routeAutoApplyIssueText))
+                {
+                    SelectedRouteSyncText.Text = _routeAutoApplyIssueText;
+                    SelectedRouteSyncText.Foreground = FindBrush("WarningBrush");
+                    SelectedRouteSyncText.ToolTip = _routeAutoApplyIssueDetail;
+                }
+                else
+                {
+                    SelectedRouteSyncText.ToolTip = null;
+                }
             }
-            RefreshCalibrationTargets();
-            UpdateCalibrationControls();
-        }
-
-        private void RefreshCalibrationTargets()
-        {
-            string selectedPath = (CalibrationTargetComboBox.SelectedItem as DeviceOption)?.DevicePath;
-            string sourcePath = (RuntimeSourceComboBox.SelectedItem as DeviceOption)?.DevicePath;
-            IReadOnlyList<DeviceOption> targets = _onlinePhysicalDevices
-                .Where(device => !string.Equals(device.DevicePath, sourcePath, StringComparison.Ordinal))
-                .ToList();
-            bool wasLoading = _isLoading;
-            _isLoading = true;
-            try
-            {
-                CalibrationTargetComboBox.ItemsSource = targets;
-                CalibrationTargetComboBox.SelectedItem = targets.FirstOrDefault(device =>
-                    string.Equals(device.DevicePath, selectedPath, StringComparison.Ordinal));
-            }
-            finally
-            {
-                _isLoading = wasLoading;
-            }
-        }
-
-        private void UpdateCalibrationControls()
-        {
-            CalibrationProfile profile = CalibrationProfileComboBox.SelectedItem as CalibrationProfile;
-            bool runtimeReady = _runtimeStatus != null && !_calibrationBusy &&
-                _selectedRoute?.PendingDeletion != true;
-            CaptureCalibrationButton.IsEnabled = runtimeReady &&
-                RuntimeSourceComboBox.SelectedItem is DeviceOption &&
-                CalibrationTargetComboBox.SelectedItem is DeviceOption &&
-                !string.IsNullOrWhiteSpace(CalibrationNameTextBox.Text);
-            ApplyCalibrationProfileButton.IsEnabled = runtimeReady && profile != null;
-            DeleteCalibrationProfileButton.IsEnabled = runtimeReady && profile != null;
-            CalibrationProfileDetailsText.Text = profile == null
-                ? "尚未选择校准档案。"
-                : profile.SourceDevicePath + " → " + profile.TargetDevicePath +
-                  " · " + profile.SampleCount.ToString(CultureInfo.InvariantCulture) + " 样本" +
-                  " · RMS " + profile.TranslationRmsMetres.ToString("F4", CultureInfo.InvariantCulture) + " m / " +
-                  profile.RotationRmsDegrees.ToString("F2", CultureInfo.InvariantCulture) + "°";
-        }
-
-        private async Task RefreshCalibrationProfilesAsync()
-        {
-            CalibrationProfilesSnapshot snapshot = await _runtimeControlService.ListCalibrationProfilesAsync();
-            string selectedId = (CalibrationProfileComboBox.SelectedItem as CalibrationProfile)?.ProfileId;
-            CalibrationProfileComboBox.ItemsSource = snapshot.Profiles;
-            CalibrationProfileComboBox.SelectedItem = snapshot.Profiles.FirstOrDefault(profile =>
-                string.Equals(profile.ProfileId, selectedId, StringComparison.Ordinal))
-                ?? snapshot.Profiles.FirstOrDefault();
-            _calibrationProfilesLoaded = true;
-            UpdateCalibrationControls();
         }
 
         private void LoadRuntimeConfiguration(RuntimeConfiguration configuration)
@@ -1069,6 +1048,8 @@ namespace TrackSwap
         private void RefreshRouteList(string selectedRouteId = null)
         {
             _routeItems.Clear();
+            RouteCountText.Text = _workingRoutes.Count.ToString("00", CultureInfo.InvariantCulture) +
+                " / " + ProtocolConstants.MaximumRoutes.ToString("00", CultureInfo.InvariantCulture);
             bool steamVrRunning = _statusService.IsRunning();
             bool driverApplied = _runtimeStatus != null && _runtimeStatus.DriverConnected &&
                 _runtimeStatus.ConfigurationRevision > 0 &&
@@ -1081,9 +1062,9 @@ namespace TrackSwap
             {
                 RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
                     string.Equals(candidate.RouteId, route.RouteId, StringComparison.Ordinal));
-                bool routeSaved = activeRoute != null && RouteRoutingMatches(activeRoute, route);
+                bool routeSaved = activeRoute != null && RouteConfigurationMatches(activeRoute, route);
                 TrackingOverrideOption proxyMapping = overrides.FirstOrDefault(mapping =>
-                    string.Equals(mapping.SourcePath, ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot), StringComparison.Ordinal));
+                    string.Equals(mapping.SourcePath, ProtocolConstants.GetProxyDevicePath(route.VirtualDeviceSlot), StringComparison.Ordinal));
                 bool replacesTarget = route.Mode == RouteMode.ReplaceTarget;
                 bool exactMapping = replacesTarget && proxyMapping != null &&
                     string.Equals(proxyMapping.TargetPath, route.TargetDevicePath, StringComparison.Ordinal);
@@ -1105,9 +1086,12 @@ namespace TrackSwap
 
         private void ShowSelectedRoute(RouteConfiguration route)
         {
+            ClearRouteAutoApplyIssue();
             _selectedRoute = route;
             if (route == null)
             {
+                _gizmoVisible = false;
+                HidePreviewModel(_gizmoPreviewModel);
                 UpdateContentVisibility();
                 return;
             }
@@ -1124,7 +1108,7 @@ namespace TrackSwap
 
                 RuntimeModeComboBox.SelectedItem = RuntimeModeComboBox.Items
                     .Cast<RouteModeOption>()
-                    .First(option => option.Mode == route.Mode);
+                    .FirstOrDefault(option => option.Mode == route.Mode);
                 RuntimeControllerHandComboBox.SelectedItem = RuntimeControllerHandComboBox.Items
                     .Cast<ControllerHandOption>()
                     .FirstOrDefault(option => option.Hand == route.ControllerHand);
@@ -1142,10 +1126,12 @@ namespace TrackSwap
                 TargetOption target = targets.FirstOrDefault(candidate => string.Equals(candidate.TargetPath, route.TargetDevicePath, StringComparison.Ordinal));
                 RuntimeTargetComboBox.SelectedItem = target;
                 LoadOffsetFields(route.Offset ?? PoseOffset.Identity());
-                SelectedProxyText.Text = route.Mode == RouteMode.VirtualController
-                    ? ProtocolConstants.GetControllerSerial(route.ControllerHand)
-                    : ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
-                RuntimeProxyText.Text = ProtocolConstants.GetVirtualSerial(route.VirtualDeviceSlot);
+                SelectedProxyText.Text = route.Mode == RouteMode.Unspecified
+                    ? "请选择运行模式"
+                    : route.Mode == RouteMode.VirtualController
+                        ? ProtocolConstants.GetControllerSerial(route.ControllerHand)
+                        : ProtocolConstants.GetOutputSerial(route.Mode, route.VirtualDeviceSlot);
+                RuntimeProxyText.Text = ProtocolConstants.GetOutputSerial(route.Mode, route.VirtualDeviceSlot);
                 RuntimeControllerOutputText.Text = string.IsNullOrWhiteSpace(ProtocolConstants.GetControllerSerial(route.ControllerHand))
                     ? "请选择控制器侧别"
                     : ProtocolConstants.GetControllerSerial(route.ControllerHand);
@@ -1169,9 +1155,19 @@ namespace TrackSwap
         private void UpdateContentVisibility()
         {
             bool hasRoute = _selectedRoute != null;
-            EmptyStateGrid.Visibility = !_showingSettings && !hasRoute ? Visibility.Visible : Visibility.Collapsed;
-            RouteContentScrollViewer.Visibility = !_showingSettings && hasRoute ? Visibility.Visible : Visibility.Collapsed;
+            bool waitingForRuntimeConfiguration = !_runtimeEditorInitialized;
+            RuntimeLoadingStateGrid.Visibility = !_showingSettings && waitingForRuntimeConfiguration
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            EmptyStateGrid.Visibility = !_showingSettings && !waitingForRuntimeConfiguration && !hasRoute
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            RouteContentScrollViewer.Visibility = !_showingSettings && !waitingForRuntimeConfiguration && hasRoute
+                ? Visibility.Visible
+                : Visibility.Collapsed;
             SettingsContentScrollViewer.Visibility = _showingSettings ? Visibility.Visible : Visibility.Collapsed;
+            AddRouteButton.IsEnabled = _runtimeEditorInitialized &&
+                _workingRoutes.Count < ProtocolConstants.MaximumRoutes;
         }
 
         private static string FormatNumber(double value)
@@ -1246,7 +1242,7 @@ namespace TrackSwap
                 Name = GetNextRouteName(),
                 Enabled = true,
                 VirtualDeviceSlot = slot,
-                Mode = RouteMode.DirectProxy,
+                Mode = RouteMode.Unspecified,
                 Offset = PoseOffset.Identity()
             };
             _workingRoutes.Add(route);
@@ -1279,20 +1275,40 @@ namespace TrackSwap
                  route.Mode == RouteMode.VirtualController &&
                     (route.ControllerHand == ControllerHand.Left || route.ControllerHand == ControllerHand.Right) &&
                     (route.ControlInputSource == ControlInputSource.None ||
-                     route.ControlInputSource == ControlInputSource.Osc));
+                     route.ControlInputSource == ControlInputSource.Osc ||
+                     route.ControlInputSource == ControlInputSource.XInput));
         }
 
-        private static bool RouteRoutingMatches(RouteConfiguration left, RouteConfiguration right)
+        private static bool RouteConfigurationMatches(RouteConfiguration left, RouteConfiguration right)
         {
             return left != null && right != null &&
+                left.Enabled == right.Enabled &&
+                left.PendingDeletion == right.PendingDeletion &&
                 left.Mode == right.Mode &&
                 string.Equals(left.SourceDevicePath, right.SourceDevicePath, StringComparison.Ordinal) &&
                 (left.Mode == RouteMode.DirectProxy ||
                  left.Mode == RouteMode.VirtualController &&
                     left.ControllerHand == right.ControllerHand &&
                     left.ControlInputSource == right.ControlInputSource ||
-                 left.Mode == RouteMode.ReplaceTarget &&
-                    string.Equals(left.TargetDevicePath, right.TargetDevicePath, StringComparison.Ordinal));
+                  left.Mode == RouteMode.ReplaceTarget &&
+                    string.Equals(left.TargetDevicePath, right.TargetDevicePath, StringComparison.Ordinal)) &&
+                PoseOffsetsMatch(left.Offset, right.Offset);
+        }
+
+        private static bool PoseOffsetsMatch(PoseOffset left, PoseOffset right)
+        {
+            if (left == null || right == null)
+            {
+                return left == right;
+            }
+            const double tolerance = 1e-9;
+            return Math.Abs(left.TranslationX - right.TranslationX) <= tolerance &&
+                Math.Abs(left.TranslationY - right.TranslationY) <= tolerance &&
+                Math.Abs(left.TranslationZ - right.TranslationZ) <= tolerance &&
+                Math.Abs(left.RotationX - right.RotationX) <= tolerance &&
+                Math.Abs(left.RotationY - right.RotationY) <= tolerance &&
+                Math.Abs(left.RotationZ - right.RotationZ) <= tolerance &&
+                Math.Abs(left.RotationW - right.RotationW) <= tolerance;
         }
 
         private void RouteListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1436,6 +1452,123 @@ namespace TrackSwap
             }
         }
 
+        private void AllowDuplicatePoseSourcesCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            bool previousValue = _allowDuplicatePoseSources;
+            try
+            {
+                _allowDuplicatePoseSources = AllowDuplicatePoseSourcesCheckBox.IsChecked == true;
+                SaveUiPreferences();
+            }
+            catch (Exception exception)
+            {
+                _allowDuplicatePoseSources = previousValue;
+                AllowDuplicatePoseSourcesCheckBox.IsChecked = previousValue;
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "无法保存高级选项",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private async void ControllerHandSelectionPriorityTextBox_LostKeyboardFocus(
+            object sender,
+            KeyboardFocusChangedEventArgs e)
+        {
+            await ApplyControllerHandSelectionPriorityFromTextAsync();
+        }
+
+        private async void ControllerHandSelectionPriorityTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            await ApplyControllerHandSelectionPriorityFromTextAsync();
+            Keyboard.ClearFocus();
+        }
+
+        private async void ResetControllerHandSelectionPriorityButton_Click(object sender, RoutedEventArgs e)
+        {
+            ControllerHandSelectionPriorityTextBox.Text =
+                ProtocolConstants.DefaultControllerHandSelectionPriority.ToString(CultureInfo.InvariantCulture);
+            await SetControllerHandSelectionPriorityAsync(
+                ProtocolConstants.DefaultControllerHandSelectionPriority);
+        }
+
+        private async Task ApplyControllerHandSelectionPriorityFromTextAsync()
+        {
+            if (!int.TryParse(
+                    ControllerHandSelectionPriorityTextBox.Text,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out int priority))
+            {
+                ControllerHandSelectionPriorityTextBox.Text =
+                    _controllerHandSelectionPriority.ToString(CultureInfo.InvariantCulture);
+                MessageBox.Show(
+                    this,
+                    "控制器优先级必须是 -2147483648 到 2147483647 之间的整数。",
+                    "优先级格式无效",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            await SetControllerHandSelectionPriorityAsync(priority);
+        }
+
+        private async Task SetControllerHandSelectionPriorityAsync(int priority)
+        {
+            if (priority == _controllerHandSelectionPriority)
+            {
+                ControllerHandSelectionPriorityTextBox.Text = priority.ToString(CultureInfo.InvariantCulture);
+                return;
+            }
+
+            int previousValue = _controllerHandSelectionPriority;
+            try
+            {
+                _controllerHandSelectionPriority = priority;
+                ControllerHandSelectionPriorityTextBox.Text = priority.ToString(CultureInfo.InvariantCulture);
+                SaveUiPreferences();
+
+                if (_runtimeStatus != null)
+                {
+                    RuntimeConfiguration active = _runtimeStatus.Configuration ?? new RuntimeConfiguration();
+                    var configuration = new RuntimeConfiguration
+                    {
+                        Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                        AllowDuplicatePoseSources = active.AllowDuplicatePoseSources,
+                        ControllerHandSelectionPriority = priority,
+                        Routes = (active.Routes ?? new List<RouteConfiguration>())
+                            .Select(CloneRoute)
+                            .ToList(),
+                        Osc = CloneOscConfiguration(active.Osc ?? OscConfiguration.CreateDefault())
+                    };
+                    await _runtimeControlService.ApplyConfigurationAsync(configuration);
+                    _loadedRuntimeRevision = -1;
+                    await RefreshStatusAsync();
+                }
+            }
+            catch (Exception exception)
+            {
+                _controllerHandSelectionPriority = previousValue;
+                ControllerHandSelectionPriorityTextBox.Text = previousValue.ToString(CultureInfo.InvariantCulture);
+                SaveUiPreferences();
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "无法保存控制器优先级",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
         private async void FollowSteamVrWithTrackSwapCheckBox_Click(object sender, RoutedEventArgs e)
         {
             bool previousValue = _followSteamVrWithTrackSwap;
@@ -1543,6 +1676,8 @@ namespace TrackSwap
             _uiPreferencesService.Save(new UiPreferences
             {
                 ShowSteamVrRoleTargets = _showSteamVrRoleTargets,
+                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
+                ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 HideSourceInPreview = _hideSourceInPreview,
                 HideTargetInPreview = _hideTargetInPreview,
                 ShowProxyInPreview = _showProxyInPreview,
@@ -1734,6 +1869,8 @@ namespace TrackSwap
                 var candidate = new RuntimeConfiguration
                 {
                     Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                    AllowDuplicatePoseSources = _allowDuplicatePoseSources,
+                    ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                     Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
                     Osc = CloneOscConfiguration(_workingOsc)
                 };
@@ -1768,7 +1905,7 @@ namespace TrackSwap
             ToggleSelectedRouteButton.Content = _selectedRoute.Enabled ? "停用" : "启用";
             if (!_statusService.IsRunning() && IsRouteComplete(_selectedRoute) && !string.IsNullOrWhiteSpace(_settingsPath))
             {
-                string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                string proxyPath = ProtocolConstants.GetProxyDevicePath(_selectedRoute.VirtualDeviceSlot);
                 IReadOnlyList<TrackingOverrideOption> overrides = _settingsService.ReadOverrides(_settingsPath);
                 bool mapped = overrides.Any(mapping => string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal));
                 if (enabling && _selectedRoute.Mode == RouteMode.ReplaceTarget)
@@ -1802,7 +1939,7 @@ namespace TrackSwap
             {
                 if (!_statusService.IsRunning() && !string.IsNullOrWhiteSpace(_settingsPath))
                 {
-                    string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                    string proxyPath = ProtocolConstants.GetProxyDevicePath(_selectedRoute.VirtualDeviceSlot);
                     bool mapped = _settingsService.ReadOverrides(_settingsPath).Any(mapping =>
                         string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal));
                     if (!mapped && IsRouteComplete(_selectedRoute) &&
@@ -1819,18 +1956,20 @@ namespace TrackSwap
             }
 
             bool steamVrRunning = _statusService.IsRunning();
-            string selectedProxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+            string selectedProxyPath = ProtocolConstants.GetProxyDevicePath(_selectedRoute.VirtualDeviceSlot);
             bool hasStaticMapping = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath) &&
                 _settingsService.ReadOverrides(_settingsPath).Any(mapping =>
                     string.Equals(mapping.SourcePath, selectedProxyPath, StringComparison.Ordinal));
-            if (_selectedRoute.Mode != RouteMode.ReplaceTarget && !hasStaticMapping)
+            if (!hasStaticMapping)
             {
                 string outputName = _selectedRoute.Mode == RouteMode.VirtualController
                     ? "虚拟控制器"
-                    : "虚拟追踪器";
+                    : _selectedRoute.Mode == RouteMode.DirectProxy
+                        ? "虚拟追踪器"
+                        : "代理追踪器";
                 if (MessageBox.Show(
                         this,
-                        "确定删除配置 “" + _selectedRoute.Name + "”？对应" + outputName + "将立即停止输出；已保存的校准档案不会删除。",
+                        "确定删除配置 “" + _selectedRoute.Name + "”？对应" + outputName + "将立即停止输出。",
                         "删除配置",
                         MessageBoxButton.OKCancel,
                         MessageBoxImage.Warning) != MessageBoxResult.OK)
@@ -1846,8 +1985,8 @@ namespace TrackSwap
             }
 
             string message = steamVrRunning
-                ? "SteamVR 正在运行。配置会先标记为“待删除”并继续输出，避免目标立即失去定位。完全退出 SteamVR 后，TrackSwap 将自动清理静态绑定并完成删除。\n\n已保存的校准档案不会删除。"
-                : "确定删除配置 “" + _selectedRoute.Name + "”？TrackSwap 将清理对应的静态绑定；已保存的校准档案不会删除。";
+                ? "SteamVR 正在运行。配置会先标记为“待删除”并继续输出，避免目标立即失去定位。完全退出 SteamVR 后，TrackSwap 将自动清理静态绑定并完成删除。"
+                : "确定删除配置 “" + _selectedRoute.Name + "”？TrackSwap 将清理对应的静态绑定。";
             if (MessageBox.Show(
                     this,
                     message,
@@ -1873,6 +2012,8 @@ namespace TrackSwap
             var configuration = new RuntimeConfiguration
             {
                 Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
+                ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
                 Osc = CloneOscConfiguration(_workingOsc)
             };
@@ -1921,7 +2062,7 @@ namespace TrackSwap
                 IReadOnlyList<TrackingOverrideOption> overrides = _settingsService.ReadOverrides(_settingsPath);
                 foreach (RouteConfiguration route in pendingRoutes)
                 {
-                    string proxyPath = ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot);
+                    string proxyPath = ProtocolConstants.GetProxyDevicePath(route.VirtualDeviceSlot);
                     if (overrides.Any(mapping => string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal)))
                     {
                         _settingsService.RemoveOverride(_settingsPath, proxyPath);
@@ -1932,6 +2073,8 @@ namespace TrackSwap
                 var configuration = new RuntimeConfiguration
                 {
                     Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                    AllowDuplicatePoseSources = _allowDuplicatePoseSources,
+                    ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                     Routes = _workingRoutes
                         .Where(route => !route.PendingDeletion && IsRouteComplete(route))
                         .Select(CloneRoute)
@@ -1993,7 +2136,7 @@ namespace TrackSwap
             IReadOnlyDictionary<string, string> desiredMappings = _workingRoutes
                 .Where(route => route.Enabled && route.Mode == RouteMode.ReplaceTarget && IsRouteComplete(route))
                 .ToDictionary(
-                    route => ProtocolConstants.GetVirtualDevicePath(route.VirtualDeviceSlot),
+                    route => ProtocolConstants.GetProxyDevicePath(route.VirtualDeviceSlot),
                     route => route.TargetDevicePath,
                     StringComparer.Ordinal);
 
@@ -2055,14 +2198,200 @@ namespace TrackSwap
                             : ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand);
                         SelectedProxyText.Text = string.IsNullOrWhiteSpace(
                             ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand))
-                            ? ProtocolConstants.GetVirtualSerial(_selectedRoute.VirtualDeviceSlot)
+                            ? ProtocolConstants.GetOutputSerial(_selectedRoute.Mode, _selectedRoute.VirtualDeviceSlot)
                             : ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand);
                     }
                 }
                 UpdateRuntimeSelectionDetails();
-                UpdateRuntimeModeDescription();
                 _ = RefreshPreviewDeviceModelsAsync();
+                ScheduleRouteAutoApply(immediate: true);
             }
+        }
+
+        private void RuntimeOffsetTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isLoading || _isClosing || _selectedRoute == null)
+            {
+                return;
+            }
+
+            if (!TryReadOffset(out PoseOffset offset, out string error))
+            {
+                _routeAutoApplyTimer.Stop();
+                SetRouteAutoApplyIssue("偏移格式无效", error);
+                return;
+            }
+
+            _selectedRoute.Offset = offset;
+            ClearRouteAutoApplyIssue();
+            UpdateRuntimeSelectionDetails();
+            if (_gizmoPreviewOverrideActive)
+            {
+                return;
+            }
+            ScheduleRouteAutoApply(immediate: false);
+        }
+
+        private void RuntimeOffsetTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            if (sender is TextBox field)
+            {
+                e.Handled = !IsPermittedOffsetText(BuildProspectiveText(field, e.Text));
+            }
+        }
+
+        private void RuntimeOffsetTextBox_Pasting(object sender, DataObjectPastingEventArgs e)
+        {
+            if (!(sender is TextBox field) ||
+                !e.SourceDataObject.GetDataPresent(DataFormats.UnicodeText, true))
+            {
+                e.CancelCommand();
+                return;
+            }
+
+            string pastedText = e.SourceDataObject.GetData(DataFormats.UnicodeText, true) as string;
+            if (!IsPermittedOffsetText(BuildProspectiveText(field, pastedText ?? string.Empty)))
+            {
+                e.CancelCommand();
+            }
+        }
+
+        private TextBox[] GetOffsetTextBoxes()
+        {
+            return new[]
+            {
+                OffsetTranslationXTextBox, OffsetTranslationYTextBox, OffsetTranslationZTextBox,
+                OffsetRotationXTextBox, OffsetRotationYTextBox, OffsetRotationZTextBox,
+                OffsetRotationWTextBox
+            };
+        }
+
+        private static string BuildProspectiveText(TextBox field, string insertedText)
+        {
+            string current = field.Text ?? string.Empty;
+            int selectionStart = Math.Max(0, Math.Min(field.SelectionStart, current.Length));
+            int selectionLength = Math.Max(
+                0,
+                Math.Min(field.SelectionLength, current.Length - selectionStart));
+            return current.Remove(selectionStart, selectionLength)
+                .Insert(selectionStart, insertedText ?? string.Empty);
+        }
+
+        private static bool IsPermittedOffsetText(string text)
+        {
+            bool decimalPointSeen = false;
+            for (int index = 0; index < text.Length; index++)
+            {
+                char character = text[index];
+                if (character >= '0' && character <= '9')
+                {
+                    continue;
+                }
+                if (character == '.' && !decimalPointSeen)
+                {
+                    decimalPointSeen = true;
+                    continue;
+                }
+                if (character == '-' && index == 0)
+                {
+                    continue;
+                }
+                return false;
+            }
+            return true;
+        }
+
+        private void ScheduleRouteAutoApply(bool immediate)
+        {
+            if (_isLoading || _isClosing || _selectedRoute == null || _selectedRoute.PendingDeletion)
+            {
+                return;
+            }
+            ClearRouteAutoApplyIssue();
+            _routeAutoApplyTimer.Stop();
+            _routeAutoApplyTimer.Interval = immediate
+                ? TimeSpan.FromMilliseconds(1)
+                : TimeSpan.FromMilliseconds(450);
+            _routeAutoApplyTimer.Start();
+        }
+
+        private async Task ApplyRouteEditorAutomaticallyAsync()
+        {
+            if (_routeAutoApplyBusy)
+            {
+                _routeAutoApplyQueued = true;
+                return;
+            }
+            if (_runtimeStatus == null)
+            {
+                _routeAutoApplyQueued = true;
+                return;
+            }
+            if (!IsRouteEditorComplete())
+            {
+                return;
+            }
+            if (!TryReadOffset(out PoseOffset offset, out string error))
+            {
+                SetRouteAutoApplyIssue("偏移格式无效", error);
+                return;
+            }
+
+            _selectedRoute.Offset = offset;
+            _routeAutoApplyBusy = true;
+            _routeAutoApplyQueued = false;
+            try
+            {
+                SelectedRouteSyncText.Text = "正在应用…";
+                SelectedRouteSyncText.Foreground = FindBrush("WarningBrush");
+                SelectedRouteSyncText.ToolTip = null;
+                await ApplyRuntimeConfigurationAsync(showErrors: false, confirmSourceSwitch: false);
+            }
+            finally
+            {
+                _routeAutoApplyBusy = false;
+                if (_routeAutoApplyQueued)
+                {
+                    _routeAutoApplyQueued = false;
+                    ScheduleRouteAutoApply(immediate: true);
+                }
+            }
+        }
+
+        private bool IsRouteEditorComplete()
+        {
+            if (_selectedRoute == null || _selectedRoute.PendingDeletion ||
+                !(RuntimeModeComboBox.SelectedItem is RouteModeOption) ||
+                !(RuntimeSourceComboBox.SelectedItem is DeviceOption))
+            {
+                return false;
+            }
+            if (_selectedRoute.Mode == RouteMode.ReplaceTarget)
+            {
+                return RuntimeTargetComboBox.SelectedItem is TargetOption target &&
+                    IsAllowedRuntimeTarget(target);
+            }
+            if (_selectedRoute.Mode == RouteMode.VirtualController)
+            {
+                return RuntimeControllerHandComboBox.SelectedItem is ControllerHandOption &&
+                    RuntimeControlInputComboBox.SelectedItem is ControlInputOption;
+            }
+            return true;
+        }
+
+        private void SetRouteAutoApplyIssue(string text, string detail)
+        {
+            _routeAutoApplyIssueText = text;
+            _routeAutoApplyIssueDetail = detail;
+            SelectedRouteSyncText.Text = text;
+            SelectedRouteSyncText.Foreground = FindBrush("WarningBrush");
+            SelectedRouteSyncText.ToolTip = detail;
+        }
+
+        private void ClearRouteAutoApplyIssue()
+        {
+            _routeAutoApplyIssueText = null;
+            _routeAutoApplyIssueDetail = null;
         }
 
         private void RuntimeModeSelection_Changed(object sender, SelectionChangedEventArgs e)
@@ -2084,20 +2413,26 @@ namespace TrackSwap
                 RuntimeControlInputComboBox.SelectedItem = null;
                 SelectedProxyText.Text = option.Mode == RouteMode.VirtualController
                     ? "请选择控制器侧别"
-                    : ProtocolConstants.GetVirtualSerial(_selectedRoute.VirtualDeviceSlot);
+                    : ProtocolConstants.GetOutputSerial(option.Mode, _selectedRoute.VirtualDeviceSlot);
+                RuntimeProxyText.Text = ProtocolConstants.GetOutputSerial(option.Mode, _selectedRoute.VirtualDeviceSlot);
                 RuntimeControllerOutputText.Text = "请选择控制器侧别";
             }
             UpdateRuntimeModePresentation();
             UpdateRuntimeSelectionDetails();
             _ = RefreshPreviewDeviceModelsAsync();
+            ScheduleRouteAutoApply(immediate: true);
         }
 
         private void UpdateRuntimeModePresentation()
         {
+            bool modeSelected = _selectedRoute?.Mode == RouteMode.DirectProxy ||
+                _selectedRoute?.Mode == RouteMode.ReplaceTarget ||
+                _selectedRoute?.Mode == RouteMode.VirtualController;
             bool replacesTarget = _selectedRoute?.Mode == RouteMode.ReplaceTarget;
             bool virtualController = _selectedRoute?.Mode == RouteMode.VirtualController;
-            UpdateRuntimeModeDescription();
-            RuntimeOutputPanel.Visibility = virtualController ? Visibility.Collapsed : Visibility.Visible;
+            RuntimeOutputPanel.Visibility = modeSelected && !virtualController
+                ? Visibility.Visible
+                : Visibility.Collapsed;
             RuntimeTargetPanel.Visibility = replacesTarget ? Visibility.Visible : Visibility.Collapsed;
             RuntimeTargetArrow.Visibility = replacesTarget ? Visibility.Visible : Visibility.Collapsed;
             RuntimeTargetColumn.Width = replacesTarget ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
@@ -2105,185 +2440,10 @@ namespace TrackSwap
             RuntimeControllerPanel.Visibility = virtualController ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        private void UpdateRuntimeModeDescription()
-        {
-            if (_selectedRoute?.Mode == RouteMode.ReplaceTarget)
-            {
-                RuntimeModeDescriptionText.Text = "代理设备将覆盖目标位姿，并保留目标原有输入。";
-                return;
-            }
-            if (_selectedRoute?.Mode == RouteMode.VirtualController)
-            {
-                ControlInputSource? inputSource =
-                    (RuntimeControlInputComboBox.SelectedItem as ControlInputOption)?.Source;
-                RuntimeModeDescriptionText.Text = inputSource == ControlInputSource.None
-                    ? "来源提供位姿；控制器不接收按键或模拟量输入。"
-                    : inputSource == ControlInputSource.Osc
-                        ? "来源提供位姿，OSC 提供按钮与模拟量，输出为一只虚拟控制器。"
-                        : "来源提供位姿；请选择控制输入来源。";
-                return;
-            }
-            RuntimeModeDescriptionText.Text = "来源位姿直接输出到稳定的 TrackSwap 虚拟追踪器。";
-        }
-
         private bool ShouldShowProxyInPreview()
         {
             return _showProxyInPreview || _selectedRoute?.Mode == RouteMode.DirectProxy ||
                 _selectedRoute?.Mode == RouteMode.VirtualController;
-        }
-
-        private void CalibrationSelection_Changed(object sender, SelectionChangedEventArgs e)
-        {
-            if (!_isLoading)
-            {
-                UpdateCalibrationControls();
-            }
-        }
-
-        private async void CaptureCalibrationButton_Click(object sender, RoutedEventArgs e)
-        {
-            DeviceOption source = RuntimeSourceComboBox.SelectedItem as DeviceOption;
-            DeviceOption target = CalibrationTargetComboBox.SelectedItem as DeviceOption;
-            if (source == null || target == null || _runtimeStatus == null)
-            {
-                return;
-            }
-
-            IReadOnlyList<TrackingOverrideOption> overrides =
-                string.IsNullOrWhiteSpace(_settingsPath) || !File.Exists(_settingsPath)
-                    ? Array.Empty<TrackingOverrideOption>()
-                    : _settingsService.ReadOverrides(_settingsPath);
-            string selectedProxyPath = _selectedRoute == null
-                ? string.Empty
-                : ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
-            bool virtualOverrideActive = overrides.Any(mapping =>
-                string.Equals(mapping.SourcePath, selectedProxyPath, StringComparison.Ordinal));
-            if (virtualOverrideActive)
-            {
-                MessageBox.Show(
-                    this,
-                    "校准前必须让目标的原始位姿保持可见。请：\n\n" +
-                    "1. 完全退出 SteamVR；\n" +
-                    "2. 在“设置 → 旧版静态覆盖 v001”中移除该虚拟代理规则；\n" +
-                    "3. 重新启动 SteamVR 后再采集。\n\n" +
-                    "校准完成并验证重合后，再恢复静态引导映射。",
-                    "需要停用静态覆盖",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-                return;
-            }
-
-            MessageBoxResult confirmation = MessageBox.Show(
-                this,
-                "请将来源与目标固定在期望的相对位置，并在约 2 秒采样期间保持两者刚性同步移动。\n\n" +
-                source.DevicePath + "\n→ " + target.DevicePath + "\n\n" +
-                "此操作只会计算并应用偏移；虚拟代理仍将跟随当前物理来源，不会切换为参考目标。",
-                "开始自动校准",
-                MessageBoxButton.OKCancel,
-                MessageBoxImage.Information);
-            if (confirmation != MessageBoxResult.OK)
-            {
-                return;
-            }
-
-            _calibrationBusy = true;
-            CalibrationStatusText.Text = "正在采集 90 组同步位姿，请保持两台设备的相对关系不变…";
-            UpdateCalibrationControls();
-            try
-            {
-                CalibrationCaptureResponse response = await _runtimeControlService.CaptureCalibrationAsync(
-                    new CalibrationCaptureRequest
-                    {
-                        ProfileName = CalibrationNameTextBox.Text.Trim(),
-                        SourceDevicePath = source.DevicePath,
-                        TargetDevicePath = target.DevicePath,
-                        OriginalTargetPoseVisible = true,
-                        RequestedSampleCount = 90
-                    });
-                LoadOffsetFields(response.Profile.Offset);
-                _calibrationProfilesLoaded = false;
-                await RefreshCalibrationProfilesAsync();
-                CalibrationProfileComboBox.SelectedItem = ((IEnumerable<CalibrationProfile>)CalibrationProfileComboBox.ItemsSource)
-                    .FirstOrDefault(profile => string.Equals(
-                        profile.ProfileId, response.Profile.ProfileId, StringComparison.Ordinal));
-                CalibrationStatusText.Text =
-                    "采集通过：RMS " + response.Profile.TranslationRmsMetres.ToString("F4", CultureInfo.InvariantCulture) +
-                    " m / " + response.Profile.RotationRmsDegrees.ToString("F2", CultureInfo.InvariantCulture) +
-                    "°。正在应用校准偏移…";
-                await ApplyRuntimeConfigurationAsync();
-                CalibrationStatusText.Text =
-                    "校准档案已保存，偏移已应用；物理位姿来源仍为 “" + source.DisplayName + "”。";
-                CalibrationNameTextBox.Text = "校准 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
-            }
-            catch (Exception exception)
-            {
-                CalibrationStatusText.Text = "校准失败：" + exception.Message;
-                MessageBox.Show(this, exception.Message, "自动校准失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            finally
-            {
-                _calibrationBusy = false;
-                UpdateCalibrationControls();
-            }
-        }
-
-        private async void ApplyCalibrationProfileButton_Click(object sender, RoutedEventArgs e)
-        {
-            CalibrationProfile profile = CalibrationProfileComboBox.SelectedItem as CalibrationProfile;
-            if (profile == null)
-            {
-                return;
-            }
-            SelectRuntimeSource(profile.SourceDevicePath);
-            LoadOffsetFields(profile.Offset);
-            CalibrationStatusText.Text = "正在应用档案 “" + profile.Name + "”…";
-            await ApplyRuntimeConfigurationAsync();
-            CalibrationStatusText.Text =
-                "档案 “" + profile.Name + "” 的来源与偏移已应用；当前物理位姿来源为 “" +
-                ((RuntimeSourceComboBox.SelectedItem as DeviceOption)?.DisplayName ?? profile.SourceDevicePath) + "”。";
-        }
-
-        private async void DeleteCalibrationProfileButton_Click(object sender, RoutedEventArgs e)
-        {
-            CalibrationProfile profile = CalibrationProfileComboBox.SelectedItem as CalibrationProfile;
-            if (profile == null)
-            {
-                return;
-            }
-            if (MessageBox.Show(
-                    this,
-                    "确定删除校准档案 “" + profile.Name + "”？当前已应用偏移不会改变。",
-                    "删除校准档案",
-                    MessageBoxButton.OKCancel,
-                    MessageBoxImage.Warning) != MessageBoxResult.OK)
-            {
-                return;
-            }
-            try
-            {
-                await _runtimeControlService.DeleteCalibrationProfileAsync(profile.ProfileId);
-                await RefreshCalibrationProfilesAsync();
-                CalibrationStatusText.Text = "校准档案已删除；当前运行时偏移保持不变。";
-            }
-            catch (Exception exception)
-            {
-                MessageBox.Show(this, exception.Message, "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void SelectRuntimeSource(string sourceDevicePath)
-        {
-            var sources = ((RuntimeSourceComboBox.ItemsSource as IEnumerable<DeviceOption>) ??
-                Enumerable.Empty<DeviceOption>()).ToList();
-            DeviceOption source = sources.FirstOrDefault(candidate =>
-                string.Equals(candidate.DevicePath, sourceDevicePath, StringComparison.Ordinal));
-            if (source == null)
-            {
-                source = new DeviceOption("离线 · " + DeviceNameFromPath(sourceDevicePath), sourceDevicePath);
-                sources.Add(source);
-                RuntimeSourceComboBox.ItemsSource = sources;
-            }
-            RuntimeSourceComboBox.SelectedItem = source;
         }
 
         private void LoadOffsetFields(PoseOffset offset)
@@ -2297,16 +2457,6 @@ namespace TrackSwap
             OffsetRotationWTextBox.Text = FormatNumber(offset.RotationW);
         }
 
-        private async void RuntimeRefreshButton_Click(object sender, RoutedEventArgs e)
-        {
-            RefreshAll();
-            if (_selectedRoute != null)
-            {
-                ShowSelectedRoute(_selectedRoute);
-            }
-            await RefreshStatusAsync();
-        }
-
         private async void StartRuntimeButton_Click(object sender, RoutedEventArgs e)
         {
             StartRuntimeButton.IsEnabled = false;
@@ -2314,15 +2464,10 @@ namespace TrackSwap
             await RefreshStatusAsync();
         }
 
-        private async void ResetRuntimeOffsetButton_Click(object sender, RoutedEventArgs e)
+        private void ResetRuntimeOffsetButton_Click(object sender, RoutedEventArgs e)
         {
             SetIdentityOffsetFields();
-            await ApplyRuntimeConfigurationAsync();
-        }
-
-        private async void ApplyRuntimeButton_Click(object sender, RoutedEventArgs e)
-        {
-            await ApplyRuntimeConfigurationAsync();
+            ScheduleRouteAutoApply(immediate: true);
         }
 
         private void SetIdentityOffsetFields()
@@ -2336,56 +2481,91 @@ namespace TrackSwap
             OffsetRotationWTextBox.Text = "1";
         }
 
-        private async Task ApplyRuntimeConfigurationAsync()
+        private async Task ApplyRuntimeConfigurationAsync(
+            bool showErrors = true,
+            bool confirmSourceSwitch = true)
         {
             DeviceOption source = RuntimeSourceComboBox.SelectedItem as DeviceOption;
             TargetOption target = RuntimeTargetComboBox.SelectedItem as TargetOption;
+            bool modeSelected = RuntimeModeComboBox.SelectedItem is RouteModeOption;
             bool replacesTarget = _selectedRoute?.Mode == RouteMode.ReplaceTarget;
             bool virtualController = _selectedRoute?.Mode == RouteMode.VirtualController;
             ControllerHandOption hand = RuntimeControllerHandComboBox.SelectedItem as ControllerHandOption;
             ControlInputOption input = RuntimeControlInputComboBox.SelectedItem as ControlInputOption;
-            if (_runtimeStatus == null || _selectedRoute == null || source == null ||
+            if (_runtimeStatus == null || _selectedRoute == null || !modeSelected || source == null ||
                 (replacesTarget && target == null) ||
                 (virtualController && (hand == null || input == null)))
             {
-                MessageBox.Show(this, "Runtime 未连接，或尚未选择完整路由。", "无法应用", MessageBoxButton.OK, MessageBoxImage.Warning);
+                if (showErrors)
+                {
+                    MessageBox.Show(this, "Runtime 未连接，或尚未选择完整路由。", "无法应用", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else if (_runtimeStatus == null)
+                {
+                    _routeAutoApplyQueued = true;
+                }
                 return;
             }
 
             if (replacesTarget && !IsAllowedRuntimeTarget(target))
             {
-                MessageBox.Show(
-                    this,
-                    "该配置仍使用隐藏的 SteamVR 角色目标。请先选择明确的实体设备，或在“设置 → 高级选项”中启用 SteamVR 角色目标。",
-                    "需要迁移目标",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                if (showErrors)
+                {
+                    MessageBox.Show(
+                        this,
+                        "该配置仍使用隐藏的 SteamVR 角色目标。请先选择明确的实体设备，或在“设置 → 高级选项”中启用 SteamVR 角色目标。",
+                        "需要迁移目标",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+                else
+                {
+                    const string message = "请选择明确的实体设备，或在高级选项中显示 SteamVR 角色目标。";
+                    SetRouteAutoApplyIssue("需要迁移目标", message);
+                    MessageBox.Show(this, message, "配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
                 return;
             }
 
             if (replacesTarget && !string.IsNullOrWhiteSpace(source.RoleTargetPath) &&
                 string.Equals(source.RoleTargetPath, target.TargetPath, StringComparison.Ordinal))
             {
-                MessageBox.Show(
-                    this,
-                    "不能用目标角色当前绑定的设备替换同一个角色。这样会形成位姿反馈环，使目标停在上一帧。\n\n" +
-                    "请选择 Tracker、其他控制器或其他不会被该路由覆盖的位姿来源。",
-                    "检测到自引用路由",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                if (showErrors)
+                {
+                    MessageBox.Show(
+                        this,
+                        "不能用目标角色当前绑定的设备替换同一个角色。这样会形成位姿反馈环，使目标停在上一帧。\n\n" +
+                        "请选择 Tracker、其他控制器或其他不会被该路由覆盖的位姿来源。",
+                        "检测到自引用路由",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+                else
+                {
+                    const string message = "物理来源不能读取同一条路由正在替换的设备角色。";
+                    SetRouteAutoApplyIssue("配置无效", message);
+                    MessageBox.Show(this, message, "配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
                 return;
             }
 
             if (!TryReadOffset(out PoseOffset offset, out string parseError))
             {
-                MessageBox.Show(this, parseError, "偏移格式无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                if (showErrors)
+                {
+                    MessageBox.Show(this, parseError, "偏移格式无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else
+                {
+                    SetRouteAutoApplyIssue("偏移格式无效", parseError);
+                }
                 return;
             }
 
             long revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1);
             RouteConfiguration activeRoute = _runtimeStatus.Configuration?.Routes?.FirstOrDefault(candidate =>
                 string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
-            if (activeRoute != null &&
+            if (confirmSourceSwitch && activeRoute != null &&
                 !string.Equals(activeRoute.SourceDevicePath, source.DevicePath, StringComparison.Ordinal))
             {
                 MessageBoxResult switchResult = MessageBox.Show(
@@ -2415,6 +2595,8 @@ namespace TrackSwap
             var configuration = new RuntimeConfiguration
             {
                 Revision = revision,
+                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
+                ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Select(CloneRoute).ToList(),
                 Osc = CloneOscConfiguration(_workingOsc)
             };
@@ -2426,26 +2608,34 @@ namespace TrackSwap
                 .ToList();
             if (errors.Count != 0)
             {
-                MessageBox.Show(
-                    this,
-                    errors.Any(error => error.IndexOf("cross-route pose cascade", StringComparison.Ordinal) >= 0)
-                        ? "无法应用：该配置会让一条路由读取另一条路由已经覆盖的设备角色，形成级联移动。\n\n" +
-                            string.Join(Environment.NewLine, errors)
-                        : string.Join(Environment.NewLine, errors),
-                    "运行时配置无效",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                if (showErrors)
+                {
+                    MessageBox.Show(
+                        this,
+                        errors.Any(error => error.IndexOf("跨配置的位姿级联", StringComparison.Ordinal) >= 0)
+                            ? "无法应用：该配置会让一条路由读取另一条路由已经覆盖的设备角色，形成级联移动。\n\n" +
+                                string.Join(Environment.NewLine, errors)
+                            : string.Join(Environment.NewLine, errors),
+                        "运行时配置无效",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+                else
+                {
+                    string message = string.Join(Environment.NewLine, errors);
+                    SetRouteAutoApplyIssue("配置无效", message);
+                    MessageBox.Show(this, message, "配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
                 return;
             }
 
-            ApplyRuntimeButton.IsEnabled = false;
             RuntimeAppliedStateText.Text = "正在提交…";
             RuntimeAppliedStateText.Foreground = FindBrush("WarningBrush");
             try
             {
                 if (!_statusService.IsRunning() && !string.IsNullOrWhiteSpace(_settingsPath))
                 {
-                    string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                    string proxyPath = ProtocolConstants.GetProxyDevicePath(_selectedRoute.VirtualDeviceSlot);
                     if (replacesTarget)
                     {
                         _settingsService.ApplyOverride(_settingsPath, proxyPath, target.TargetPath);
@@ -2467,7 +2657,7 @@ namespace TrackSwap
                     IReadOnlyList<TrackingOverrideOption> overrides = string.IsNullOrWhiteSpace(_settingsPath)
                         ? Array.Empty<TrackingOverrideOption>()
                         : _settingsService.ReadOverrides(_settingsPath);
-                    string proxyPath = ProtocolConstants.GetVirtualDevicePath(_selectedRoute.VirtualDeviceSlot);
+                    string proxyPath = ProtocolConstants.GetProxyDevicePath(_selectedRoute.VirtualDeviceSlot);
                     TrackingOverrideOption proxyMapping = overrides.FirstOrDefault(mapping =>
                         string.Equals(mapping.SourcePath, proxyPath, StringComparison.Ordinal));
                     bool staticStateReady = replacesTarget
@@ -2476,15 +2666,22 @@ namespace TrackSwap
                     if (!staticStateReady)
                     {
                         RuntimeRouteChangeWarningText.Text = replacesTarget
-                            ? "运行时配置已保存。退出 SteamVR 后将自动写入静态映射，无需再次点击“应用更改”。"
-                            : "直接输出模式已保存。退出 SteamVR 后将自动移除旧的静态映射，无需再次点击“应用更改”。";
+                            ? "运行时配置已保存。退出 SteamVR 后将自动写入静态映射。"
+                            : "直接输出模式已保存。退出 SteamVR 后将自动移除旧的静态映射。";
                         RuntimeRouteChangeWarningText.Visibility = Visibility.Visible;
                     }
                 }
             }
             catch (Exception exception)
             {
-                MessageBox.Show(this, exception.Message, "运行时路由应用失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                if (showErrors)
+                {
+                    MessageBox.Show(this, exception.Message, "运行时路由应用失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                else if (_selectedRoute != null)
+                {
+                    SetRouteAutoApplyIssue("自动应用失败", exception.Message);
+                }
                 await RefreshStatusAsync();
             }
             finally
@@ -2497,11 +2694,7 @@ namespace TrackSwap
         {
             offset = null;
             error = null;
-            TextBox[] fields =
-            {
-                OffsetTranslationXTextBox, OffsetTranslationYTextBox, OffsetTranslationZTextBox,
-                OffsetRotationXTextBox, OffsetRotationYTextBox, OffsetRotationZTextBox, OffsetRotationWTextBox
-            };
+            TextBox[] fields = GetOffsetTextBoxes();
             var values = new double[fields.Length];
             for (int index = 0; index < fields.Length; index++)
             {
@@ -2739,13 +2932,71 @@ namespace TrackSwap
             _sourcePreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#F5A623"), TrackedDeviceKind.Unknown);
             _proxyPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#5A9BFF"), TrackedDeviceKind.Tracker);
             _targetPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#45D483"), TrackedDeviceKind.Unknown);
+            _gizmoPreviewModel = new Model3DGroup();
             PreviewSceneRoot.Children.Add(_sourcePreviewModel);
             PreviewSceneRoot.Children.Add(_proxyPreviewModel);
             PreviewSceneRoot.Children.Add(_targetPreviewModel);
+            PreviewSceneRoot.Children.Add(_gizmoPreviewModel);
             HidePreviewModel(_sourcePreviewModel);
             HidePreviewModel(_proxyPreviewModel);
             HidePreviewModel(_targetPreviewModel);
+            RebuildGizmoModel();
+            HidePreviewModel(_gizmoPreviewModel);
+            UpdateGizmoModeButtons();
             UpdatePreviewCamera();
+        }
+
+        private void GizmoHiddenButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetGizmoMode(GizmoMode.None);
+        }
+
+        private void GizmoTranslateButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetGizmoMode(GizmoMode.Translate);
+        }
+
+        private void GizmoRotateButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetGizmoMode(GizmoMode.Rotate);
+        }
+
+        private void SetGizmoMode(GizmoMode mode)
+        {
+            if (_gizmoMode == mode)
+            {
+                return;
+            }
+
+            EndPreviewDrag();
+            _gizmoMode = mode;
+            RebuildGizmoModel();
+            if (mode != GizmoMode.None &&
+                _selectedRoute != null &&
+                TryReadOffset(out PoseOffset offset, out _))
+            {
+                Matrix3D matrix = CreateOffsetMatrix(offset);
+                matrix.Translate(_previewCenterOffset);
+                _gizmoWorldTransform = matrix;
+                _gizmoVisible = true;
+                _gizmoPreviewModel.Transform = new MatrixTransform3D(matrix);
+            }
+            else
+            {
+                _gizmoVisible = false;
+                HidePreviewModel(_gizmoPreviewModel);
+            }
+            UpdateGizmoModeButtons();
+        }
+
+        private void UpdateGizmoModeButtons()
+        {
+            GizmoHiddenButton.Background = FindBrush(
+                _gizmoMode == GizmoMode.None ? "AccentSoftBrush" : "SurfaceRaisedBrush");
+            GizmoTranslateButton.Background = FindBrush(
+                _gizmoMode == GizmoMode.Translate ? "AccentSoftBrush" : "SurfaceRaisedBrush");
+            GizmoRotateButton.Background = FindBrush(
+                _gizmoMode == GizmoMode.Rotate ? "AccentSoftBrush" : "SurfaceRaisedBrush");
         }
 
         private void PosePreviewViewport_MouseDown(object sender, MouseButtonEventArgs e)
@@ -2754,8 +3005,18 @@ namespace TrackSwap
             {
                 return;
             }
+
+            Point pointer = e.GetPosition(PosePreviewViewport);
+            if (e.ChangedButton == MouseButton.Left && TryBeginGizmoDrag(pointer))
+            {
+                PreviewInteractionSurface.CaptureMouse();
+                PreviewInteractionSurface.Cursor = Cursors.Hand;
+                e.Handled = true;
+                return;
+            }
+
             _previewDragButton = e.ChangedButton;
-            _previewLastPointer = e.GetPosition(PreviewInteractionSurface);
+            _previewLastPointer = pointer;
             PreviewInteractionSurface.CaptureMouse();
             PreviewInteractionSurface.Cursor = e.ChangedButton == MouseButton.Left
                 ? Cursors.SizeAll
@@ -2765,12 +3026,24 @@ namespace TrackSwap
 
         private void PosePreviewViewport_MouseMove(object sender, MouseEventArgs e)
         {
-            if (_previewDragButton == null || !PreviewInteractionSurface.IsMouseCaptured)
+            if (!PreviewInteractionSurface.IsMouseCaptured)
             {
                 return;
             }
 
-            Point current = e.GetPosition(PreviewInteractionSurface);
+            Point current = e.GetPosition(PosePreviewViewport);
+            if (_gizmoDragAxis != GizmoAxis.None)
+            {
+                UpdateGizmoDrag(current, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+                e.Handled = true;
+                return;
+            }
+
+            if (_previewDragButton == null)
+            {
+                return;
+            }
+
             Vector delta = current - _previewLastPointer;
             _previewLastPointer = current;
             if (_previewDragButton == MouseButton.Right)
@@ -2802,8 +3075,23 @@ namespace TrackSwap
             e.Handled = true;
         }
 
-        private void PosePreviewViewport_MouseUp(object sender, MouseButtonEventArgs e)
+        private async void PosePreviewViewport_MouseUp(object sender, MouseButtonEventArgs e)
         {
+            if (e.ChangedButton == MouseButton.Left && _gizmoDragAxis != GizmoAxis.None)
+            {
+                EndPreviewDrag();
+                try
+                {
+                    await ApplyRouteEditorAutomaticallyAsync();
+                }
+                finally
+                {
+                    _gizmoPreviewOverrideActive = false;
+                }
+                e.Handled = true;
+                return;
+            }
+
             if (_previewDragButton != e.ChangedButton)
             {
                 return;
@@ -2820,20 +3108,229 @@ namespace TrackSwap
             e.Handled = true;
         }
 
-        private void PosePreviewViewport_LostMouseCapture(object sender, MouseEventArgs e)
+        private async void PosePreviewViewport_LostMouseCapture(object sender, MouseEventArgs e)
         {
+            bool interruptedGizmoDrag = _gizmoDragAxis != GizmoAxis.None;
             _previewDragButton = null;
+            _gizmoDragAxis = GizmoAxis.None;
             PreviewInteractionSurface.Cursor = Cursors.Arrow;
+            if (interruptedGizmoDrag)
+            {
+                try
+                {
+                    await ApplyRouteEditorAutomaticallyAsync();
+                }
+                finally
+                {
+                    _gizmoPreviewOverrideActive = false;
+                }
+            }
         }
 
         private void EndPreviewDrag()
         {
             _previewDragButton = null;
+            _gizmoDragAxis = GizmoAxis.None;
             PreviewInteractionSurface.Cursor = Cursors.Arrow;
             if (PreviewInteractionSurface.IsMouseCaptured)
             {
                 PreviewInteractionSurface.ReleaseMouseCapture();
             }
+        }
+
+        private bool TryBeginGizmoDrag(Point pointer)
+        {
+            if (_selectedRoute == null || !TryReadOffset(out PoseOffset offset, out _))
+            {
+                return false;
+            }
+
+            GizmoAxis axis = GizmoAxis.None;
+            Point3D hitPoint = new Point3D();
+            VisualTreeHelper.HitTest(
+                PosePreviewViewport,
+                null,
+                result =>
+                {
+                    if (result is RayMeshGeometry3DHitTestResult ray &&
+                        ray.ModelHit is GeometryModel3D hitModel &&
+                        _gizmoHitModels.TryGetValue(hitModel, out GizmoAxis hitAxis))
+                    {
+                        axis = hitAxis;
+                        hitPoint = ray.PointHit;
+                        return HitTestResultBehavior.Stop;
+                    }
+                    return HitTestResultBehavior.Continue;
+                },
+                new PointHitTestParameters(pointer));
+            if (axis == GizmoAxis.None)
+            {
+                return false;
+            }
+
+            Point3D origin = _gizmoWorldTransform.Transform(new Point3D());
+            Vector3D worldAxis = _gizmoWorldTransform.Transform(GetGizmoAxisVector(axis));
+            if (worldAxis.LengthSquared < 1e-12)
+            {
+                return false;
+            }
+            worldAxis.Normalize();
+
+            Point3D directionOrigin = _gizmoMode == GizmoMode.Translate ? origin : hitPoint;
+            Vector3D direction = worldAxis;
+            if (_gizmoMode == GizmoMode.Rotate)
+            {
+                Vector3D radial = hitPoint - origin;
+                radial -= worldAxis * Vector3D.DotProduct(radial, worldAxis);
+                direction = Vector3D.CrossProduct(worldAxis, radial);
+                if (direction.LengthSquared < 1e-12)
+                {
+                    return false;
+                }
+                direction.Normalize();
+            }
+
+            if (!TryProjectPreviewPoint(directionOrigin, out Point screenOrigin) ||
+                !TryProjectPreviewPoint(directionOrigin + (direction * 0.1), out Point screenEnd))
+            {
+                return false;
+            }
+
+            Vector screenDirection = screenEnd - screenOrigin;
+            if (screenDirection.LengthSquared < 1e-6)
+            {
+                return false;
+            }
+            screenDirection.Normalize();
+
+            _gizmoDragAxis = axis;
+            _gizmoDragStartOffset = offset;
+            _gizmoDragStartPointer = pointer;
+            _gizmoDragScreenDirection = screenDirection;
+            _gizmoDragUnitsPerPixel = GetPreviewWorldUnitsPerPixel(directionOrigin);
+            _gizmoPreviewOverrideActive = true;
+            return true;
+        }
+
+        private void UpdateGizmoDrag(Point pointer, bool fineAdjustment)
+        {
+            if (_gizmoDragAxis == GizmoAxis.None || _gizmoDragStartOffset == null)
+            {
+                return;
+            }
+
+            Vector pointerDelta = pointer - _gizmoDragStartPointer;
+            double signedPixels = Vector.Multiply(pointerDelta, _gizmoDragScreenDirection);
+            double fineScale = fineAdjustment ? 0.2 : 1.0;
+            var next = new PoseOffset
+            {
+                TranslationX = _gizmoDragStartOffset.TranslationX,
+                TranslationY = _gizmoDragStartOffset.TranslationY,
+                TranslationZ = _gizmoDragStartOffset.TranslationZ,
+                RotationX = _gizmoDragStartOffset.RotationX,
+                RotationY = _gizmoDragStartOffset.RotationY,
+                RotationZ = _gizmoDragStartOffset.RotationZ,
+                RotationW = _gizmoDragStartOffset.RotationW
+            };
+
+            Vector3D localAxis = GetGizmoAxisVector(_gizmoDragAxis);
+            var rotation = new Quaternion(
+                next.RotationX,
+                next.RotationY,
+                next.RotationZ,
+                next.RotationW);
+            if (QuaternionLengthSquared(rotation) < 1e-12)
+            {
+                rotation = Quaternion.Identity;
+            }
+            else
+            {
+                rotation.Normalize();
+            }
+
+            if (_gizmoMode == GizmoMode.Translate)
+            {
+                double distance = signedPixels * _gizmoDragUnitsPerPixel * fineScale;
+                Vector3D sourceLocalDelta = RotateVector(rotation, localAxis * distance);
+                next.TranslationX += sourceLocalDelta.X * 100.0;
+                next.TranslationY += sourceLocalDelta.Y * 100.0;
+                next.TranslationZ += sourceLocalDelta.Z * 100.0;
+            }
+            else
+            {
+                double angleDegrees = signedPixels * 0.6 * fineScale;
+                Quaternion delta = new Quaternion(localAxis, angleDegrees);
+                Quaternion combined = MultiplyQuaternion(rotation, delta);
+                combined.Normalize();
+                next.RotationX = combined.X;
+                next.RotationY = combined.Y;
+                next.RotationZ = combined.Z;
+                next.RotationW = combined.W;
+            }
+
+            LoadOffsetFields(next);
+            ApplyOffsetPreviewOverride(next);
+        }
+
+        private bool TryProjectPreviewPoint(Point3D point, out Point screen)
+        {
+            screen = new Point();
+            double width = PosePreviewViewport.ActualWidth;
+            double height = PosePreviewViewport.ActualHeight;
+            if (width <= 1 || height <= 1)
+            {
+                return false;
+            }
+
+            Vector3D forward = PosePreviewCamera.LookDirection;
+            Vector3D up = PosePreviewCamera.UpDirection;
+            if (forward.LengthSquared < 1e-12 || up.LengthSquared < 1e-12)
+            {
+                return false;
+            }
+            forward.Normalize();
+            up.Normalize();
+            Vector3D right = Vector3D.CrossProduct(forward, up);
+            if (right.LengthSquared < 1e-12)
+            {
+                return false;
+            }
+            right.Normalize();
+            up = Vector3D.CrossProduct(right, forward);
+            up.Normalize();
+
+            Vector3D fromCamera = point - PosePreviewCamera.Position;
+            double depth = Vector3D.DotProduct(fromCamera, forward);
+            if (depth <= 1e-6)
+            {
+                return false;
+            }
+            double halfHeight = depth * Math.Tan(PosePreviewCamera.FieldOfView * Math.PI / 360.0);
+            double halfWidth = halfHeight * width / height;
+            screen = new Point(
+                (0.5 + (Vector3D.DotProduct(fromCamera, right) / (2.0 * halfWidth))) * width,
+                (0.5 - (Vector3D.DotProduct(fromCamera, up) / (2.0 * halfHeight))) * height);
+            return true;
+        }
+
+        private double GetPreviewWorldUnitsPerPixel(Point3D point)
+        {
+            Vector3D forward = PosePreviewCamera.LookDirection;
+            if (forward.LengthSquared < 1e-12 || PosePreviewViewport.ActualHeight <= 1)
+            {
+                return 0.001;
+            }
+            forward.Normalize();
+            double depth = Math.Max(0.01, Vector3D.DotProduct(point - PosePreviewCamera.Position, forward));
+            return 2.0 * depth * Math.Tan(PosePreviewCamera.FieldOfView * Math.PI / 360.0) /
+                PosePreviewViewport.ActualHeight;
+        }
+
+        private static Vector3D GetGizmoAxisVector(GizmoAxis axis)
+        {
+            return axis == GizmoAxis.X ? new Vector3D(1, 0, 0) :
+                axis == GizmoAxis.Y ? new Vector3D(0, 1, 0) :
+                new Vector3D(0, 0, 1);
         }
 
         private void UpdatePreviewCamera()
@@ -2885,9 +3382,9 @@ namespace TrackSwap
             bool showProxy = ShouldShowProxyInPreview();
             string outputRenderModel = _selectedRoute.Mode == RouteMode.VirtualController
                 ? _selectedRoute.ControllerHand == ControllerHand.Left
-                    ? "{indexcontroller}valve_controller_knu_1_0_left"
+                    ? "oculus_quest2_controller_left"
                     : _selectedRoute.ControllerHand == ControllerHand.Right
-                        ? "{indexcontroller}valve_controller_knu_1_0_right"
+                        ? "oculus_quest2_controller_right"
                         : null
                 : ProxyRenderModelName;
             Task<OpenVrRenderModel> proxyTask = showProxy
@@ -3078,10 +3575,22 @@ namespace TrackSwap
             bool sourceVisible = !_hideSourceInPreview && IsRenderablePose(snapshot.Source);
             Matrix3D sourceMatrix = Matrix3D.Identity;
             Matrix3D proxyMatrix = Matrix3D.Identity;
-            bool proxyVisible = ShouldShowProxyInPreview() &&
-                IsRenderablePose(snapshot.Source) &&
+            bool hasConfiguredOffset = TryReadOffset(out PoseOffset configuredOffset, out _);
+            bool hasOutputTransform = IsRenderablePose(snapshot.Source) &&
                 IsRenderablePose(snapshot.Output) &&
                 TryGetRelativePoseMatrix(snapshot.Source, snapshot.Output, out proxyMatrix);
+            if ((_gizmoPreviewOverrideActive || !hasOutputTransform) && hasConfiguredOffset)
+            {
+                proxyMatrix = CreateOffsetMatrix(configuredOffset);
+                hasOutputTransform = true;
+            }
+            bool proxyVisible = ShouldShowProxyInPreview() && hasOutputTransform;
+            bool gizmoVisible = _gizmoMode != GizmoMode.None &&
+                _selectedRoute != null && hasConfiguredOffset;
+            _gizmoVisible = gizmoVisible;
+            Matrix3D gizmoMatrix = hasConfiguredOffset
+                ? CreateOffsetMatrix(configuredOffset)
+                : proxyMatrix;
             Rect3D combined = Rect3D.Empty;
             if (sourceVisible)
             {
@@ -3095,15 +3604,22 @@ namespace TrackSwap
             {
                 AddTransformedBounds(ref combined, _proxyPreviewModel, proxyMatrix);
             }
+            if (gizmoVisible)
+            {
+                AddTransformedBounds(ref combined, _gizmoPreviewModel, gizmoMatrix);
+            }
 
-            Vector3D centerOffset = new Vector3D();
-            if (!combined.IsEmpty)
+            Vector3D centerOffset = _gizmoPreviewOverrideActive
+                ? _previewCenterOffset
+                : new Vector3D();
+            if (!_gizmoPreviewOverrideActive && !combined.IsEmpty)
             {
                 centerOffset = new Vector3D(
                     -(combined.X + (combined.SizeX / 2.0)),
                     -(combined.Y + (combined.SizeY / 2.0)),
                     -(combined.Z + (combined.SizeZ / 2.0)));
             }
+            _previewCenterOffset = centerOffset;
 
             if (sourceVisible)
             {
@@ -3132,6 +3648,60 @@ namespace TrackSwap
             {
                 HidePreviewModel(_proxyPreviewModel);
             }
+            if (gizmoVisible)
+            {
+                gizmoMatrix.Translate(centerOffset);
+                _gizmoWorldTransform = gizmoMatrix;
+                _gizmoPreviewModel.Transform = new MatrixTransform3D(gizmoMatrix);
+            }
+            else
+            {
+                HidePreviewModel(_gizmoPreviewModel);
+            }
+        }
+
+        private void ApplyOffsetPreviewOverride(PoseOffset offset)
+        {
+            Matrix3D matrix = CreateOffsetMatrix(offset);
+            matrix.Translate(_previewCenterOffset);
+            _gizmoWorldTransform = matrix;
+            _gizmoVisible = _gizmoMode != GizmoMode.None;
+            if (_gizmoVisible)
+            {
+                _gizmoPreviewModel.Transform = new MatrixTransform3D(matrix);
+            }
+            else
+            {
+                HidePreviewModel(_gizmoPreviewModel);
+            }
+            if (ShouldShowProxyInPreview())
+            {
+                _proxyPreviewModel.Transform = new MatrixTransform3D(matrix);
+            }
+        }
+
+        private static Matrix3D CreateOffsetMatrix(PoseOffset offset)
+        {
+            var rotation = new Quaternion(
+                offset.RotationX,
+                offset.RotationY,
+                offset.RotationZ,
+                offset.RotationW);
+            if (QuaternionLengthSquared(rotation) < 1e-12)
+            {
+                rotation = Quaternion.Identity;
+            }
+            else
+            {
+                rotation.Normalize();
+            }
+            Matrix3D matrix = Matrix3D.Identity;
+            matrix.Rotate(rotation);
+            matrix.Translate(new Vector3D(
+                offset.TranslationX / 100.0,
+                offset.TranslationY / 100.0,
+                offset.TranslationZ / 100.0));
+            return matrix;
         }
 
         private static void AddTransformedBounds(
@@ -3196,6 +3766,12 @@ namespace TrackSwap
                 (left.W * right.Y) - (left.X * right.Z) + (left.Y * right.W) + (left.Z * right.X),
                 (left.W * right.Z) + (left.X * right.Y) - (left.Y * right.X) + (left.Z * right.W),
                 (left.W * right.W) - (left.X * right.X) - (left.Y * right.Y) - (left.Z * right.Z));
+        }
+
+        private static double QuaternionLengthSquared(Quaternion value)
+        {
+            return (value.X * value.X) + (value.Y * value.Y) +
+                (value.Z * value.Z) + (value.W * value.W);
         }
 
         private static Vector3D RotateVector(Quaternion rotation, Vector3D value)
@@ -3399,6 +3975,164 @@ namespace TrackSwap
             return axes;
         }
 
+        private void RebuildGizmoModel()
+        {
+            Transform3D transform = _gizmoPreviewModel.Transform;
+            _gizmoPreviewModel.Children.Clear();
+            _gizmoHitModels.Clear();
+            if (_gizmoMode == GizmoMode.Translate)
+            {
+                AddTranslationGizmoAxis(GizmoAxis.X, Colors.IndianRed);
+                AddTranslationGizmoAxis(GizmoAxis.Y, Colors.LimeGreen);
+                AddTranslationGizmoAxis(GizmoAxis.Z, Colors.DodgerBlue);
+            }
+            else if (_gizmoMode == GizmoMode.Rotate)
+            {
+                AddRotationGizmoAxis(GizmoAxis.X, Colors.IndianRed);
+                AddRotationGizmoAxis(GizmoAxis.Y, Colors.LimeGreen);
+                AddRotationGizmoAxis(GizmoAxis.Z, Colors.DodgerBlue);
+            }
+            _gizmoPreviewModel.Transform = transform;
+        }
+
+        private void AddTranslationGizmoAxis(GizmoAxis axis, Color color)
+        {
+            const double shaftLength = 0.13;
+            const double tipLength = 0.055;
+            const double tipRadius = 0.022;
+            const double thickness = 0.009;
+            Vector3D size = axis == GizmoAxis.X
+                ? new Vector3D(shaftLength, thickness, thickness)
+                : axis == GizmoAxis.Y
+                    ? new Vector3D(thickness, shaftLength, thickness)
+                    : new Vector3D(thickness, thickness, shaftLength);
+            Point3D center = axis == GizmoAxis.X
+                ? new Point3D(shaftLength / 2.0, 0, 0)
+                : axis == GizmoAxis.Y
+                    ? new Point3D(0, shaftLength / 2.0, 0)
+                    : new Point3D(0, 0, shaftLength / 2.0);
+            AddGizmoGeometry(CreateBoxModel(center, size, color), axis);
+            AddGizmoGeometry(CreateConeModel(
+                axis,
+                shaftLength,
+                shaftLength + tipLength,
+                tipRadius,
+                color), axis);
+        }
+
+        private void AddRotationGizmoAxis(GizmoAxis axis, Color color)
+        {
+            AddGizmoGeometry(CreateRingModel(axis, 0.135, 0.012, color), axis);
+        }
+
+        private void AddGizmoGeometry(GeometryModel3D model, GizmoAxis axis)
+        {
+            _gizmoPreviewModel.Children.Add(model);
+            _gizmoHitModels[model] = axis;
+        }
+
+        private static GeometryModel3D CreateRingModel(
+            GizmoAxis axis,
+            double radius,
+            double thickness,
+            Color color)
+        {
+            const int segments = 72;
+            double innerRadius = radius - (thickness / 2.0);
+            double outerRadius = radius + (thickness / 2.0);
+            var positions = new Point3DCollection((segments + 1) * 2);
+            for (int index = 0; index <= segments; index++)
+            {
+                double angle = index * Math.PI * 2.0 / segments;
+                positions.Add(RingPoint(axis, innerRadius, angle));
+                positions.Add(RingPoint(axis, outerRadius, angle));
+            }
+
+            var indices = new Int32Collection(segments * 6);
+            for (int index = 0; index < segments; index++)
+            {
+                int first = index * 2;
+                indices.Add(first);
+                indices.Add(first + 1);
+                indices.Add(first + 3);
+                indices.Add(first);
+                indices.Add(first + 3);
+                indices.Add(first + 2);
+            }
+            var mesh = new MeshGeometry3D
+            {
+                Positions = positions,
+                TriangleIndices = indices
+            };
+            var material = new DiffuseMaterial(new SolidColorBrush(color));
+            return new GeometryModel3D(mesh, material) { BackMaterial = material };
+        }
+
+        private static Point3D RingPoint(GizmoAxis axis, double radius, double angle)
+        {
+            double first = Math.Cos(angle) * radius;
+            double second = Math.Sin(angle) * radius;
+            return axis == GizmoAxis.X
+                ? new Point3D(0, first, second)
+                : axis == GizmoAxis.Y
+                    ? new Point3D(first, 0, second)
+                    : new Point3D(first, second, 0);
+        }
+
+        private static GeometryModel3D CreateConeModel(
+            GizmoAxis axis,
+            double baseDistance,
+            double tipDistance,
+            double radius,
+            Color color)
+        {
+            const int segments = 24;
+            var positions = new Point3DCollection(segments + 2);
+            for (int index = 0; index < segments; index++)
+            {
+                double angle = index * Math.PI * 2.0 / segments;
+                double first = Math.Cos(angle) * radius;
+                double second = Math.Sin(angle) * radius;
+                positions.Add(axis == GizmoAxis.X
+                    ? new Point3D(baseDistance, first, second)
+                    : axis == GizmoAxis.Y
+                        ? new Point3D(first, baseDistance, second)
+                        : new Point3D(first, second, baseDistance));
+            }
+            positions.Add(axis == GizmoAxis.X
+                ? new Point3D(tipDistance, 0, 0)
+                : axis == GizmoAxis.Y
+                    ? new Point3D(0, tipDistance, 0)
+                    : new Point3D(0, 0, tipDistance));
+            positions.Add(axis == GizmoAxis.X
+                ? new Point3D(baseDistance, 0, 0)
+                : axis == GizmoAxis.Y
+                    ? new Point3D(0, baseDistance, 0)
+                    : new Point3D(0, 0, baseDistance));
+
+            int tipIndex = segments;
+            int baseCenterIndex = segments + 1;
+            var indices = new Int32Collection(segments * 6);
+            for (int index = 0; index < segments; index++)
+            {
+                int next = (index + 1) % segments;
+                indices.Add(index);
+                indices.Add(next);
+                indices.Add(tipIndex);
+                indices.Add(baseCenterIndex);
+                indices.Add(next);
+                indices.Add(index);
+            }
+
+            var mesh = new MeshGeometry3D
+            {
+                Positions = positions,
+                TriangleIndices = indices
+            };
+            var material = new DiffuseMaterial(new SolidColorBrush(color));
+            return new GeometryModel3D(mesh, material) { BackMaterial = material };
+        }
+
         private static GeometryModel3D CreateBoxModel(Point3D center, Vector3D size, Color color)
         {
             double x = size.X / 2;
@@ -3577,6 +4311,8 @@ namespace TrackSwap
             var configuration = new RuntimeConfiguration
             {
                 Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
+                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
+                ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
                 Osc = osc
             };
@@ -3618,6 +4354,21 @@ namespace TrackSwap
                 Port = source.Port,
                 ResetTimeout = source.ResetTimeout
             };
+        }
+
+        private enum GizmoMode
+        {
+            None,
+            Translate,
+            Rotate
+        }
+
+        private enum GizmoAxis
+        {
+            None,
+            X,
+            Y,
+            Z
         }
 
         private enum SettingsSection

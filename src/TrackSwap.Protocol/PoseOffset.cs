@@ -2,7 +2,7 @@ namespace TrackSwap.Protocol
 {
     /// <summary>
     /// A rigid transform expressed in the source device's local coordinate frame.
-    /// Translation is in metres. Quaternion component order is (x, y, z, w).
+    /// Translation is in centimetres. Quaternion component order is (x, y, z, w).
     /// The driver applies this as T_output = T_source * T_offset.
     /// </summary>
     public sealed class PoseOffset

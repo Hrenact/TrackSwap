@@ -1,28 +1,53 @@
 {
   "jsonid": "input_profile",
   "controller_type": "trackswap_controller",
-  "compatibility_mode_controller_type": "knuckles",
+  "compatibility_mode_controller_type": "oculus_touch",
   "device_class": "TrackedDeviceClass_Controller",
   "resource_root": "trackswap",
   "driver_name": "trackswap",
-  "legacy_binding": "{indexcontroller}/input/legacy_bindings_index_controller.json",
-  "remapping": "{indexcontroller}/input/index_controller_remapping.json",
+  "legacy_binding": "{oculus}/input/legacy_bindings_touch.json",
   "input_bindingui_mode": "controller_handed",
   "should_show_binding_errors": true,
   "input_bindingui_left": {
-    "image": "{indexcontroller}/icons/indexcontroller_left.svg"
+    "image": "{oculus}/icons/oculus_touch_left.svg"
   },
   "input_bindingui_right": {
-    "image": "{indexcontroller}/icons/indexcontroller_right.svg"
+    "image": "{oculus}/icons/oculus_touch_right.svg"
   },
   "input_source": {
-    "/input/a": { "type": "button", "click": true, "binding_image_point": [26, 42], "order": 1 },
-    "/input/b": { "type": "button", "click": true, "binding_image_point": [18, 37], "order": 2 },
-    "/input/thumbstick": { "type": "joystick", "click": true, "binding_image_point": [31, 26], "order": 3 },
-    "/input/trigger": { "type": "trigger", "click": true, "value": true, "binding_image_point": [11, 60], "order": 4 },
-    "/input/grip": { "type": "trigger", "force": true, "value": true, "touch": true, "input_activity_path": "/input/grip/force", "input_activity_threshold": 0.1, "binding_image_point": [47, 86], "order": 5 },
-    "/input/system": { "type": "button", "click": true, "binding_image_point": [34, 45], "order": 6 },
-    "/pose/raw": { "type": "pose", "binding_image_point": [5, 35] },
-    "/pose/tip": { "type": "pose", "binding_image_point": [5, 35] }
+    "/input/joystick": { "type": "joystick", "click": true, "touch": true, "binding_image_point": [54, 31], "order": 2 },
+    "/input/trigger": { "type": "trigger", "click": true, "value": true, "touch": true, "binding_image_point": [22, 85], "order": 1 },
+    "/input/grip": { "type": "trigger", "click": true, "value": true, "touch": true, "binding_image_point": [100, 86], "order": 3 },
+    "/input/a": { "type": "button", "side": "right", "click": true, "touch": true, "binding_image_point": [70, 49], "order": 4 },
+    "/input/b": { "type": "button", "side": "right", "click": true, "touch": true, "binding_image_point": [54, 55], "order": 5 },
+    "/input/x": { "type": "button", "side": "left", "click": true, "touch": true, "binding_image_point": [70, 49], "order": 4 },
+    "/input/y": { "type": "button", "side": "left", "click": true, "touch": true, "binding_image_point": [54, 55], "order": 5 },
+    "/input/system": { "type": "button", "click": true, "touch": true, "binding_image_point": [72, 39], "order": 0 },
+    "/input/thumbrest": { "type": "button", "touch": true, "binding_image_point": [70, 65], "order": 6 },
+    "/pose/raw": { "type": "pose", "binding_image_point": [14, 16] },
+    "/pose/base": { "type": "pose", "binding_image_point": [11, 150] },
+    "/pose/handgrip": { "type": "pose", "binding_image_point": [24, 86] },
+    "/pose/tip": { "type": "pose", "binding_image_point": [14, 16] },
+    "/input/skeleton/left": { "type": "skeleton", "skeleton": "/skeleton/hand/left", "side": "left", "binding_image_point": [11, 150] },
+    "/input/skeleton/right": { "type": "skeleton", "skeleton": "/skeleton/hand/right", "side": "right", "binding_image_point": [11, 150] }
+  },
+  "mirror_mappings": [
+    ["/user/hand/left/input/x", "/user/hand/right/input/a"],
+    ["/user/hand/left/input/y", "/user/hand/right/input/b"]
+  ],
+  "simulation_settings": {
+    "hmd_profile": "rift",
+    "left_modelnumber": "TrackSwap Touch Left",
+    "right_modelnumber": "TrackSwap Touch Right",
+    "left_serialnumber": "TRKSWAP-CONTROLLER-L",
+    "right_serialnumber": "TRKSWAP-CONTROLLER-R",
+    "left_rendermodel": "oculus_quest2_controller_left",
+    "right_rendermodel": "oculus_quest2_controller_right",
+    "left_registered_device_type": "trackswap/TRKSWAP-CONTROLLER-L",
+    "right_registered_device_type": "trackswap/TRKSWAP-CONTROLLER-R",
+    "tracking_system_name": "trackswap",
+    "manufacturer_name": "Hrenact",
+    "legacy_buttons": [0, 1, 2, 7, 32, 33, 34],
+    "legacy_axis": [2, 3, 3, 0, 0]
   }
 }

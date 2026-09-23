@@ -21,7 +21,7 @@ if (-not (Test-Path -LiteralPath $settingsPath)) {
     throw "Packaged driver settings were not found at $settingsPath. Run scripts\Build-Driver.ps1 first."
 }
 
-if ($SourceDevicePath -ieq "/devices/trackswap/TRKSWAP-PROXY-00") {
+if ($SourceDevicePath -imatch '^/devices/trackswap/TRKSWAP-(PROXY-[0-9]{2}|TRACKER-[0-9]{2}|CONTROLLER-[LR])$') {
     throw "The TrackSwap virtual device cannot be its own source."
 }
 

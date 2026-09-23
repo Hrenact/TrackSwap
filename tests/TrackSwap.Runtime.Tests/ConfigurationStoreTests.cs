@@ -6,6 +6,16 @@ namespace TrackSwap.Runtime.Tests;
 public sealed class ConfigurationStoreTests
 {
     [Fact]
+    public void MissingControllerPriorityUsesNeutralDefault()
+    {
+        RuntimeConfiguration configuration = JsonConvert.DeserializeObject<RuntimeConfiguration>("{}")!;
+
+        Assert.Equal(
+            ProtocolConstants.DefaultControllerHandSelectionPriority,
+            configuration.ControllerHandSelectionPriority);
+    }
+
+    [Fact]
     public void LoadIgnoresLegacyOscAddressMappings()
     {
         string directory = Path.Combine(Path.GetTempPath(), "trackswap-tests", Guid.NewGuid().ToString("N"));

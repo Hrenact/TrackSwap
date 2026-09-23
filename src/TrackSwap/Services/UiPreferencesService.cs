@@ -67,6 +67,10 @@ namespace TrackSwap.Services
     {
         public bool ShowSteamVrRoleTargets { get; set; }
 
+        public bool AllowDuplicatePoseSources { get; set; }
+
+        public int ControllerHandSelectionPriority { get; set; } = ProtocolConstants.DefaultControllerHandSelectionPriority;
+
         public bool HideSourceInPreview { get; set; }
 
         public bool HideTargetInPreview { get; set; }

@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -24,110 +22,57 @@ namespace TrackSwap.Services
 
         private IReadOnlyList<DeviceOption> EnumerateOnlineDevicesCore(string runtimePath)
         {
-            if (string.IsNullOrWhiteSpace(runtimePath))
-            {
-                throw new InvalidOperationException("未找到 SteamVR Runtime 路径。");
-            }
+            IntPtr systemTable = OpenVrInterop.GetInterface(runtimePath, SystemInterfaceVersion);
 
-            string libraryPath = Path.Combine(runtimePath, "bin", "win64", "openvr_api.dll");
-            if (!File.Exists(libraryPath))
-            {
-                throw new FileNotFoundException("未找到 OpenVR 运行库。", libraryPath);
-            }
+            // These positions must match Valve's IVRSystem_026 function table exactly.
+            GetControllerRole getRole = GetTableFunction<GetControllerRole>(systemTable, 19);
+            GetTrackedDeviceClass getClass = GetTableFunction<GetTrackedDeviceClass>(systemTable, 20);
+            IsTrackedDeviceConnected isConnected = GetTableFunction<IsTrackedDeviceConnected>(systemTable, 21);
+            GetStringTrackedDeviceProperty getStringProperty = GetTableFunction<GetStringTrackedDeviceProperty>(systemTable, 28);
 
-            IntPtr module = LoadLibrary(libraryPath);
-            if (module == IntPtr.Zero)
+            var devices = new List<DeviceOption>();
+            for (uint index = 0; index < MaxTrackedDeviceCount; index++)
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "无法载入 OpenVR 运行库。");
-            }
-
-            bool initialized = false;
-            try
-            {
-                VRInitInternal init = GetExport<VRInitInternal>(module, "VR_InitInternal2");
-                VRGetGenericInterface getInterface = GetExport<VRGetGenericInterface>(module, "VR_GetGenericInterface");
-                VRShutdownInternal shutdown = GetExport<VRShutdownInternal>(module, "VR_ShutdownInternal");
-
-                EVRInitError initError = EVRInitError.None;
-                init(ref initError, EVRApplicationType.Utility, null);
-                if (initError != EVRInitError.None)
+                if (!isConnected(index))
                 {
-                    throw new InvalidOperationException("OpenVR 初始化失败，错误码：" + (int)initError);
+                    continue;
                 }
 
-                initialized = true;
-                IntPtr systemTable = getInterface(SystemInterfaceVersion, ref initError);
-                if (systemTable == IntPtr.Zero || initError != EVRInitError.None)
+                ETrackedDeviceClass deviceClass = getClass(index);
+                if (deviceClass != ETrackedDeviceClass.Hmd &&
+                    deviceClass != ETrackedDeviceClass.Controller &&
+                    deviceClass != ETrackedDeviceClass.GenericTracker)
                 {
-                    throw new InvalidOperationException("无法获取 OpenVR System 接口，错误码：" + (int)initError);
+                    continue;
                 }
 
-                // These positions must match Valve's IVRSystem_026 function table exactly.
-                GetControllerRole getRole = GetTableFunction<GetControllerRole>(systemTable, 19);
-                GetTrackedDeviceClass getClass = GetTableFunction<GetTrackedDeviceClass>(systemTable, 20);
-                IsTrackedDeviceConnected isConnected = GetTableFunction<IsTrackedDeviceConnected>(systemTable, 21);
-                GetStringTrackedDeviceProperty getStringProperty = GetTableFunction<GetStringTrackedDeviceProperty>(systemTable, 28);
-
-                var devices = new List<DeviceOption>();
-                for (uint index = 0; index < MaxTrackedDeviceCount; index++)
+                string registeredType = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.RegisteredDeviceType);
+                if (string.IsNullOrWhiteSpace(registeredType))
                 {
-                    if (!isConnected(index))
-                    {
-                        continue;
-                    }
-
-                    ETrackedDeviceClass deviceClass = getClass(index);
-                    if (deviceClass != ETrackedDeviceClass.Hmd &&
-                        deviceClass != ETrackedDeviceClass.Controller &&
-                        deviceClass != ETrackedDeviceClass.GenericTracker)
-                    {
-                        continue;
-                    }
-
-                    string registeredType = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.RegisteredDeviceType);
-                    if (string.IsNullOrWhiteSpace(registeredType))
-                    {
-                        continue;
-                    }
-
-                    string model = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.ModelNumber);
-                    string serial = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.SerialNumber);
-                    string renderModel = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.RenderModelName);
-                    ETrackedControllerRole role = deviceClass == ETrackedDeviceClass.Controller
-                        ? getRole(index)
-                        : ETrackedControllerRole.Invalid;
-
-                    devices.Add(new DeviceOption(
-                        BuildDisplayName(model, serial, deviceClass, role),
-                        "/devices/" + registeredType,
-                        true,
-                        index,
-                        serial,
-                        GetRoleTargetPath(deviceClass, role),
-                        renderModel,
-                        GetDeviceKind(deviceClass)));
+                    continue;
                 }
 
-                return devices
-                    .OrderBy(device => device.DeviceIndex)
-                    .ToList();
+                string model = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.ModelNumber);
+                string serial = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.SerialNumber);
+                string renderModel = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.RenderModelName);
+                ETrackedControllerRole role = deviceClass == ETrackedDeviceClass.Controller
+                    ? getRole(index)
+                    : ETrackedControllerRole.Invalid;
+
+                devices.Add(new DeviceOption(
+                    BuildDisplayName(model, serial, deviceClass, role),
+                    "/devices/" + registeredType,
+                    true,
+                    index,
+                    serial,
+                    GetRoleTargetPath(deviceClass, role),
+                    renderModel,
+                    GetDeviceKind(deviceClass)));
             }
-            finally
-            {
-                if (initialized)
-                {
-                    try
-                    {
-                        GetExport<VRShutdownInternal>(module, "VR_ShutdownInternal")();
-                    }
-                    catch
-                    {
-                        // The runtime is shutting down; unloading the bridge is still safe here.
-                    }
-                }
 
-                FreeLibrary(module);
-            }
+            return devices
+                .OrderBy(device => device.DeviceIndex)
+                .ToList();
         }
 
         private static string BuildDisplayName(
@@ -223,17 +168,6 @@ namespace TrackSwap.Services
             return error == ETrackedPropertyError.Success ? value.ToString() : null;
         }
 
-        private static T GetExport<T>(IntPtr module, string name) where T : class
-        {
-            IntPtr address = GetProcAddress(module, name);
-            if (address == IntPtr.Zero)
-            {
-                throw new EntryPointNotFoundException(name);
-            }
-
-            return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
-        }
-
         private static T GetTableFunction<T>(IntPtr table, int index) where T : class
         {
             IntPtr address = Marshal.ReadIntPtr(table, index * IntPtr.Size);
@@ -244,25 +178,6 @@ namespace TrackSwap.Services
 
             return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
         }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr LoadLibrary(string fileName);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool FreeLibrary(IntPtr module);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
-        private static extern IntPtr GetProcAddress(IntPtr module, string procedureName);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate uint VRInitInternal(ref EVRInitError error, EVRApplicationType applicationType, string startupInfo);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate IntPtr VRGetGenericInterface(string interfaceVersion, ref EVRInitError error);
-
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate void VRShutdownInternal();
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate ETrackedControllerRole GetControllerRole(uint deviceIndex);
@@ -281,16 +196,6 @@ namespace TrackSwap.Services
             StringBuilder value,
             uint valueCapacity,
             ref ETrackedPropertyError error);
-
-        private enum EVRApplicationType
-        {
-            Utility = 4
-        }
-
-        private enum EVRInitError
-        {
-            None = 0
-        }
 
         private enum ETrackedDeviceClass
         {

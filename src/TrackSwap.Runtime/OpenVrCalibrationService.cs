@@ -26,7 +26,7 @@ internal sealed class OpenVrCalibrationService
         string libraryPath = Path.Combine(runtimePath, "bin", "win64", "openvr_api.dll");
         if (!File.Exists(libraryPath))
         {
-            throw new InvalidDataException("OpenVR runtime library was not found.");
+            throw new InvalidDataException("未找到 OpenVR 运行库。");
         }
 
         IntPtr module = NativeLibrary.Load(libraryPath);
@@ -69,7 +69,7 @@ internal sealed class OpenVrCalibrationService
             Console.WriteLine($"Calibration resolved target index {targetIndex}.");
             if (sourceIndex == targetIndex)
             {
-                throw new InvalidDataException("Calibration source and target must be different physical devices.");
+                throw new InvalidDataException("校准来源和目标必须是不同的物理设备。");
             }
 
             var relativeSamples = new List<CalibrationPose>(request.RequestedSampleCount);
@@ -181,11 +181,11 @@ internal sealed class OpenVrCalibrationService
         }
         if (string.IsNullOrWhiteSpace(request.ProfileName) || request.ProfileName.Trim().Length > 80)
         {
-            throw new InvalidDataException("Calibration profile name must contain 1-80 characters.");
+            throw new InvalidDataException("校准档案名称必须包含 1–80 个字符。");
         }
         if (!IsExactDevicePath(request.SourceDevicePath) || !IsExactDevicePath(request.TargetDevicePath))
         {
-            throw new InvalidDataException("Calibration source and target must be exact /devices/ paths returned by OpenVR.");
+            throw new InvalidDataException("校准来源和目标必须是 OpenVR 返回的精确 /devices/ 路径。");
         }
         if (request.RequestedSampleCount < ProtocolConstants.MinimumCalibrationSamples ||
             request.RequestedSampleCount > ProtocolConstants.MaximumCalibrationSamples)
@@ -345,14 +345,14 @@ internal sealed class OpenVrCalibrationService
             "openvrpaths.vrpath");
         if (!File.Exists(registryPath))
         {
-            throw new InvalidDataException("OpenVR path registry was not found.");
+            throw new InvalidDataException("未找到 OpenVR 路径注册信息。");
         }
         JObject root = JObject.Parse(File.ReadAllText(registryPath));
         string? path = (root["runtime"] as JArray)?.Values<string>()
             .FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
         if (string.IsNullOrWhiteSpace(path))
         {
-            throw new InvalidDataException("SteamVR runtime path is not registered.");
+            throw new InvalidDataException("SteamVR 运行时路径尚未注册。");
         }
         return Path.GetFullPath(path.Replace('/', Path.DirectorySeparatorChar));
     }
@@ -367,7 +367,7 @@ internal sealed class OpenVrCalibrationService
         IntPtr address = Marshal.ReadIntPtr(table, index * IntPtr.Size);
         if (address == IntPtr.Zero)
         {
-            throw new InvalidDataException("OpenVR system function table is incomplete.");
+            throw new InvalidDataException("OpenVR 系统函数表不完整。");
         }
         return Marshal.GetDelegateForFunctionPointer<T>(address);
     }

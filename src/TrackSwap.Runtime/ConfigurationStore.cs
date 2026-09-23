@@ -43,7 +43,7 @@ internal sealed class ConfigurationStore
         string? directory = System.IO.Path.GetDirectoryName(Path);
         if (string.IsNullOrWhiteSpace(directory))
         {
-            throw new IOException("Runtime configuration path has no parent directory.");
+            throw new IOException("Runtime 配置路径没有上级目录。");
         }
 
         Directory.CreateDirectory(directory);

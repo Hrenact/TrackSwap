@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -9,6 +10,8 @@
 #include <openvr_driver.h>
 
 #include "control_protocol.h"
+#include "finger_animation.h"
+#include "hand_simulation.h"
 #include "pose_math.h"
 
 namespace trackswap
@@ -29,6 +32,7 @@ public:
         bool enabled,
         std::uint8_t logicalSlot,
         const char* sourceDevicePath,
+        std::int32_t handSelectionPriority,
         const pose_math::RigidOffset& offset,
         std::uint64_t revision);
     void QueueInput(const control_protocol::ControllerInputState& input);
@@ -48,6 +52,7 @@ private:
     void FindSource();
     void ApplyPending();
     void ApplyInput();
+    void ApplySkeleton(const control_protocol::ControllerInputState& input);
     void PublishTelemetry();
 
     static constexpr std::size_t MaximumDevicePathBytes = 512;
@@ -72,21 +77,33 @@ private:
     std::uint64_t appliedRevision_ = 0;
     std::atomic<std::uint8_t> logicalSlot_{255};
     std::uint8_t pendingLogicalSlot_ = 255;
+    std::int32_t activeHandSelectionPriority_ = 0;
+    std::int32_t pendingHandSelectionPriority_ = 0;
     std::mutex pendingMutex_;
     control_protocol::ControllerInputState pendingInput_{};
     control_protocol::ControllerInputState activeInput_{};
     bool hasPendingInput_ = false;
     vr::VRInputComponentHandle_t primaryHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t primaryTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t secondaryHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t secondaryTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t joystickXHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t joystickYHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t joystickClickHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t joystickTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t triggerValueHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t triggerClickHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t triggerTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t gripValueHandle_ = vr::k_ulInvalidInputComponentHandle;
-    vr::VRInputComponentHandle_t gripForceHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t gripClickHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t gripTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t menuHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t menuTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t thumbrestTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t skeletonHandle_ = vr::k_ulInvalidInputComponentHandle;
+    MyHandSimulation handSimulation_;
+    finger_animation::HandAnimationState handAnimation_{};
+    std::chrono::steady_clock::time_point lastSkeletonUpdate_{};
     mutable std::mutex telemetryMutex_;
     control_protocol::TelemetrySnapshot telemetry_{};
     vr::DriverPose_t lastPose_{};

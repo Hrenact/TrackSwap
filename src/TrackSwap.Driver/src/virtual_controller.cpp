@@ -1,5 +1,7 @@
 #include "virtual_controller.h"
 
+#include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
@@ -35,6 +37,7 @@ bool VirtualController::QueueSnapshot(
     bool enabled,
     std::uint8_t logicalSlot,
     const char* sourceDevicePath,
+    std::int32_t handSelectionPriority,
     const pose_math::RigidOffset& offset,
     std::uint64_t revision)
 {
@@ -48,6 +51,7 @@ bool VirtualController::QueueSnapshot(
     {
         strncpy_s(pendingSourceDevicePath_.data(), pendingSourceDevicePath_.size(), sourceDevicePath, _TRUNCATE);
     }
+    pendingHandSelectionPriority_ = handSelectionPriority;
     pendingOffset_ = offset;
     pendingRevision_ = revision;
     latestAcceptedRevision_ = revision;
@@ -81,24 +85,55 @@ vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_controller");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_InputProfilePath_String, "{trackswap}/input/trackswap_controller_profile.json");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RenderModelName_String,
-        left ? "{indexcontroller}valve_controller_knu_1_0_left" : "{indexcontroller}valve_controller_knu_1_0_right");
+        left ? "oculus_quest2_controller_left" : "oculus_quest2_controller_right");
     vr::VRProperties()->SetInt32Property(properties, vr::Prop_ControllerRoleHint_Int32,
         left ? vr::TrackedControllerRole_LeftHand : vr::TrackedControllerRole_RightHand);
-    vr::VRProperties()->SetInt32Property(properties, vr::Prop_ControllerHandSelectionPriority_Int32, 100);
+    vr::VRProperties()->SetInt32Property(
+        properties,
+        vr::Prop_ControllerHandSelectionPriority_Int32,
+        activeHandSelectionPriority_);
     vr::VRProperties()->SetBoolProperty(properties, vr::Prop_DeviceIsWireless_Bool, false);
     vr::VRProperties()->SetBoolProperty(properties, vr::Prop_NeverTracked_Bool, false);
 
-    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/a/click", &primaryHandle_);
-    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/b/click", &secondaryHandle_);
-    vr::VRDriverInput()->CreateScalarComponent(properties, "/input/thumbstick/x", &joystickXHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided);
-    vr::VRDriverInput()->CreateScalarComponent(properties, "/input/thumbstick/y", &joystickYHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided);
-    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/thumbstick/click", &joystickClickHandle_);
+    const char* primaryPath = left ? "/input/x" : "/input/a";
+    const char* secondaryPath = left ? "/input/y" : "/input/b";
+    const std::string primaryClickPath = std::string(primaryPath) + "/click";
+    const std::string primaryTouchPath = std::string(primaryPath) + "/touch";
+    const std::string secondaryClickPath = std::string(secondaryPath) + "/click";
+    const std::string secondaryTouchPath = std::string(secondaryPath) + "/touch";
+    vr::VRDriverInput()->CreateBooleanComponent(properties, primaryClickPath.c_str(), &primaryHandle_);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, primaryTouchPath.c_str(), &primaryTouchHandle_);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, secondaryClickPath.c_str(), &secondaryHandle_);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, secondaryTouchPath.c_str(), &secondaryTouchHandle_);
+    vr::VRDriverInput()->CreateScalarComponent(properties, "/input/joystick/x", &joystickXHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided);
+    vr::VRDriverInput()->CreateScalarComponent(properties, "/input/joystick/y", &joystickYHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/joystick/click", &joystickClickHandle_);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/joystick/touch", &joystickTouchHandle_);
     vr::VRDriverInput()->CreateScalarComponent(properties, "/input/trigger/value", &triggerValueHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided);
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/trigger/click", &triggerClickHandle_);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/trigger/touch", &triggerTouchHandle_);
     vr::VRDriverInput()->CreateScalarComponent(properties, "/input/grip/value", &gripValueHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided);
-    vr::VRDriverInput()->CreateScalarComponent(properties, "/input/grip/force", &gripForceHandle_, vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedOneSided);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/grip/click", &gripClickHandle_);
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/grip/touch", &gripTouchHandle_);
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/system/click", &menuHandle_);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/system/touch", &menuTouchHandle_);
+    vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/thumbrest/touch", &thumbrestTouchHandle_);
+    const auto skeletonError = vr::VRDriverInput()->CreateSkeletonComponent(
+        properties,
+        left ? "/input/skeleton/left" : "/input/skeleton/right",
+        left ? "/skeleton/hand/left" : "/skeleton/hand/right",
+        "/pose/raw",
+        vr::VRSkeletalTracking_Estimated,
+        nullptr,
+        0,
+        &skeletonHandle_);
+    if (skeletonError != vr::VRInputError_None)
+    {
+        skeletonHandle_ = vr::k_ulInvalidInputComponentHandle;
+    }
+    handAnimation_ = {};
+    lastSkeletonUpdate_ = std::chrono::steady_clock::now();
+    ApplySkeleton({});
     lastPose_ = pose_math::MakeInvalidPose();
     return vr::VRInitError_None;
 }
@@ -160,6 +195,18 @@ void VirtualController::ApplyPending()
     logicalSlot_.store(pendingLogicalSlot_);
     sourceDevicePath_ = pendingSourceDevicePath_;
     activeOffset_ = pendingOffset_;
+    if (activeHandSelectionPriority_ != pendingHandSelectionPriority_)
+    {
+        activeHandSelectionPriority_ = pendingHandSelectionPriority_;
+        if (objectId_ != vr::k_unTrackedDeviceIndexInvalid)
+        {
+            const auto properties = vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
+            vr::VRProperties()->SetInt32Property(
+                properties,
+                vr::Prop_ControllerHandSelectionPriority_Int32,
+                activeHandSelectionPriority_);
+        }
+    }
     appliedRevision_ = pendingRevision_;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     searchCountdown_ = 0;
@@ -185,13 +232,55 @@ void VirtualController::ApplyInput()
     vr::VRDriverInput()->UpdateScalarComponent(joystickYHandle_, input.joystickY, 0.0);
     vr::VRDriverInput()->UpdateScalarComponent(triggerValueHandle_, input.triggerValue, 0.0);
     vr::VRDriverInput()->UpdateScalarComponent(gripValueHandle_, input.gripValue, 0.0);
-    vr::VRDriverInput()->UpdateScalarComponent(gripForceHandle_, input.gripValue, 0.0);
     vr::VRDriverInput()->UpdateBooleanComponent(joystickClickHandle_, input.joystickClick != 0, 0.0);
+    const bool joystickActive = input.joystickClick != 0 ||
+        input.joystickX * input.joystickX + input.joystickY * input.joystickY > 0.0025F;
+    vr::VRDriverInput()->UpdateBooleanComponent(joystickTouchHandle_, joystickActive, 0.0);
     vr::VRDriverInput()->UpdateBooleanComponent(triggerClickHandle_, input.triggerClick != 0, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(triggerTouchHandle_, input.triggerClick != 0 || input.triggerValue > 0.0F, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(gripClickHandle_, input.gripClick != 0, 0.0);
     vr::VRDriverInput()->UpdateBooleanComponent(gripTouchHandle_, input.gripClick != 0 || input.gripValue > 0.0F, 0.0);
     vr::VRDriverInput()->UpdateBooleanComponent(primaryHandle_, input.primaryButton != 0, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(primaryTouchHandle_, input.primaryButton != 0, 0.0);
     vr::VRDriverInput()->UpdateBooleanComponent(secondaryHandle_, input.secondaryButton != 0, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(secondaryTouchHandle_, input.secondaryButton != 0, 0.0);
     vr::VRDriverInput()->UpdateBooleanComponent(menuHandle_, input.menuButton != 0, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(menuTouchHandle_, input.menuButton != 0, 0.0);
+    vr::VRDriverInput()->UpdateBooleanComponent(thumbrestTouchHandle_, false, 0.0);
+    ApplySkeleton(input);
+}
+
+void VirtualController::ApplySkeleton(const control_protocol::ControllerInputState& input)
+{
+    const auto now = std::chrono::steady_clock::now();
+    const float elapsedSeconds = std::chrono::duration<float>(now - lastSkeletonUpdate_).count();
+    lastSkeletonUpdate_ = now;
+    finger_animation::Advance(handAnimation_, finger_animation::ComputeTargets(input), elapsedSeconds);
+
+    if (skeletonHandle_ == vr::k_ulInvalidInputComponentHandle)
+    {
+        return;
+    }
+
+    std::array<vr::VRBoneTransform_t, eBone_Count> transforms{};
+    const auto role = hand_ == ControllerHand::Left
+        ? vr::TrackedControllerRole_LeftHand
+        : vr::TrackedControllerRole_RightHand;
+    handSimulation_.ComputeSkeletonTransforms(
+        role,
+        { handAnimation_.curls.thumb, handAnimation_.curls.index, handAnimation_.curls.middle, handAnimation_.curls.ring, handAnimation_.curls.pinky },
+        { handAnimation_.splays.thumb, handAnimation_.splays.index, handAnimation_.splays.middle, handAnimation_.splays.ring, handAnimation_.splays.pinky },
+        transforms.data());
+    vr::VRDriverInput()->UpdateSkeletonComponent(
+        skeletonHandle_,
+        vr::VRSkeletalMotionRange_WithController,
+        transforms.data(),
+        static_cast<std::uint32_t>(transforms.size()));
+    vr::VRDriverInput()->UpdateSkeletonComponent(
+        skeletonHandle_,
+        vr::VRSkeletalMotionRange_WithoutController,
+        transforms.data(),
+        static_cast<std::uint32_t>(transforms.size()));
 }
 
 bool VirtualController::DevicePathMatches(std::uint32_t index, const char* expected) const

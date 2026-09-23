@@ -41,10 +41,11 @@ waits for a synchronous IPC response.
 
 ## Identity and bootstrap mapping
 
-Virtual devices use immutable serials `TRKSWAP-PROXY-00` through
-`TRKSWAP-PROXY-07`. The driver registers a slot on demand when an enabled route
-first references it, avoiding unused phantom trackers. A route owns exactly one
-slot, and two routes cannot own the same target.
+Direct-output devices use immutable serials `TRKSWAP-TRACKER-00` through
+`TRKSWAP-TRACKER-15`; target replacement uses the separate internal identities
+`TRKSWAP-PROXY-00` through `TRKSWAP-PROXY-15`. The driver registers the identity
+required by an enabled route on demand, avoiding unused phantom trackers. A route
+owns exactly one logical slot, and two routes cannot own the same target.
 
 The legacy SteamVR `TrackingOverrides` bootstrap maps a stable TrackSwap
 virtual device to a target. Hot switching changes the physical source followed
@@ -56,7 +57,9 @@ returned by OpenVR. The runtime must not reconstruct a path from a serial.
 ## Pose coordinates and transform order
 
 TrackSwap follows OpenVR raw tracking space: right-handed, metres, +Y up, +X
-right and -Z forward. Quaternion fields are ordered `(x, y, z, w)`.
+right and -Z forward. User-facing and persisted `PoseOffset` translations are in
+centimetres and are converted to metres at the Runtime-to-driver boundary.
+Quaternion fields are ordered `(x, y, z, w)`.
 
 An offset is expressed in the source device's local frame and is applied by
 right multiplication:
@@ -88,13 +91,13 @@ multiplication order and the lever-arm term before offsets reach hardware.
 ## Configuration snapshots
 
 The current configuration schema is version 1. A snapshot contains a monotonic
-non-negative revision and no more than eight routes. Each route contains:
+non-negative revision and no more than sixteen routes. Each route contains:
 
 - a stable `routeId`;
 - an enabled flag;
 - a unique virtual device slot;
 - exact source and target OpenVR paths;
-- a finite local rigid offset, bounded to 10 metres per translation axis.
+- a finite local rigid offset, stored in centimetres and bounded to 1000 centimetres per translation axis.
 
 The runtime validates an entire candidate snapshot before atomically replacing
 the previous one. The driver retains the last valid snapshot if runtime or UI
@@ -112,7 +115,9 @@ source update for `RunFrame`; pose submission never blocks on pipe I/O.
 Driver protocol v1 message type 1 changes the exact UTF-8 `/devices/` source
 path. Type 2 supplies seven little-endian IEEE-754 doubles in
 `tx, ty, tz, qx, qy, qz, qw` order. The driver independently rejects non-finite
-values, translations beyond 10 metres per axis, and zero-length quaternions.
+values, translations beyond 10 metres per axis, and zero-length quaternions. The
+wire representation remains in OpenVR metres after Runtime converts the persisted
+centimetre values.
 
 Runtime control frames are
 UTF-8 newline-delimited JSON with a hard limit of 65,536 bytes, including the
