@@ -54,7 +54,6 @@ namespace TrackSwap.Protocol
     public sealed class XInputConfiguration
     {
         public const float DefaultAnalogPressThreshold = 0.5f;
-        public const float AnalogReleaseHysteresis = 0.05f;
         public const float MinimumAnalogPressThreshold = 0.05f;
         public const float MaximumAnalogPressThreshold = 0.95f;
 

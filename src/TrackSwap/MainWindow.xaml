@@ -261,14 +261,32 @@
                     <Border Margin="0,22,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                         <StackPanel>
                             <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <TextBlock Text="编辑配置" FontSize="15" FontWeight="Medium" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <CheckBox x:Name="HidePhysicalSourceCheckBox"
+                                              Style="{StaticResource AdvancedOptionCheckBoxStyle}"
+                                              Content="隐藏物理位姿来源设备"
+                                              Visibility="Collapsed"
+                                              Click="HidePhysicalSourceCheckBox_Click" />
+                                    <CheckBox x:Name="SplitPoseSourceCheckBox"
+                                              Style="{StaticResource AdvancedOptionCheckBoxStyle}"
+                                              Content="拆分来源"
+                                              Margin="14,0,0,0"
+                                              Click="SplitPoseSourceCheckBox_Click" />
                                 </StackPanel>
                             </Grid>
                             <Grid Margin="0,16,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="18" />
+                                    <ColumnDefinition Width="14" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="14" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
@@ -276,9 +294,14 @@
                                     <ComboBox x:Name="RuntimeModeComboBox" Margin="0,7,0,0" MinHeight="40" Tag="请选择" SelectionChanged="RuntimeModeSelection_Changed" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
-                                    <TextBlock Text="物理位姿来源" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                    <TextBlock Text="位置来源" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                                     <ComboBox x:Name="RuntimeSourceComboBox" Margin="0,7,0,0" MinHeight="40" Tag="请选择" ItemTemplate="{StaticResource DeviceStatusOptionTemplate}" SelectionChanged="RuntimeSelection_Changed" />
                                     <TextBlock x:Name="RuntimeSourcePathText" Margin="2,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="4">
+                                    <TextBlock Text="旋转来源" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                    <ComboBox x:Name="RuntimeRotationSourceComboBox" Margin="0,7,0,0" MinHeight="40" Tag="与位置来源相同" ItemTemplate="{StaticResource DeviceStatusOptionTemplate}" SelectionChanged="RuntimeSelection_Changed" />
+                                    <TextBlock x:Name="RuntimeRotationSourcePathText" Margin="2,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </Grid>
                             <Grid x:Name="RuntimeOutputPanel" Margin="0,14,0,0">
@@ -425,7 +448,7 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Margin="0,0,20,0">
-                        <Button x:Name="SettingsRuntimeCategoryButton" Content="运行环境" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Click="SettingsCategoryButton_Click" />
+                        <Button x:Name="SettingsRuntimeCategoryButton" Content="运行与诊断" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsSteamVrCategoryButton" Content="SteamVR" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsDevicesCategoryButton" Content="设备记录" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsOscCategoryButton" Content="OSC" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
@@ -436,8 +459,8 @@
                     <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
                         <Grid Margin="20,0,32,0">
                             <StackPanel x:Name="RuntimeSettingsPanel">
-                                <TextBlock Text="运行环境" FontSize="18" FontWeight="Medium" />
-                                <TextBlock Text="查看 Runtime、驱动连接与配置应用状态。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <TextBlock Text="运行与诊断" FontSize="18" FontWeight="Medium" />
+                                <TextBlock Text="查看运行链路、检查安装环境，或导出经过脱敏的诊断信息。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                                 <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <StackPanel>
                                         <Grid>
@@ -473,6 +496,63 @@
                                             <Button Grid.Column="1" x:Name="StartRuntimeButton" Content="启动 Runtime" Margin="12,0,0,0" Click="StartRuntimeButton_Click" IsEnabled="False" />
                                         </Grid>
                                     </StackPanel>
+                                </Border>
+
+                                <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="环境检查" FontSize="15" FontWeight="Medium" />
+                                                <TextBlock Text="检查程序文件、SteamVR、驱动注册与当前配置。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="重新检查" Click="RefreshDiagnosticsButton_Click" />
+                                        </Grid>
+                                        <Grid Margin="0,16,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="TrackSwap UI" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock x:Name="DiagnosticUiVersionText" Text="正在检查…" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="Runtime 程序" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock x:Name="DiagnosticRuntimeProgramText" Text="正在检查…" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="1" Margin="0,14,0,0">
+                                                <TextBlock Text="SteamVR" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock x:Name="DiagnosticSteamVrText" Text="正在检查…" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,14,0,0">
+                                                <TextBlock Text="驱动与配置" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock x:Name="DiagnosticDriverAndConfigText" Text="正在检查…" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="诊断包" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Margin="0,4,20,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"
+                                                       Text="导出版本、运行状态、配置校验摘要和 TrackSwap 相关日志片段。不会包含完整配置、完整 SteamVR 日志、设备路径或序列号。" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" x:Name="ExportDiagnosticsButton" Content="导出诊断包" Click="ExportDiagnosticsButton_Click" />
+                                    </Grid>
                                 </Border>
                             </StackPanel>
 
@@ -626,23 +706,47 @@
 
                             <StackPanel x:Name="OscSettingsPanel" Visibility="Collapsed">
                                 <TextBlock Text="OSC" FontSize="18" FontWeight="Medium" />
-                                <TextBlock Text="接收 OSC 参数并将其映射为 TrackSwap 虚拟控制器输入。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <TextBlock Text="接收 OSC 参数并将其映射为 TrackSwap 虚拟控制器输入，同时回传震动反馈。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                                 <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <StackPanel>
                                         <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="170"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                             <StackPanel>
-                                                <TextBlock Text="OSC 接收器" FontSize="15" FontWeight="Medium" />
+                                                <TextBlock Text="OSC 传输" FontSize="15" FontWeight="Medium" />
                                                 <Grid Margin="0,10,0,0" HorizontalAlignment="Left">
-                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="12"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions>
-                                                    <StackPanel><TextBlock Text="监听地址" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscListenAddressTextBox" Margin="0,6,0,0"/></StackPanel>
-                                                    <StackPanel Grid.Column="2"><TextBlock Text="端口" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscPortTextBox" Margin="0,6,0,0"/></StackPanel>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="12"/><ColumnDefinition Width="110"/><ColumnDefinition Width="12"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions>
+                                                    <StackPanel><TextBlock Text="地址" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscListenAddressTextBox" Margin="0,6,0,0"/></StackPanel>
+                                                    <StackPanel Grid.Column="2"><TextBlock Text="接收端口" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscPortTextBox" Margin="0,6,0,0"/></StackPanel>
+                                                    <StackPanel Grid.Column="4"><TextBlock Text="发送端口" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><TextBox x:Name="OscSendPortTextBox" Margin="0,6,0,0"/></StackPanel>
                                                 </Grid>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2" VerticalAlignment="Bottom"><TextBlock Text="无信号时复位" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/><ComboBox x:Name="OscResetTimeoutComboBox" Margin="0,6,0,0"/></StackPanel>
                                         </Grid>
                                     </StackPanel>
                                 </Border>
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.Resources>
+                                        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                            <Setter Property="IsReadOnly" Value="True" />
+                                        </Style>
+                                    </Grid.Resources>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="左手体感" FontSize="15" FontWeight="Medium" VerticalAlignment="Center"/><Button Grid.Column="1" Content="测试" Padding="10,5" ToolTip="发送一段包含轻点、强弱变化和双击的测试震动" Click="TestLeftOscHapticButton_Click"/></Grid>
+                                            <controls:HapticTimelineIndicator x:Name="OscLeftHapticIndicator" Height="56"/>
+                                            <TextBlock Text="OSC 地址" Margin="0,10,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <TextBox x:Name="OscLeftHapticTextBox" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="2" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="右手体感" FontSize="15" FontWeight="Medium" VerticalAlignment="Center"/><Button Grid.Column="1" Content="测试" Padding="10,5" ToolTip="发送一段包含轻点、强弱变化和双击的测试震动" Click="TestRightOscHapticButton_Click"/></Grid>
+                                            <controls:HapticTimelineIndicator x:Name="OscRightHapticIndicator" Height="56"/>
+                                            <TextBlock Text="OSC 地址" Margin="0,10,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <TextBox x:Name="OscRightHapticTextBox" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
                                 <Grid Margin="0,12,0,0">
                                     <Grid.Resources>
                                         <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
@@ -666,7 +770,13 @@
                                             <TextBlock Text="抓握值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
                                             <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftGripValueIndicator" Mode="Scalar" Height="32"/><TextBox x:Name="OscLeftGripValueTextBox" Grid.Column="2"/></Grid>
                                             <TextBlock Text="系统键" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
-                                            <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftMenuIndicator" Height="32"/><TextBox x:Name="OscLeftMenuTextBox" Grid.Column="2"/></Grid>
+                                            <Grid Margin="0,4,0,14"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftMenuIndicator" Height="32"/><TextBox x:Name="OscLeftMenuTextBox" Grid.Column="2"/></Grid>
+                                            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,0,0,14"/>
+                                            <TextBlock Text="触摸辅助" FontSize="15" FontWeight="Medium" Margin="0,0,0,12"/>
+                                            <TextBlock Text="大拇指" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftThumbTouchIndicator" Height="32"/><TextBox x:Name="OscLeftThumbTouchTextBox" Grid.Column="2"/><ComboBox x:Name="OscLeftThumbDefaultComboBox" Grid.Column="4" VerticalAlignment="Center" SelectionChanged="OscTouchDefaultComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="食指" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscLeftIndexTouchIndicator" Height="32"/><TextBox x:Name="OscLeftIndexTouchTextBox" Grid.Column="2"/><ComboBox x:Name="OscLeftIndexDefaultComboBox" Grid.Column="4" VerticalAlignment="Center" SelectionChanged="OscTouchDefaultComboBox_SelectionChanged"/></Grid>
                                         </StackPanel>
                                     </Border>
                                     <Border Grid.Column="2" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
@@ -685,7 +795,13 @@
                                             <TextBlock Text="抓握值" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
                                             <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightGripValueIndicator" Mode="Scalar" Height="32"/><TextBox x:Name="OscRightGripValueTextBox" Grid.Column="2"/></Grid>
                                             <TextBlock Text="系统键（输出至左手）" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
-                                            <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightMenuIndicator" Height="32"/><TextBox x:Name="OscRightMenuTextBox" Grid.Column="2"/></Grid>
+                                            <Grid Margin="0,4,0,14"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightMenuIndicator" Height="32"/><TextBox x:Name="OscRightMenuTextBox" Grid.Column="2"/></Grid>
+                                            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,0,0,14"/>
+                                            <TextBlock Text="触摸辅助" FontSize="15" FontWeight="Medium" Margin="0,0,0,12"/>
+                                            <TextBlock Text="大拇指" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,7"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightThumbTouchIndicator" Height="32"/><TextBox x:Name="OscRightThumbTouchTextBox" Grid.Column="2"/><ComboBox x:Name="OscRightThumbDefaultComboBox" Grid.Column="4" VerticalAlignment="Center" SelectionChanged="OscTouchDefaultComboBox_SelectionChanged"/></Grid>
+                                            <TextBlock Text="食指" Foreground="{StaticResource MutedTextBrush}" FontSize="10"/>
+                                            <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><controls:OscSignalIndicator x:Name="OscRightIndexTouchIndicator" Height="32"/><TextBox x:Name="OscRightIndexTouchTextBox" Grid.Column="2"/><ComboBox x:Name="OscRightIndexDefaultComboBox" Grid.Column="4" VerticalAlignment="Center" SelectionChanged="OscTouchDefaultComboBox_SelectionChanged"/></Grid>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -695,30 +811,6 @@
                                 <TextBlock Text="XInput" FontSize="18" FontWeight="Medium" />
                                 <TextBlock Text="将一个标准游戏手柄的输入映射到左右虚拟控制器。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                                 <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="220" />
-                                            <ColumnDefinition Width="54" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Margin="0,0,24,0">
-                                            <TextBlock Text="模拟输入触发阈值" FontSize="15" FontWeight="Medium" />
-                                            <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"><Run Text="LT、RT 映射到按键类输入时使用此阈值，"/><LineBreak/><Run Text="并在松开时自动保留 5% 回差。"/></TextBlock>
-                                        </StackPanel>
-                                        <Slider Grid.Column="1"
-                                                x:Name="XInputAnalogThresholdSlider"
-                                                Minimum="5"
-                                                Maximum="95"
-                                                TickFrequency="1"
-                                                IsSnapToTickEnabled="True"
-                                                VerticalAlignment="Center"
-                                                ValueChanged="XInputAnalogThresholdSlider_ValueChanged" />
-                                        <TextBlock Grid.Column="2" x:Name="XInputAnalogThresholdText" Text="50%" Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Consolas" />
-                                        <Button Grid.Column="3" Content="恢复默认" Margin="8,0,0,0" VerticalAlignment="Center" Click="ResetXInputAnalogThresholdButton_Click" />
-                                    </Grid>
-                                </Border>
-                                <Border Margin="0,12,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -732,6 +824,60 @@
                                                   x:Name="XInputHapticModeComboBox"
                                                   VerticalAlignment="Center"
                                                   SelectionChanged="XInputHapticModeComboBox_SelectionChanged" />
+                                    </Grid>
+                                </Border>
+                                <Border Margin="0,12,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="260" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,24,0">
+                                            <TextBlock Text="模拟输入触发阈值" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Text="LT、RT 映射到按键类输入时使用此阈值。" />
+                                        </StackPanel>
+                                        <Grid Grid.Column="1" Height="60">
+                                            <Slider x:Name="XInputAnalogThresholdSlider"
+                                                    Minimum="0"
+                                                    Maximum="100"
+                                                    TickFrequency="1"
+                                                    IsSnapToTickEnabled="True"
+                                                    IsHitTestVisible="False"
+                                                    Focusable="False"
+                                                    VerticalAlignment="Center"
+                                                    SizeChanged="XInputAnalogThresholdSlider_SizeChanged"
+                                                    ValueChanged="XInputAnalogThresholdSlider_ValueChanged" />
+                                            <Canvas x:Name="XInputAnalogThresholdOverlay"
+                                                    Margin="1,0">
+                                                <Polygon x:Name="XInputAnalogDefaultThresholdMarker"
+                                                         Width="8"
+                                                         Height="11"
+                                                         Points="4,0 8,5 8,11 0,11 0,5"
+                                                         Stretch="Fill"
+                                                         Fill="{StaticResource BorderBrush}"
+                                                         IsHitTestVisible="False" />
+                                                <Polygon x:Name="XInputAnalogThresholdMarker"
+                                                         Width="8"
+                                                         Height="11"
+                                                         Points="4,0 8,5 8,11 0,11 0,5"
+                                                         Stretch="Fill"
+                                                         Fill="{StaticResource MutedTextBrush}"
+                                                         Cursor="SizeWE"
+                                                         MouseLeftButtonDown="XInputAnalogThresholdMarker_MouseLeftButtonDown"
+                                                         MouseMove="XInputAnalogThresholdMarker_MouseMove"
+                                                         MouseLeftButtonUp="XInputAnalogThresholdMarker_MouseLeftButtonUp"
+                                                         LostMouseCapture="XInputAnalogThresholdMarker_LostMouseCapture" />
+                                                <TextBlock x:Name="XInputAnalogThresholdText"
+                                                           Width="40"
+                                                           Height="14"
+                                                           Text="50%"
+                                                           TextAlignment="Center"
+                                                           Foreground="{StaticResource MutedTextBrush}"
+                                                           FontFamily="Consolas"
+                                                           FontSize="10"
+                                                           IsHitTestVisible="False" />
+                                            </Canvas>
+                                        </Grid>
                                     </Grid>
                                 </Border>
                                 <Grid Margin="0,12,0,0">
@@ -811,6 +957,14 @@
                                         <TextBlock Text="允许多条路由读取同一个物理设备的位姿，适合临时测试或让一台设备同时驱动左右虚拟控制器。" Margin="0,4,0,16" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
                                         <CheckBox x:Name="AllowDuplicatePoseSourcesCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="允许多条配置使用同一个位姿来源" Click="AllowDuplicatePoseSourcesCheckBox_Click" />
                                         <TextBlock Text="此选项只放宽重复来源检查；重复左右手、重复代理槽、重复替换目标和循环路由仍会被阻止。" Margin="26,9,0,0" Foreground="{StaticResource WarningBrush}" FontSize="10" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <TextBlock Text="物理位姿来源设备隐藏" FontSize="15" FontWeight="Medium" />
+                                        <TextBlock Text="将物理位姿来源设备移动至正常游玩范围高度外，避免它被 FBT 系统当作额外追踪器绑定。" Margin="0,4,0,16" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        <CheckBox x:Name="PhysicalSourceHidingEnabledCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="显示“隐藏物理位姿来源设备”复选框" Click="PhysicalSourceHidingEnabledCheckBox_Click" />
+                                        <TextBlock Text="该功能会注入 OpenVR 位姿提交接口，可能与其它修改定位数据的软件冲突。关闭总开关会立即取消所有配置的隐藏请求。" Margin="26,9,0,0" Foreground="{StaticResource WarningBrush}" FontSize="10" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                                 <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
@@ -900,6 +1054,12 @@
                     <StackPanel Orientation="Horizontal">
                         <Ellipse x:Name="XInputStatusDot" Width="7" Height="7" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
                         <TextBlock x:Name="XInputStatusText" Text="XInput" Margin="6,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="PhysicalSourceHidingStatusBadge" Background="Transparent" Padding="0" Margin="18,0,0,0" ToolTip="设备隐藏未启用">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="PhysicalSourceHidingStatusDot" Width="7" Height="7" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="PhysicalSourceHidingStatusText" Text="设备隐藏" Margin="6,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                     </StackPanel>
                 </Border>
             </StackPanel>

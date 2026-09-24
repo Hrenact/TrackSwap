@@ -115,7 +115,7 @@ public sealed class XInputControllerMapperTests
     }
 
     [Fact]
-    public void AnalogTriggerUsesConfiguredThresholdAndReleaseHysteresis()
+    public void AnalogTriggerUsesConfiguredThresholdWithoutHysteresis()
     {
         XInputHandMapping mapping = XInputConfiguration.CreateDefaultLeftMapping();
         mapping.PrimaryButton = XInputBindingSource.LeftTrigger;
@@ -130,21 +130,15 @@ public sealed class XInputControllerMapperTests
             mapping,
             0.5f,
             below);
-        ControllerInputState heldInsideHysteresis = XInputControllerMapper.Map(
+        ControllerInputState releasedBelowThreshold = XInputControllerMapper.Map(
             new XInputGamepadSnapshot(0, 117, 0, 0, 0, 0, 0),
             mapping,
             0.5f,
             pressed);
-        ControllerInputState released = XInputControllerMapper.Map(
-            new XInputGamepadSnapshot(0, 114, 0, 0, 0, 0, 0),
-            mapping,
-            0.5f,
-            heldInsideHysteresis);
 
         Assert.False(below.PrimaryButton);
         Assert.True(pressed.PrimaryButton);
-        Assert.True(heldInsideHysteresis.PrimaryButton);
-        Assert.False(released.PrimaryButton);
+        Assert.False(releasedBelowThreshold.PrimaryButton);
     }
 
     [Fact]

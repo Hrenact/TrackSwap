@@ -15,6 +15,7 @@ public:
     vr::EVRInitError Init(vr::IVRDriverContext* driverContext) override
     {
         VR_INIT_SERVER_DRIVER_CONTEXT(driverContext);
+        trackerRegistry_.InitializePoseHiding(driverContext);
         if (!controlServer_.Start(&trackerRegistry_))
         {
             vr::VRDriverLog()->Log("TrackSwap failed to start its driver control endpoint.");
@@ -37,6 +38,7 @@ public:
     void Cleanup() override
     {
         controlServer_.Stop();
+        trackerRegistry_.ShutdownPoseHiding();
         VR_CLEANUP_SERVER_DRIVER_CONTEXT();
     }
 

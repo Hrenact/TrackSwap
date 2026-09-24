@@ -21,11 +21,12 @@ internal sealed class ConfigurationStore
         }
 
         JObject root = JObject.Parse(File.ReadAllText(Path));
-        bool removedLegacyOscAddresses = false;
+        bool removedLegacyOscSettings = false;
         if (root.GetValue("osc", StringComparison.OrdinalIgnoreCase) is JObject osc)
         {
-            removedLegacyOscAddresses |= RemoveProperty(osc, "left");
-            removedLegacyOscAddresses |= RemoveProperty(osc, "right");
+            removedLegacyOscSettings |= RemoveProperty(osc, "left");
+            removedLegacyOscSettings |= RemoveProperty(osc, "right");
+            removedLegacyOscSettings |= RemoveProperty(osc, "resetTimeout");
         }
         bool addedXInputTouchAssistDefaults = EnsureXInputTouchAssistDefaults(root);
         RuntimeConfiguration? configuration = root.ToObject<RuntimeConfiguration>(
@@ -34,7 +35,7 @@ internal sealed class ConfigurationStore
         bool expectedOscEnabled = OscConfiguration.IsRequiredForRoutes(configuration!.Routes);
         bool normalizedOscEnabled = configuration.Osc.Enabled != expectedOscEnabled;
         configuration.Osc.Enabled = expectedOscEnabled;
-        if (removedLegacyOscAddresses || addedXInputTouchAssistDefaults || normalizedOscEnabled)
+        if (removedLegacyOscSettings || addedXInputTouchAssistDefaults || normalizedOscEnabled)
         {
             Save(configuration);
         }

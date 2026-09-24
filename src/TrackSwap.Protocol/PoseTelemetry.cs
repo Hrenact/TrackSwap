@@ -23,6 +23,7 @@ namespace TrackSwap.Protocol
         public long AppliedRevision { get; set; }
         public DateTimeOffset CapturedAtUtc { get; set; }
         public PoseTelemetry Source { get; set; } = new PoseTelemetry();
+        public PoseTelemetry RotationSource { get; set; } = new PoseTelemetry();
         public PoseTelemetry Output { get; set; } = new PoseTelemetry();
         public PoseTelemetry Target { get; set; } = new PoseTelemetry();
     }

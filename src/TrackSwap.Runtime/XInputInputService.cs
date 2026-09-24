@@ -115,7 +115,7 @@ internal sealed class XInputInputService : IDisposable
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         Task senderTask = RunSenderAsync(cancellationToken);
-        Task hapticTask = RunHapticFeedbackAsync(cancellationToken);
+        Task hapticTask = RunHapticOutputAsync(cancellationToken);
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -166,25 +166,20 @@ internal sealed class XInputInputService : IDisposable
         }
     }
 
-    private async Task RunHapticFeedbackAsync(CancellationToken cancellationToken)
+    public void ApplyHapticEvents(IReadOnlyList<HapticFeedbackEvent> events)
+    {
+        lock (syncRoot)
+        {
+            ApplyHapticEventsLocked(events ?? Array.Empty<HapticFeedbackEvent>());
+        }
+    }
+
+    private async Task RunHapticOutputAsync(CancellationToken cancellationToken)
     {
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                IReadOnlyList<HapticFeedbackEvent> events;
-                try
-                {
-                    events = DriverControlClient.GetHapticEvents(TimeSpan.FromMilliseconds(100));
-                }
-                catch (Exception exception) when (
-                    exception is IOException ||
-                    exception is TimeoutException ||
-                    exception is UnauthorizedAccessException)
-                {
-                    events = Array.Empty<HapticFeedbackEvent>();
-                }
-
                 bool active;
                 XInputHapticMode mode;
                 float leftAmplitude;
@@ -192,7 +187,6 @@ internal sealed class XInputInputService : IDisposable
                 lock (syncRoot)
                 {
                     active = leftInputEnabled || rightInputEnabled;
-                    ApplyHapticEventsLocked(events);
                     long now = Stopwatch.GetTimestamp();
                     leftAmplitude = leftInputEnabled && leftHaptic.ExpiresAt > now
                         ? leftHaptic.Amplitude
@@ -678,14 +672,13 @@ internal static class XInputControllerMapper
         ISet<XInputBindingSource>? occupiedSources = null)
     {
         mapping ??= new XInputHandMapping();
-        previous ??= new ControllerInputState();
         (float x, float y) = ResolveJoystick(gamepad, mapping.Joystick);
         float triggerValue = ResolveScalar(gamepad, mapping.Trigger);
         float gripValue = ResolveScalar(gamepad, mapping.Grip);
-        bool joystickClick = ResolveBoolean(gamepad, mapping.JoystickClick, analogPressThreshold, previous.JoystickClick);
-        bool primaryButton = ResolveBoolean(gamepad, mapping.PrimaryButton, analogPressThreshold, previous.PrimaryButton);
-        bool secondaryButton = ResolveBoolean(gamepad, mapping.SecondaryButton, analogPressThreshold, previous.SecondaryButton);
-        bool menuButton = ResolveBoolean(gamepad, mapping.MenuButton, analogPressThreshold, previous.MenuButton);
+        bool joystickClick = ResolveBoolean(gamepad, mapping.JoystickClick, analogPressThreshold);
+        bool primaryButton = ResolveBoolean(gamepad, mapping.PrimaryButton, analogPressThreshold);
+        bool secondaryButton = ResolveBoolean(gamepad, mapping.SecondaryButton, analogPressThreshold);
+        bool menuButton = ResolveBoolean(gamepad, mapping.MenuButton, analogPressThreshold);
         bool thumbAssist = ResolveTouchAssist(
             gamepad,
             mapping.ThumbTouch,
@@ -755,8 +748,7 @@ internal static class XInputControllerMapper
         bool togglePressed = toggleAvailable && ResolveBoolean(
             gamepad,
             mapping.ToggleSource,
-            analogPressThreshold,
-            previous: false);
+            analogPressThreshold);
         return togglePressed ? !mapping.DefaultTouched : mapping.DefaultTouched;
     }
 
@@ -797,16 +789,11 @@ internal static class XInputControllerMapper
     private static bool ResolveBoolean(
         XInputGamepadSnapshot gamepad,
         XInputBindingSource source,
-        float pressThreshold,
-        bool previous)
+        float pressThreshold)
     {
         if (XInputConfiguration.IsAnalogSource(source))
         {
-            float value = ResolveScalar(gamepad, source);
-            float releaseThreshold = Math.Max(
-                XInputConfiguration.MinimumAnalogPressThreshold,
-                pressThreshold - XInputConfiguration.AnalogReleaseHysteresis);
-            return previous ? value >= releaseThreshold : value >= pressThreshold;
+            return ResolveScalar(gamepad, source) >= pressThreshold;
         }
         return ResolveDigitalButton(gamepad, source);
     }

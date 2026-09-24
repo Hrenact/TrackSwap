@@ -93,6 +93,28 @@ namespace TrackSwap.Protocol
                 }
 
                 ValidateSourcePath(route.SourceDevicePath, prefix, errors);
+                if (route.SplitPoseSource)
+                {
+                    ValidateSourcePath(route.RotationSourceDevicePath, prefix + "的旋转来源", errors);
+                    if (!string.IsNullOrWhiteSpace(route.SourceDevicePath) &&
+                        string.Equals(route.SourceDevicePath, route.RotationSourceDevicePath, StringComparison.Ordinal))
+                    {
+                        errors.Add($"{prefix}拆分后的位置来源与旋转来源不能相同。");
+                    }
+                }
+                if (route.HidePhysicalSource && !configuration.PhysicalSourceHidingEnabled)
+                {
+                    errors.Add($"{prefix}请求隐藏物理位姿来源，但全局设备隐藏功能尚未启用。");
+                }
+                if (route.HidePhysicalSource && ProtocolConstants.IsTrackSwapVirtualDevicePath(route.SourceDevicePath))
+                {
+                    errors.Add($"{prefix}不能隐藏 TrackSwap 自己创建的虚拟设备。");
+                }
+                if (route.HidePhysicalSource && route.SplitPoseSource &&
+                    ProtocolConstants.IsTrackSwapVirtualDevicePath(route.RotationSourceDevicePath))
+                {
+                    errors.Add($"{prefix}不能隐藏 TrackSwap 自己创建的虚拟旋转来源。");
+                }
                 if (!Enum.IsDefined(typeof(RouteMode), route.Mode) || route.Mode == RouteMode.Unspecified)
                 {
                     errors.Add($"{prefix}使用了不受支持的运行模式。");
@@ -122,13 +144,24 @@ namespace TrackSwap.Protocol
                         errors.Add($"{prefix}使用了不受支持的控制输入来源。");
                     }
                 }
-                ValidateCombinedPathSize(route.SourceDevicePath, route.TargetDevicePath, prefix, errors);
+                ValidateCombinedPathSize(
+                    route.SourceDevicePath,
+                    route.SplitPoseSource ? route.RotationSourceDevicePath : string.Empty,
+                    route.TargetDevicePath,
+                    prefix,
+                    errors);
 
                 if (route.Mode == RouteMode.ReplaceTarget &&
                     !string.IsNullOrEmpty(route.SourceDevicePath) &&
                     string.Equals(route.SourceDevicePath, route.TargetDevicePath, StringComparison.Ordinal))
                 {
                     errors.Add($"{prefix}不能把设备映射到自身。");
+                }
+                if (route.Mode == RouteMode.ReplaceTarget && route.SplitPoseSource &&
+                    !string.IsNullOrEmpty(route.RotationSourceDevicePath) &&
+                    string.Equals(route.RotationSourceDevicePath, route.TargetDevicePath, StringComparison.Ordinal))
+                {
+                    errors.Add($"{prefix}不能把旋转来源映射到自身。");
                 }
 
                 if (route.Mode == RouteMode.ReplaceTarget &&
@@ -142,6 +175,12 @@ namespace TrackSwap.Protocol
                     !sources.Add(route.SourceDevicePath))
                 {
                     errors.Add($"位姿来源“{route.SourceDevicePath}”被重复使用。");
+                }
+                if (!configuration.AllowDuplicatePoseSources && route.SplitPoseSource &&
+                    !string.IsNullOrWhiteSpace(route.RotationSourceDevicePath) &&
+                    !sources.Add(route.RotationSourceDevicePath))
+                {
+                    errors.Add($"位姿来源“{route.RotationSourceDevicePath}”被重复使用。");
                 }
 
                 ValidateOffset(route.Offset, prefix, errors);
@@ -164,15 +203,23 @@ namespace TrackSwap.Protocol
             if (string.IsNullOrWhiteSpace(configuration.ListenAddress) || configuration.ListenAddress.Length > 255 ||
                 configuration.ListenAddress.Any(char.IsControl))
             {
-                errors.Add("OSC 监听地址无效。");
+                errors.Add("OSC 地址无效。");
             }
             if (configuration.Port < 1 || configuration.Port > 65535)
             {
-                errors.Add("OSC 端口必须在 1 到 65535 之间。");
+                errors.Add("OSC 接收端口必须在 1 到 65535 之间。");
             }
-            if (!Enum.IsDefined(typeof(OscResetTimeout), configuration.ResetTimeout))
+            if (configuration.SendPort < 1 || configuration.SendPort > 65535)
             {
-                errors.Add("OSC 无信号复位时间无效。");
+                errors.Add("OSC 发送端口必须在 1 到 65535 之间。");
+            }
+            if (configuration.LeftTouchAssist == null)
+            {
+                errors.Add("OSC 左手触摸辅助配置不能为空。");
+            }
+            if (configuration.RightTouchAssist == null)
+            {
+                errors.Add("OSC 右手触摸辅助配置不能为空。");
             }
         }
 
@@ -260,28 +307,32 @@ namespace TrackSwap.Protocol
                 .ToList();
             foreach (RouteConfiguration sourceRoute in enabledRoutes)
             {
-                if (string.IsNullOrWhiteSpace(sourceRoute.SourceDevicePath) ||
-                    !sourceRoleTargets.TryGetValue(sourceRoute.SourceDevicePath, out string? sourceRoleTarget) ||
-                    string.IsNullOrWhiteSpace(sourceRoleTarget))
+                IEnumerable<string> sourcePaths = sourceRoute.SplitPoseSource
+                    ? new[] { sourceRoute.SourceDevicePath, sourceRoute.RotationSourceDevicePath }
+                    : new[] { sourceRoute.SourceDevicePath };
+                foreach (string sourcePath in sourcePaths.Where(path => !string.IsNullOrWhiteSpace(path)))
                 {
-                    continue;
-                }
-
-                RouteConfiguration? overridingRoute = enabledRoutes.FirstOrDefault(route =>
-                    !ReferenceEquals(route, sourceRoute) &&
-                    route.Mode == RouteMode.ReplaceTarget &&
-                    string.Equals(route.TargetDevicePath, sourceRoleTarget, StringComparison.Ordinal));
-                if (overridingRoute != null)
-                {
-                    string sourceName = string.IsNullOrWhiteSpace(sourceRoute.Name)
-                        ? sourceRoute.RouteId
-                        : sourceRoute.Name;
-                    string overridingName = string.IsNullOrWhiteSpace(overridingRoute.Name)
-                        ? overridingRoute.RouteId
-                        : overridingRoute.Name;
-                    errors.Add(
-                        $"配置“{sourceName}”使用了分配给“{sourceRoleTarget}”的设备，但配置“{overridingName}”正在替换该角色。" +
-                        "这会形成跨配置的位姿级联。");
+                    if (!sourceRoleTargets.TryGetValue(sourcePath, out string? sourceRoleTarget) ||
+                        string.IsNullOrWhiteSpace(sourceRoleTarget))
+                    {
+                        continue;
+                    }
+                    RouteConfiguration? overridingRoute = enabledRoutes.FirstOrDefault(route =>
+                        !ReferenceEquals(route, sourceRoute) &&
+                        route.Mode == RouteMode.ReplaceTarget &&
+                        string.Equals(route.TargetDevicePath, sourceRoleTarget, StringComparison.Ordinal));
+                    if (overridingRoute != null)
+                    {
+                        string sourceName = string.IsNullOrWhiteSpace(sourceRoute.Name)
+                            ? sourceRoute.RouteId
+                            : sourceRoute.Name;
+                        string overridingName = string.IsNullOrWhiteSpace(overridingRoute.Name)
+                            ? overridingRoute.RouteId
+                            : overridingRoute.Name;
+                        errors.Add(
+                            $"配置“{sourceName}”使用了分配给“{sourceRoleTarget}”的设备，但配置“{overridingName}”正在替换该角色。" +
+                            "这会形成跨配置的位姿级联。");
+                    }
                 }
             }
 
@@ -295,7 +346,12 @@ namespace TrackSwap.Protocol
                     route.Mode == RouteMode.ReplaceTarget &&
                     !string.IsNullOrWhiteSpace(route.SourceDevicePath) &&
                     !string.IsNullOrWhiteSpace(route.TargetDevicePath))
-                .GroupBy(route => route.SourceDevicePath, StringComparer.Ordinal)
+                .SelectMany(route => route.SplitPoseSource
+                    ? new[] { route.SourceDevicePath, route.RotationSourceDevicePath }
+                    : new[] { route.SourceDevicePath },
+                    (route, sourcePath) => new { SourcePath = sourcePath, route.TargetDevicePath })
+                .Where(edge => !string.IsNullOrWhiteSpace(edge.SourcePath))
+                .GroupBy(edge => edge.SourcePath, StringComparer.Ordinal)
                 .ToDictionary(group => group.Key, group => group.First().TargetDevicePath, StringComparer.Ordinal);
 
             foreach (string start in edges.Keys)
@@ -344,16 +400,19 @@ namespace TrackSwap.Protocol
 
         private static void ValidateCombinedPathSize(
             string? sourcePath,
+            string? rotationSourcePath,
             string? targetPath,
             string prefix,
             ICollection<string> errors)
         {
-            if (sourcePath == null || targetPath == null)
+            if (sourcePath == null || rotationSourcePath == null || targetPath == null)
             {
                 return;
             }
 
-            int encodedBytes = Encoding.UTF8.GetByteCount(sourcePath) + Encoding.UTF8.GetByteCount(targetPath);
+            int encodedBytes = Encoding.UTF8.GetByteCount(sourcePath) +
+                Encoding.UTF8.GetByteCount(rotationSourcePath) +
+                Encoding.UTF8.GetByteCount(targetPath);
             if (encodedBytes > DriverControlProtocol.MaximumCombinedDevicePathBytes)
             {
                 errors.Add($"{prefix}编码后的来源和目标路径超过驱动通信长度限制。");

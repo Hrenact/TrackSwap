@@ -7,6 +7,7 @@ namespace TrackSwap.Protocol
         public int SchemaVersion { get; set; } = ProtocolConstants.CurrentConfigurationSchemaVersion;
         public long Revision { get; set; }
         public bool AllowDuplicatePoseSources { get; set; }
+        public bool PhysicalSourceHidingEnabled { get; set; }
         public int ControllerHandSelectionPriority { get; set; } = ProtocolConstants.DefaultControllerHandSelectionPriority;
         public List<RouteConfiguration> Routes { get; set; } = new List<RouteConfiguration>();
         public OscConfiguration Osc { get; set; } = OscConfiguration.CreateDefault();

@@ -143,6 +143,17 @@ public sealed class ConfigurationValidatorTests
     }
 
     [Fact]
+    public void RejectsInvalidOscSendPort()
+    {
+        var configuration = CreateConfiguration();
+        configuration.Osc.SendPort = 0;
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(errors, error => error.Contains("OSC 发送端口", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void VirtualControllerAllowsNoControlInput()
     {
         var configuration = CreateConfiguration();
@@ -292,8 +303,10 @@ public sealed class ConfigurationValidatorTests
     {
         Assert.Equal(0x50575354U, DriverControlProtocol.Magic);
         Assert.Equal(20, DriverControlProtocol.HeaderBytes);
-        Assert.Equal(6, DriverControlProtocol.Version);
-        Assert.Equal(73, DriverControlProtocol.ApplyControllerSnapshotFixedBytes);
+        Assert.Equal(8, DriverControlProtocol.Version);
+        Assert.Equal(73, DriverControlProtocol.ApplySnapshotFixedBytes);
+        Assert.Equal(76, DriverControlProtocol.ApplyControllerSnapshotFixedBytes);
+        Assert.Equal(260, DriverControlProtocol.PhysicalSourceHidingStatusBytes);
         Assert.Equal(
             0x8001,
             DriverControlProtocol.SetSourceMessageType | DriverControlProtocol.ResponseFlag);
@@ -306,9 +319,9 @@ public sealed class ConfigurationValidatorTests
         Assert.Equal(
             0x8004,
             DriverControlProtocol.GetTelemetryMessageType | DriverControlProtocol.ResponseFlag);
-        Assert.Equal(202, DriverControlProtocol.TelemetrySnapshotBytes);
-        Assert.Equal(4026, DriverControlProtocol.MaximumCombinedDevicePathBytes);
-        Assert.Equal(3233, DriverControlProtocol.TelemetryBatchBytes);
+        Assert.Equal(264, DriverControlProtocol.TelemetrySnapshotBytes);
+        Assert.Equal(8119, DriverControlProtocol.MaximumCombinedDevicePathBytes);
+        Assert.Equal(4225, DriverControlProtocol.TelemetryBatchBytes);
     }
 
     [Fact]
@@ -316,7 +329,7 @@ public sealed class ConfigurationValidatorTests
     {
         var configuration = CreateConfiguration();
         configuration.Routes[0].RouteId = "bad\nroute";
-        configuration.Routes[0].SourceDevicePath = "/devices/" + new string('\u4F4D', 1400);
+        configuration.Routes[0].SourceDevicePath = "/devices/" + new string('\u4F4D', 2800);
         configuration.Routes[0].TargetDevicePath = "/devices/target\r";
 
         IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
@@ -325,6 +338,24 @@ public sealed class ConfigurationValidatorTests
         Assert.Contains(errors, error => error.Contains("控制字符", StringComparison.Ordinal) &&
             error.Contains("targetDevicePath", StringComparison.Ordinal));
         Assert.Contains(errors, error => error.Contains("驱动通信长度限制", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SplitPoseSourceRequiresDistinctRotationSource()
+    {
+        RuntimeConfiguration configuration = CreateConfiguration();
+        RouteConfiguration route = configuration.Routes[0];
+        route.SplitPoseSource = true;
+
+        IReadOnlyList<string> missingErrors = ConfigurationValidator.Validate(configuration);
+        Assert.Contains(missingErrors, error => error.Contains("旋转来源", StringComparison.Ordinal));
+
+        route.RotationSourceDevicePath = route.SourceDevicePath;
+        IReadOnlyList<string> sameErrors = ConfigurationValidator.Validate(configuration);
+        Assert.Contains(sameErrors, error => error.Contains("不能相同", StringComparison.Ordinal));
+
+        route.RotationSourceDevicePath = "/devices/test/rotation-source";
+        Assert.Empty(ConfigurationValidator.Validate(configuration));
     }
 
     [Fact]
@@ -348,6 +379,31 @@ public sealed class ConfigurationValidatorTests
         IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
 
         Assert.Contains(errors, error => error.Contains("XInput 左手按键映射", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PhysicalSourceHidingRequiresGlobalOptIn()
+    {
+        RuntimeConfiguration configuration = CreateConfiguration();
+        configuration.Routes[0].HidePhysicalSource = true;
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(errors, error => error.Contains("全局设备隐藏功能尚未启用", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PhysicalSourceHidingRejectsTrackSwapVirtualSources()
+    {
+        RuntimeConfiguration configuration = CreateConfiguration();
+        configuration.PhysicalSourceHidingEnabled = true;
+        configuration.Routes[0].HidePhysicalSource = true;
+        configuration.Routes[0].SourceDevicePath =
+            "/devices/trackswap/" + ProtocolConstants.GetTrackerSerial(4);
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(errors, error => error.Contains("不能隐藏 TrackSwap 自己创建的虚拟设备", StringComparison.Ordinal));
     }
 
     private static RuntimeConfiguration CreateConfiguration()

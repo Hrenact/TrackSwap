@@ -171,6 +171,34 @@ vr::DriverPose_t ConvertPose(const vr::TrackedDevicePose_t& sourcePose)
     return pose;
 }
 
+vr::DriverPose_t CombinePose(
+    const vr::DriverPose_t& positionSourcePose,
+    const vr::DriverPose_t& rotationSourcePose)
+{
+    const bool connected = positionSourcePose.deviceIsConnected && rotationSourcePose.deviceIsConnected;
+    if (!connected || !positionSourcePose.poseIsValid || !rotationSourcePose.poseIsValid)
+    {
+        vr::DriverPose_t invalid = MakeInvalidPose(connected);
+        invalid.result = !positionSourcePose.poseIsValid
+            ? positionSourcePose.result
+            : rotationSourcePose.result;
+        return invalid;
+    }
+
+    vr::DriverPose_t output = positionSourcePose;
+    output.qRotation = rotationSourcePose.qRotation;
+    for (std::size_t axis = 0; axis < 3; ++axis)
+    {
+        output.vecAngularVelocity[axis] = rotationSourcePose.vecAngularVelocity[axis];
+    }
+    output.result = positionSourcePose.result == vr::TrackingResult_Running_OK
+        ? rotationSourcePose.result
+        : positionSourcePose.result;
+    output.deviceIsConnected = true;
+    output.poseIsValid = true;
+    return output;
+}
+
 vr::DriverPose_t ApplyOffset(const vr::DriverPose_t& sourcePose, const RigidOffset& offset)
 {
     if (!sourcePose.deviceIsConnected || !sourcePose.poseIsValid || !IsValidOffset(offset))

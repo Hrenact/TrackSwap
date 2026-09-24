@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>TrackSwap 手机振动诊断器</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0f1011; --panel:#191a1c; --panel2:#111315; --line:#2d3033; --text:#e6e9ee; --muted:#969da6; --blue:#5b9bff; --green:#51d195; --orange:#f0bd55; --red:#ee6a68; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px/1.55 "Segoe UI","Microsoft YaHei UI",sans-serif; }
+    main { width:min(920px,100%); margin:0 auto; padding:24px 16px 48px; }
+    h1 { margin:0; font-size:24px; font-weight:600; }
+    .subtitle { margin:4px 0 20px; color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .card { border:1px solid var(--line); border-radius:6px; background:var(--panel); padding:16px; min-width:0; }
+    .full { grid-column:1/-1; }
+    h2 { margin:0 0 12px; font-size:17px; font-weight:600; }
+    .states { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+    .state { min-height:68px; background:var(--panel2); border:1px solid var(--line); padding:10px; }
+    .state small { display:block; color:var(--muted); }
+    .state strong { display:block; margin-top:3px; overflow-wrap:anywhere; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:7px; background:var(--muted); }
+    .ok .dot { background:var(--green); } .wait .dot { background:var(--orange); } .bad .dot { background:var(--red); }
+    button { min-height:38px; padding:0 16px; color:var(--text); background:#202225; border:1px solid #3a3e43; border-radius:4px; font:inherit; cursor:pointer; }
+    button.primary { border-color:var(--blue); background:#1b2d46; }
+    button:disabled { opacity:.45; cursor:default; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+    .note { color:var(--muted); font-size:13px; }
+    .warning { color:var(--orange); }
+    .url { padding:9px 10px; background:var(--panel2); border:1px solid var(--line); font-family:Consolas,monospace; overflow-wrap:anywhere; }
+    .qr-layout { display:grid; grid-template-columns:180px 1fr; gap:16px; align-items:start; }
+    #qr { width:180px; height:180px; background:#111315; border:1px solid var(--line); }
+    .event { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    .metric { padding:10px; background:var(--panel2); border:1px solid var(--line); }
+    .metric small { display:block; color:var(--muted); } .metric strong { font-size:18px; }
+    .stages { margin-top:12px; display:grid; gap:5px; }
+    .stage { color:var(--muted); } .stage.ok { color:var(--green); } .stage.bad { color:var(--red); } .stage.wait { color:var(--orange); }
+    .empty { color:var(--muted); padding:18px 0; }
+    code { color:#c8d8f1; }
+    @media (max-width:680px) { main{padding-top:18px}.grid{grid-template-columns:1fr}.states{grid-template-columns:repeat(2,1fr)}.qr-layout{grid-template-columns:1fr}.desktop-only{display:none}.event{grid-template-columns:1fr 1fr}.metric:last-child{grid-column:1/-1} }
+  </style>
+</head>
+<body>
+<main>
+  <h1>TrackSwap 手机振动诊断器</h1>
+  <p class="subtitle">验证 OSC 包确实离开 Runtime、到达接收器，并让支持的手机浏览器执行振动。</p>
+  <div class="grid">
+    <section class="card full">
+      <div class="states">
+        <div class="state ok"><small>OSC 接收器</small><strong><span class="dot"></span><span id="udp-state">读取中</span></strong></div>
+        <div class="state wait" id="socket-box"><small>网页连接</small><strong><span class="dot"></span><span id="socket-state">连接中</span></strong></div>
+        <div class="state" id="api-box"><small>振动 API</small><strong><span class="dot"></span><span id="api-state">检测中</span></strong></div>
+        <div class="state" id="armed-box"><small>实际振动</small><strong><span class="dot"></span><span id="armed-state">未启用</span></strong></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="arm">启用手机振动</button>
+        <button id="stop" disabled>停止振动</button>
+      </div>
+      <p class="note" id="support-note">浏览器要求先点一次按钮。保持本页在前台，并关闭静音或勿扰模式。</p>
+    </section>
+
+    <section class="card full desktop-only" id="qr-card">
+      <h2>连接手机</h2>
+      <div class="qr-layout">
+        <img id="qr" alt="手机访问地址二维码">
+        <div>
+          <p>让手机和电脑连接同一局域网，然后扫描二维码。若无法访问，请允许 Windows 防火墙的“专用网络”访问。</p>
+          <div class="url" id="phone-url">正在寻找局域网地址…</div>
+          <p class="note">本次地址包含随机令牌，关闭诊断器后立即失效。服务不会访问互联网。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="left-card">
+      <h2>左手体感</h2>
+      <div class="empty">尚未收到 <code>/trackswap/left/haptic</code></div>
+    </section>
+    <section class="card" id="right-card">
+      <h2>右手体感</h2>
+      <div class="empty">尚未收到 <code>/trackswap/right/haptic</code></div>
+    </section>
+
+    <section class="card full">
+      <h2>结果怎么读</h2>
+      <p class="note">“UDP 已收到”证明 TrackSwap 的 OSC 发送路径和端口有效；“网页已收到”证明桥接正常；“浏览器已接受”仅表示 <code>navigator.vibrate()</code> 接受了请求，系统静音、勿扰模式或硬件限制仍可能阻止实际振动。</p>
+      <p class="note warning">网页 API 只能控制振动/暂停时长。这里用脉冲疏密近似频率、用占空比近似强度，不能把手机当作精确的触觉执行器。</p>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  const token = new URLSearchParams(location.search).get('token') || '';
+  let socket;
+  let armed = false;
+  const vibrationSupported = typeof navigator.vibrate === 'function';
+  const events = new Map();
+
+  const setState = (box, text, kind) => {
+    const element = document.getElementById(box + '-box');
+    element.className = 'state ' + kind;
+    document.getElementById(box + '-state').textContent = text;
+  };
+
+  setState('api', vibrationSupported ? '可用' : '不可用', vibrationSupported ? 'ok' : 'bad');
+  document.getElementById('arm').disabled = !vibrationSupported;
+  if (!vibrationSupported) {
+    document.getElementById('support-note').textContent = '当前浏览器不提供 Vibration API。iPhone / iPad 的浏览器通常不支持；建议使用 Android Chrome 或 Firefox。';
+  }
+
+  document.getElementById('arm').addEventListener('click', () => {
+    armed = true;
+    navigator.vibrate(1);
+    setState('armed', '已启用', 'ok');
+    document.getElementById('arm').disabled = true;
+    document.getElementById('stop').disabled = false;
+  });
+  document.getElementById('stop').addEventListener('click', () => {
+    armed = false;
+    navigator.vibrate(0);
+    setState('armed', '未启用', '');
+    document.getElementById('arm').disabled = !vibrationSupported;
+    document.getElementById('stop').disabled = true;
+  });
+
+  const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+  const buildPattern = event => {
+    const duration = Math.round(clamp(event.durationSeconds * 1000, 0, 10000));
+    const amplitude = clamp(event.amplitude, 0, 1);
+    if (duration <= 0 || amplitude <= 0) return [0];
+    const frequency = clamp(event.frequencyHertz, 0, 40);
+    if (frequency < 1) return [duration];
+    const period = 1000 / frequency;
+    const on = Math.max(1, Math.round(period * (0.1 + amplitude * 0.9)));
+    const off = Math.max(1, Math.round(period - on));
+    const pattern = [];
+    let elapsed = 0;
+    while (elapsed < duration && pattern.length < 400) {
+      const pulse = Math.min(on, duration - elapsed);
+      pattern.push(pulse);
+      elapsed += pulse;
+      if (elapsed < duration) {
+        const pause = Math.min(off, duration - elapsed);
+        pattern.push(pause);
+        elapsed += pause;
+      }
+    }
+    return pattern;
+  };
+
+  const sendAck = (event, accepted, reason) => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      type: 'ack', eventId: event.eventId, supported: vibrationSupported,
+      armed, accepted: !!accepted, visible: document.visibilityState === 'visible', reason
+    }));
+  };
+
+  const renderEvent = event => {
+    const card = document.getElementById(event.hand + '-card');
+    const ack = events.get(event.eventId)?.ack;
+    let lastStage = '<div class="stage wait">● 等待已启用的手机确认</div>';
+    if (ack) {
+      const ok = ack.accepted && ack.armed && ack.visible;
+      lastStage = `<div class="stage ${ok ? 'ok' : 'bad'}">● ${escapeHtml(ack.reason || (ok ? '浏览器已接受振动请求' : '浏览器未执行振动'))}</div>`;
+    }
+    card.innerHTML = `<h2>${event.hand === 'left' ? '左手体感' : '右手体感'}</h2>
+      <div class="event">
+        <div class="metric"><small>时长</small><strong>${Number(event.durationSeconds).toFixed(3)} s</strong></div>
+        <div class="metric"><small>频率</small><strong>${Number(event.frequencyHertz).toFixed(1)} Hz</strong></div>
+        <div class="metric"><small>强度</small><strong>${Math.round(event.amplitude * 100)}%</strong></div>
+      </div>
+      <div class="stages">
+        <div class="stage ok">● UDP 已收到 · ${event.byteLength} 字节</div>
+        <div class="stage ok">● 网页已收到 · 事件 #${event.eventId}</div>
+        ${lastStage}
+      </div>`;
+  };
+
+  const escapeHtml = text => String(text).replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+
+  const connect = () => {
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    socket = new WebSocket(`${scheme}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+    socket.onopen = () => setState('socket', '已连接', 'ok');
+    socket.onclose = () => { setState('socket', '连接断开', 'bad'); setTimeout(connect, 1500); };
+    socket.onerror = () => setState('socket', '连接错误', 'bad');
+    socket.onmessage = message => {
+      const data = JSON.parse(message.data);
+      if (data.type === 'haptic') {
+        events.set(data.eventId, { event: data });
+        renderEvent(data);
+        let accepted = false;
+        let reason = '';
+        if (!vibrationSupported) reason = '浏览器不支持振动 API';
+        else if (!armed) reason = '请先点击“启用手机振动”';
+        else if (document.visibilityState !== 'visible') reason = '网页不在前台';
+        else {
+          accepted = navigator.vibrate(buildPattern(data));
+          reason = accepted ? '浏览器已接受振动请求' : '浏览器拒绝了振动请求';
+        }
+        sendAck(data, accepted, reason);
+      } else if (data.type === 'ack') {
+        const stored = events.get(data.eventId);
+        if (stored && data.armed) {
+          stored.ack = data;
+          renderEvent(stored.event);
+        }
+      }
+    };
+  };
+
+  fetch(`/api/info?token=${encodeURIComponent(token)}`)
+    .then(response => { if (!response.ok) throw new Error('unauthorized'); return response.json(); })
+    .then(info => {
+      document.getElementById('udp-state').textContent = `监听 ${info.udpPort}`;
+      document.getElementById('phone-url').textContent = info.preferredPhoneUrl;
+      document.getElementById('qr').src = `/qr.svg?token=${encodeURIComponent(token)}`;
+    })
+    .catch(() => {
+      document.getElementById('udp-state').textContent = '无法读取';
+      document.getElementById('phone-url').textContent = '本次链接无效，请重新启动诊断器。';
+    });
+  connect();
+})();
+</script>
+</body>
+</html>

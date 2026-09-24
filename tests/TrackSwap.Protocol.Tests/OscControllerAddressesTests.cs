@@ -16,6 +16,12 @@ public sealed class OscControllerAddressesTests
         Assert.Equal("/trackswap/right/button/b", right.SecondaryButton);
         Assert.Equal("/trackswap/left/trigger/value", left.TriggerValue);
         Assert.Equal("/trackswap/left/grip/value", left.GripValue);
+        Assert.Equal("/trackswap/left/touch/thumb", left.ThumbTouchAssist);
+        Assert.Equal("/trackswap/left/touch/index", left.IndexTouchAssist);
+        Assert.Equal("/trackswap/right/touch/thumb", right.ThumbTouchAssist);
+        Assert.Equal("/trackswap/right/touch/index", right.IndexTouchAssist);
+        Assert.Equal("/trackswap/left/haptic", left.Haptic);
+        Assert.Equal("/trackswap/right/haptic", right.Haptic);
     }
 
     [Fact]

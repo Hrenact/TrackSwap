@@ -6,7 +6,6 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using TrackSwap.Models;
-using TrackSwap.Protocol;
 
 namespace TrackSwap.Services
 {
@@ -262,64 +261,6 @@ namespace TrackSwap.Services
 
             match.Remove();
             return WriteWithBackup(settingsPath, root);
-        }
-
-        public bool ReconcileTrackSwapOverrides(
-            string settingsPath,
-            IReadOnlyDictionary<string, string> desiredMappings)
-        {
-            JObject root = ReadRoot(settingsPath);
-            JObject original = (JObject)root.DeepClone();
-            JObject overrides = root["TrackingOverrides"] as JObject;
-            var managedSources = new HashSet<string>(
-                Enumerable.Range(0, ProtocolConstants.MaximumRoutes)
-                    .Select(ProtocolConstants.GetProxyDevicePath),
-                StringComparer.Ordinal);
-
-            if (overrides != null)
-            {
-                foreach (JProperty property in overrides.Properties()
-                    .Where(property => managedSources.Contains(property.Name))
-                    .ToList())
-                {
-                    property.Remove();
-                }
-            }
-
-            if (desiredMappings.Count != 0 && overrides == null)
-            {
-                overrides = new JObject();
-                root["TrackingOverrides"] = overrides;
-            }
-
-            foreach (KeyValuePair<string, string> desired in desiredMappings
-                .OrderBy(pair => pair.Key, StringComparer.Ordinal))
-            {
-                string validationError = ValidateOverride(root, desired.Key, desired.Value);
-                if (validationError != null)
-                {
-                    throw new InvalidOperationException(validationError);
-                }
-
-                foreach (JProperty property in overrides.Properties().ToList())
-                {
-                    bool sameSource = string.Equals(property.Name, desired.Key, StringComparison.Ordinal);
-                    bool sameTarget = string.Equals((string)property.Value, desired.Value, StringComparison.Ordinal);
-                    if (sameSource || sameTarget)
-                    {
-                        property.Remove();
-                    }
-                }
-                overrides[desired.Key] = desired.Value;
-            }
-
-            if (JToken.DeepEquals(original, root))
-            {
-                return false;
-            }
-
-            WriteWithBackup(settingsPath, root);
-            return true;
         }
 
         private static string ValidateOverride(JObject root, string sourcePath, string targetPath)

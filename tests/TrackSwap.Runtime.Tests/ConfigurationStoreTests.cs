@@ -30,6 +30,18 @@ public sealed class ConfigurationStoreTests
     }
 
     [Fact]
+    public void MissingOscTouchAssistConfigurationUsesContactDefaults()
+    {
+        RuntimeConfiguration configuration = JsonConvert.DeserializeObject<RuntimeConfiguration>(
+            "{\"osc\":{\"listenAddress\":\"127.0.0.1\",\"port\":9015,\"sendPort\":9016}}")!;
+
+        Assert.True(configuration.Osc.LeftTouchAssist.ThumbDefaultTouched);
+        Assert.True(configuration.Osc.LeftTouchAssist.IndexDefaultTouched);
+        Assert.True(configuration.Osc.RightTouchAssist.ThumbDefaultTouched);
+        Assert.True(configuration.Osc.RightTouchAssist.IndexDefaultTouched);
+    }
+
+    [Fact]
     public void LoadIgnoresLegacyOscAddressMappings()
     {
         string directory = Path.Combine(Path.GetTempPath(), "trackswap-tests", Guid.NewGuid().ToString("N"));
@@ -37,24 +49,28 @@ public sealed class ConfigurationStoreTests
         Directory.CreateDirectory(directory);
         try
         {
-            RuntimeConfiguration configuration = new();
-            string json = JsonConvert.SerializeObject(configuration, RuntimeJson.Settings);
-            json = json.Replace(
-                "\"resetTimeout\":5",
-                "\"resetTimeout\":5,\"left\":{\"primaryButton\":\"/custom/left/a\"},\"right\":{\"primaryButton\":\"/custom/right/a\"}",
-                StringComparison.Ordinal);
+            JObject root = JObject.FromObject(
+                new RuntimeConfiguration(),
+                JsonSerializer.Create(RuntimeJson.Settings));
+            JObject osc = Assert.IsType<JObject>(root["osc"]);
+            osc["resetTimeout"] = 5;
+            osc["left"] = JObject.Parse("{\"primaryButton\":\"/custom/left/a\"}");
+            osc["right"] = JObject.Parse("{\"primaryButton\":\"/custom/right/a\"}");
+            string json = root.ToString(Formatting.None);
             Assert.Contains("/custom/", json, StringComparison.Ordinal);
             File.WriteAllText(path, json);
 
             RuntimeConfiguration loaded = new ConfigurationStore(path).Load();
 
             Assert.Equal("127.0.0.1", loaded.Osc.ListenAddress);
+            Assert.Equal(9016, loaded.Osc.SendPort);
             new ConfigurationStore(path).Save(loaded);
             string persisted = File.ReadAllText(path);
             JObject persistedRoot = JObject.Parse(persisted);
             JObject persistedOsc = Assert.IsType<JObject>(persistedRoot["osc"]);
             Assert.Null(persistedOsc["left"]);
             Assert.Null(persistedOsc["right"]);
+            Assert.Null(persistedOsc["resetTimeout"]);
             Assert.DoesNotContain("/custom/", persisted, StringComparison.Ordinal);
         }
         finally

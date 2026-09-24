@@ -111,6 +111,40 @@ int main()
         return EXIT_FAILURE;
     }
 
+    vr::DriverPose_t positionSource = converted;
+    positionSource.vecPosition[0] = 8.0;
+    positionSource.vecPosition[1] = 9.0;
+    positionSource.vecPosition[2] = 10.0;
+    positionSource.vecVelocity[0] = 1.0;
+    positionSource.vecAngularVelocity[2] = 2.0;
+    positionSource.qRotation = {1.0, 0.0, 0.0, 0.0};
+    vr::DriverPose_t rotationSource = converted;
+    rotationSource.vecPosition[0] = -5.0;
+    rotationSource.vecVelocity[0] = 7.0;
+    rotationSource.vecAngularVelocity[0] = 3.0;
+    rotationSource.vecAngularVelocity[2] = 4.0;
+    rotationSource.qRotation = {halfSqrtTwo, 0.0, halfSqrtTwo, 0.0};
+    const vr::DriverPose_t combined =
+        trackswap::pose_math::CombinePose(positionSource, rotationSource);
+    if (!combined.poseIsValid || !combined.deviceIsConnected ||
+        !Near(combined.vecPosition[0], 8.0) ||
+        !Near(combined.vecPosition[1], 9.0) ||
+        !Near(combined.vecPosition[2], 10.0) ||
+        !Near(combined.qRotation.w, halfSqrtTwo) ||
+        !Near(combined.qRotation.y, halfSqrtTwo) ||
+        !Near(combined.vecVelocity[0], 1.0) ||
+        !Near(combined.vecAngularVelocity[0], 3.0) ||
+        !Near(combined.vecAngularVelocity[2], 4.0))
+    {
+        return EXIT_FAILURE;
+    }
+
+    rotationSource.poseIsValid = false;
+    if (trackswap::pose_math::CombinePose(positionSource, rotationSource).poseIsValid)
+    {
+        return EXIT_FAILURE;
+    }
+
     trackswap::pose_math::RigidOffset excessive = trackswap::pose_math::IdentityOffset();
     excessive.translation[0] = 10.01;
     if (trackswap::pose_math::IsValidOffset(excessive))

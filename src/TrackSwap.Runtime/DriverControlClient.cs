@@ -29,17 +29,27 @@ internal static class DriverControlClient
         return SendAccepted(DriverControlProtocol.SetOffsetMessageType, payloadStream.ToArray(), timeout);
     }
 
-    public static string ApplySnapshot(int slot, RouteConfiguration? route, ulong revision, TimeSpan timeout)
+    public static string ApplySnapshot(
+        int slot,
+        RouteConfiguration? route,
+        bool hidePhysicalSource,
+        ulong revision,
+        TimeSpan timeout)
     {
         bool enabled = route?.Enabled == true;
         byte[] sourcePath = enabled ? Encoding.UTF8.GetBytes(route!.SourceDevicePath) : Array.Empty<byte>();
+        byte[] rotationSourcePath = enabled && route!.SplitPoseSource
+            ? Encoding.UTF8.GetBytes(route.RotationSourceDevicePath)
+            : Array.Empty<byte>();
         byte[] targetPath = enabled && route!.Mode == RouteMode.ReplaceTarget
             ? Encoding.UTF8.GetBytes(route.TargetDevicePath)
             : Array.Empty<byte>();
         if (slot < 0 || slot >= ProtocolConstants.MaximumRoutes ||
             (enabled && sourcePath.Length == 0) ||
-            sourcePath.Length > ushort.MaxValue || targetPath.Length > ushort.MaxValue ||
-            sourcePath.Length + targetPath.Length > DriverControlProtocol.MaximumCombinedDevicePathBytes)
+            sourcePath.Length > ushort.MaxValue || rotationSourcePath.Length > ushort.MaxValue ||
+            targetPath.Length > ushort.MaxValue ||
+            sourcePath.Length + rotationSourcePath.Length + targetPath.Length >
+                DriverControlProtocol.MaximumCombinedDevicePathBytes)
         {
             throw new IOException("编码后的来源或目标路径无效。");
         }
@@ -49,10 +59,13 @@ internal static class DriverControlClient
         {
             writer.Write((byte)slot);
             writer.Write(enabled ? (byte)1 : (byte)0);
+            writer.Write(enabled && hidePhysicalSource ? (byte)1 : (byte)0);
             writer.Write(revision);
             writer.Write((ushort)sourcePath.Length);
+            writer.Write((ushort)rotationSourcePath.Length);
             writer.Write((ushort)targetPath.Length);
             writer.Write(sourcePath);
+            writer.Write(rotationSourcePath);
             writer.Write(targetPath);
             PoseOffset offset = route?.Offset ?? PoseOffset.Identity();
             WriteOffsetForOpenVr(writer, offset);
@@ -63,16 +76,20 @@ internal static class DriverControlClient
     public static string ApplyControllerSnapshot(
         ControllerHand hand,
         RouteConfiguration? route,
+        bool hidePhysicalSource,
         int handSelectionPriority,
         ulong revision,
         TimeSpan timeout)
     {
         bool enabled = route?.Enabled == true;
         byte[] sourcePath = enabled ? Encoding.UTF8.GetBytes(route!.SourceDevicePath) : Array.Empty<byte>();
+        byte[] rotationSourcePath = enabled && route!.SplitPoseSource
+            ? Encoding.UTF8.GetBytes(route.RotationSourceDevicePath)
+            : Array.Empty<byte>();
         if ((hand != ControllerHand.Left && hand != ControllerHand.Right) ||
             (enabled && (route!.Mode != RouteMode.VirtualController || route.ControllerHand != hand || sourcePath.Length == 0)) ||
-            sourcePath.Length > ushort.MaxValue ||
-            sourcePath.Length > DriverControlProtocol.MaximumPayloadBytes -
+            sourcePath.Length > ushort.MaxValue || rotationSourcePath.Length > ushort.MaxValue ||
+            sourcePath.Length + rotationSourcePath.Length > DriverControlProtocol.MaximumPayloadBytes -
                 DriverControlProtocol.ApplyControllerSnapshotFixedBytes)
         {
             throw new IOException("虚拟控制器快照无效。");
@@ -84,10 +101,13 @@ internal static class DriverControlClient
             writer.Write((byte)hand);
             writer.Write(enabled ? (byte)1 : (byte)0);
             writer.Write(enabled ? (byte)route!.VirtualDeviceSlot : byte.MaxValue);
+            writer.Write(enabled && hidePhysicalSource ? (byte)1 : (byte)0);
             writer.Write(revision);
             writer.Write(handSelectionPriority);
             writer.Write((ushort)sourcePath.Length);
+            writer.Write((ushort)rotationSourcePath.Length);
             writer.Write(sourcePath);
+            writer.Write(rotationSourcePath);
             PoseOffset offset = route?.Offset ?? PoseOffset.Identity();
             WriteOffsetForOpenVr(writer, offset);
         }
@@ -143,6 +163,32 @@ internal static class DriverControlClient
             new byte[] { 0 },
             timeout);
         return ParseHapticFeedbackBatch(payload);
+    }
+
+    public static PhysicalSourceHidingStatus GetPhysicalSourceHidingStatus(TimeSpan timeout)
+    {
+        byte[] payload = SendBytes(
+            DriverControlProtocol.GetPhysicalSourceHidingStatusMessageType,
+            new byte[] { 0 },
+            timeout);
+        if (payload == null || payload.Length != DriverControlProtocol.PhysicalSourceHidingStatusBytes)
+        {
+            throw new IOException("驱动返回了无效的设备隐藏状态。");
+        }
+        string lastError = Encoding.UTF8.GetString(payload, 4, 256).TrimEnd('\0');
+        var state = (PhysicalSourceHidingState)payload[0];
+        if (!Enum.IsDefined(typeof(PhysicalSourceHidingState), state) || payload[2] > payload[1])
+        {
+            throw new IOException("驱动返回了无效的设备隐藏状态内容。");
+        }
+        return new PhysicalSourceHidingStatus
+        {
+            State = state,
+            RequestedDeviceCount = payload[1],
+            ActiveDeviceCount = payload[2],
+            HookInstalled = payload[3] != 0,
+            LastError = string.IsNullOrWhiteSpace(lastError) ? null : lastError
+        };
     }
 
     internal static IReadOnlyList<HapticFeedbackEvent> ParseHapticFeedbackBatch(byte[] payload)
@@ -228,6 +274,7 @@ internal static class DriverControlClient
             AppliedRevision = checked((long)reader.ReadUInt64()),
             CapturedAtUtc = DateTimeOffset.UtcNow,
             Source = ReadPose(reader),
+            RotationSource = ReadPose(reader),
             Output = ReadPose(reader),
             Target = ReadPose(reader)
         };

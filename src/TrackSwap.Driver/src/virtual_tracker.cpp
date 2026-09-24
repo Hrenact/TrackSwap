@@ -1,6 +1,7 @@
 #include "virtual_tracker.h"
 
 #include "pose_math.h"
+#include "pose_hiding_hook.h"
 
 #include <cstdio>
 #include <cstring>
@@ -55,7 +56,9 @@ void VirtualTracker::ConfigureSource(const char* sourceDevicePath)
     }
 
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
+    rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     searchCountdown_ = 0;
+    rotationSearchCountdown_ = 0;
 }
 
 void VirtualTracker::QueueSource(const char* sourceDevicePath)
@@ -64,6 +67,7 @@ void VirtualTracker::QueueSource(const char* sourceDevicePath)
     pendingEnabled_ = true;
     hasPendingEnabled_ = true;
     pendingSourceDevicePath_.fill('\0');
+    pendingRotationSourceDevicePath_.fill('\0');
     strncpy_s(
         pendingSourceDevicePath_.data(),
         pendingSourceDevicePath_.size(),
@@ -82,6 +86,7 @@ void VirtualTracker::QueueOffset(const pose_math::RigidOffset& offset)
 bool VirtualTracker::QueueSnapshot(
     bool enabled,
     const char* sourceDevicePath,
+    const char* rotationSourceDevicePath,
     const char* targetDevicePath,
     const pose_math::RigidOffset& offset,
     std::uint64_t revision)
@@ -99,6 +104,7 @@ bool VirtualTracker::QueueSnapshot(
     pendingEnabled_ = enabled;
     hasPendingEnabled_ = true;
     pendingSourceDevicePath_.fill('\0');
+    pendingRotationSourceDevicePath_.fill('\0');
     pendingTargetDevicePath_.fill('\0');
     if (enabled)
     {
@@ -107,6 +113,14 @@ bool VirtualTracker::QueueSnapshot(
             pendingSourceDevicePath_.size(),
             sourceDevicePath,
             _TRUNCATE);
+        if (rotationSourceDevicePath != nullptr)
+        {
+            strncpy_s(
+                pendingRotationSourceDevicePath_.data(),
+                pendingRotationSourceDevicePath_.size(),
+                rotationSourceDevicePath,
+                _TRUNCATE);
+        }
         strncpy_s(
             pendingTargetDevicePath_.data(),
             pendingTargetDevicePath_.size(),
@@ -188,6 +202,7 @@ void VirtualTracker::Deactivate()
 {
     objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
+    rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     targetId_ = vr::k_unTrackedDeviceIndexInvalid;
     lastPose_ = pose_math::MakeInvalidPose();
     lastHealth_ = false;
@@ -239,11 +254,16 @@ void VirtualTracker::Update()
     }
 
     vr::VRServerDriverHost()->GetRawTrackedDevicePoses(0.0F, rawPoses_.data(), static_cast<std::uint32_t>(rawPoses_.size()));
-
     if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid && !rawPoses_[sourceId_].bDeviceIsConnected)
     {
         sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
         searchCountdown_ = 0;
+    }
+    if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid &&
+        !rawPoses_[rotationSourceId_].bDeviceIsConnected)
+    {
+        rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
+        rotationSearchCountdown_ = 0;
     }
 
     if (targetId_ != vr::k_unTrackedDeviceIndexInvalid && !rawPoses_[targetId_].bDeviceIsConnected)
@@ -265,6 +285,20 @@ void VirtualTracker::Update()
         }
     }
 
+    if (rotationSourceDevicePath_[0] != '\0' &&
+        rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid)
+    {
+        if (rotationSearchCountdown_ == 0)
+        {
+            FindRotationSource();
+            rotationSearchCountdown_ = SearchIntervalFrames;
+        }
+        else
+        {
+            --rotationSearchCountdown_;
+        }
+    }
+
 
     if (targetId_ == vr::k_unTrackedDeviceIndexInvalid)
     {
@@ -279,7 +313,18 @@ void VirtualTracker::Update()
         }
     }
 
-    if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid)
+    if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
+    {
+        PoseHidingHook::RestoreRawPose(sourceId_, rawPoses_[sourceId_]);
+    }
+    if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid && rotationSourceId_ != sourceId_)
+    {
+        PoseHidingHook::RestoreRawPose(rotationSourceId_, rawPoses_[rotationSourceId_]);
+    }
+
+    const bool splitSource = rotationSourceDevicePath_[0] != '\0';
+    if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid ||
+        (splitSource && rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid))
     {
         // Keep an enabled proxy registered while its physical source is absent.
         // Reporting the proxy itself as disconnected can make SteamVR discard the
@@ -291,9 +336,14 @@ void VirtualTracker::Update()
     }
     else
     {
-        lastPose_ = pose_math::ApplyOffset(
-            pose_math::ConvertPose(rawPoses_[sourceId_]),
-            activeOffset_);
+        vr::DriverPose_t basePose = pose_math::ConvertPose(rawPoses_[sourceId_]);
+        if (splitSource)
+        {
+            basePose = pose_math::CombinePose(
+                basePose,
+                pose_math::ConvertPose(rawPoses_[rotationSourceId_]));
+        }
+        lastPose_ = pose_math::ApplyOffset(basePose, activeOffset_);
         SetHealth(lastPose_.deviceIsConnected && lastPose_.poseIsValid);
         if (!lastPose_.deviceIsConnected)
         {
@@ -305,9 +355,20 @@ void VirtualTracker::Update()
     vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
 }
 
+vr::TrackedDeviceIndex_t VirtualTracker::SourceDeviceId() const
+{
+    return sourceId_;
+}
+
+vr::TrackedDeviceIndex_t VirtualTracker::RotationSourceDeviceId() const
+{
+    return rotationSourceId_;
+}
+
 void VirtualTracker::ApplyPendingSource()
 {
     std::array<char, MaximumDevicePathBytes> pending{};
+    std::array<char, MaximumDevicePathBytes> pendingRotation{};
     std::array<char, MaximumDevicePathBytes> pendingTarget{};
     pose_math::RigidOffset pendingOffset = pose_math::IdentityOffset();
     bool sourceChanged = false;
@@ -325,6 +386,7 @@ void VirtualTracker::ApplyPendingSource()
         if (hasPendingSource_)
         {
             pending = pendingSourceDevicePath_;
+            pendingRotation = pendingRotationSourceDevicePath_;
             pendingTarget = pendingTargetDevicePath_;
             hasPendingSource_ = false;
             sourceChanged = true;
@@ -352,6 +414,9 @@ void VirtualTracker::ApplyPendingSource()
     if (sourceChanged)
     {
         ConfigureSource(pending.data());
+        rotationSourceDevicePath_ = pendingRotation;
+        rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
+        rotationSearchCountdown_ = 0;
         targetDevicePath_ = pendingTarget;
         if (!enabledChanged || pendingEnabled)
         {
@@ -378,6 +443,8 @@ void VirtualTracker::ApplyPendingSource()
         if (!activeEnabled_)
         {
             ConfigureSource(nullptr);
+            rotationSourceDevicePath_.fill('\0');
+            rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
             targetDevicePath_.fill('\0');
             targetId_ = vr::k_unTrackedDeviceIndexInvalid;
             lastPose_ = pose_math::MakeInvalidPose();
@@ -465,6 +532,24 @@ void VirtualTracker::FindSource()
     }
 }
 
+void VirtualTracker::FindRotationSource()
+{
+    if (rotationSourceDevicePath_[0] == '\0')
+    {
+        return;
+    }
+    for (std::uint32_t index = 0; index < rawPoses_.size(); ++index)
+    {
+        if (rawPoses_[index].bDeviceIsConnected &&
+            DevicePathMatches(index, rotationSourceDevicePath_.data()))
+        {
+            rotationSourceId_ = index;
+            vr::VRDriverLog()->Log("TrackSwap rotation source device connected.");
+            return;
+        }
+    }
+}
+
 void VirtualTracker::FindTarget()
 {
     if (targetDevicePath_[0] == '\0')
@@ -529,6 +614,14 @@ void VirtualTracker::PublishTelemetry()
     if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
     {
         snapshot.source = ToTelemetryPose(rawPoses_[sourceId_]);
+    }
+    if (rotationSourceDevicePath_[0] == '\0')
+    {
+        snapshot.rotationSource = snapshot.source;
+    }
+    else if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid)
+    {
+        snapshot.rotationSource = ToTelemetryPose(rawPoses_[rotationSourceId_]);
     }
     snapshot.output = ToTelemetryPose(lastPose_);
     if (targetId_ != vr::k_unTrackedDeviceIndexInvalid)

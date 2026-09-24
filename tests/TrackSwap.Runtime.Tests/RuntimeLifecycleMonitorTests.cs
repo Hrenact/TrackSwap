@@ -21,4 +21,16 @@ public sealed class RuntimeLifecycleMonitorTests
             expected,
             RuntimeLifecycleMonitor.ShouldRemainRunning(mode, ownerAlive, steamVrRunning));
     }
+
+    [Theory]
+    [InlineData(RuntimeLifecycleMode.FollowTrackSwap)]
+    [InlineData(RuntimeLifecycleMode.FollowSteamVr)]
+    public void PendingRuntimeWorkKeepsEitherLifecycleModeAlive(RuntimeLifecycleMode mode)
+    {
+        Assert.True(RuntimeLifecycleMonitor.ShouldRemainRunning(
+            mode,
+            ownerAlive: false,
+            steamVrRunning: false,
+            hasPendingWork: true));
+    }
 }

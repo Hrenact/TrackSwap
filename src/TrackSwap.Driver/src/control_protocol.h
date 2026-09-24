@@ -7,7 +7,7 @@ namespace trackswap::control_protocol
 {
 constexpr wchar_t PipePath[] = LR"(\\.\pipe\TrackSwap.Driver.v1)";
 constexpr std::uint32_t Magic = 0x50575354;
-constexpr std::uint16_t Version = 6;
+constexpr std::uint16_t Version = 8;
 constexpr std::uint16_t SetSourceMessageType = 1;
 constexpr std::uint16_t SetOffsetMessageType = 2;
 constexpr std::uint16_t ApplySnapshotMessageType = 3;
@@ -15,8 +15,9 @@ constexpr std::uint16_t GetTelemetryMessageType = 4;
 constexpr std::uint16_t ApplyControllerSnapshotMessageType = 5;
 constexpr std::uint16_t ApplyControllerInputMessageType = 6;
 constexpr std::uint16_t GetHapticEventsMessageType = 7;
+constexpr std::uint16_t GetPhysicalSourceHidingStatusMessageType = 8;
 constexpr std::uint16_t ResponseFlag = 0x8000;
-constexpr std::size_t MaximumPayloadBytes = 4096;
+constexpr std::size_t MaximumPayloadBytes = 8192;
 constexpr std::size_t MaximumRoutes = 16;
 constexpr std::size_t MaximumHapticEvents = 32;
 
@@ -44,6 +45,7 @@ struct TelemetrySnapshot
     std::uint64_t sequence;
     std::uint64_t appliedRevision;
     TelemetryPose source;
+    TelemetryPose rotationSource;
     TelemetryPose output;
     TelemetryPose target;
 };
@@ -89,13 +91,31 @@ struct HapticFeedbackBatch
     std::uint8_t count;
     HapticFeedbackEvent events[MaximumHapticEvents];
 };
+
+enum class PhysicalSourceHidingState : std::uint8_t
+{
+    Disabled = 0,
+    Waiting = 1,
+    Active = 2,
+    Failed = 3
+};
+
+struct PhysicalSourceHidingStatus
+{
+    std::uint8_t state;
+    std::uint8_t requestedDeviceCount;
+    std::uint8_t activeDeviceCount;
+    std::uint8_t hookInstalled;
+    char lastError[256];
+};
 #pragma pack(pop)
 
 static_assert(sizeof(Header) == 20, "Driver control header layout changed.");
 static_assert(sizeof(TelemetryPose) == 62, "Driver telemetry pose layout changed.");
-static_assert(sizeof(TelemetrySnapshot) == 202, "Driver telemetry snapshot layout changed.");
-static_assert(sizeof(TelemetryBatch) == 3233, "Driver telemetry batch layout changed.");
+static_assert(sizeof(TelemetrySnapshot) == 264, "Driver telemetry snapshot layout changed.");
+static_assert(sizeof(TelemetryBatch) == 4225, "Driver telemetry batch layout changed.");
 static_assert(sizeof(ControllerInputState) == 29, "Controller input layout changed.");
 static_assert(sizeof(HapticFeedbackEvent) == 21, "Haptic feedback event layout changed.");
 static_assert(sizeof(HapticFeedbackBatch) == 673, "Haptic feedback batch layout changed.");
+static_assert(sizeof(PhysicalSourceHidingStatus) == 260, "Physical-source hiding status layout changed.");
 } // namespace trackswap::control_protocol

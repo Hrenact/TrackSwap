@@ -59,7 +59,7 @@ namespace TrackSwap.Protocol
     public static class DriverControlProtocol
     {
         public const uint Magic = 0x50575354; // "TSWP" in little-endian byte order.
-        public const ushort Version = 6;
+        public const ushort Version = 8;
         public const ushort SetSourceMessageType = 1;
         public const ushort SetOffsetMessageType = 2;
         public const ushort ApplySnapshotMessageType = 3;
@@ -67,18 +67,20 @@ namespace TrackSwap.Protocol
         public const ushort ApplyControllerSnapshotMessageType = 5;
         public const ushort ApplyControllerInputMessageType = 6;
         public const ushort GetHapticEventsMessageType = 7;
+        public const ushort GetPhysicalSourceHidingStatusMessageType = 8;
         public const ushort ResponseFlag = 0x8000;
         public const int HeaderBytes = 20;
-        public const int MaximumPayloadBytes = 4096;
-        public const int ApplySnapshotFixedBytes = 70;
-        public const int ApplyControllerSnapshotFixedBytes = 73;
+        public const int MaximumPayloadBytes = 8192;
+        public const int ApplySnapshotFixedBytes = 73;
+        public const int ApplyControllerSnapshotFixedBytes = 76;
         public const int MaximumCombinedDevicePathBytes = MaximumPayloadBytes - ApplySnapshotFixedBytes;
         public const int TelemetryPoseBytes = 62;
-        public const int TelemetrySnapshotBytes = 202;
+        public const int TelemetrySnapshotBytes = 264;
         public const int TelemetryBatchBytes = 1 + (ProtocolConstants.MaximumRoutes * TelemetrySnapshotBytes);
         public const int ControllerInputBytes = 29;
         public const int MaximumHapticEvents = 32;
         public const int HapticFeedbackEventBytes = 21;
         public const int HapticFeedbackBatchBytes = 1 + (MaximumHapticEvents * HapticFeedbackEventBytes);
+        public const int PhysicalSourceHidingStatusBytes = 260;
     }
 }

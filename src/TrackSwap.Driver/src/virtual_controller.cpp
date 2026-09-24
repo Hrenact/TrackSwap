@@ -1,7 +1,9 @@
 #include "virtual_controller.h"
+#include "pose_hiding_hook.h"
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -18,6 +20,28 @@ trackswap::control_protocol::TelemetryPose ToTelemetryPose(const vr::DriverPose_
     result.rotation[1] = pose.qRotation.y;
     result.rotation[2] = pose.qRotation.z;
     result.rotation[3] = pose.qRotation.w;
+    return result;
+}
+
+vr::HmdMatrix34_t MakeLocalPoseOffset(
+    float x,
+    float y,
+    float z,
+    float rotationXDegrees)
+{
+    constexpr float Pi = 3.14159265358979323846F;
+    const float rotationX = rotationXDegrees * Pi / 180.0F;
+    const float cosine = std::cos(rotationX);
+    const float sine = std::sin(rotationX);
+    vr::HmdMatrix34_t result{};
+    result.m[0][0] = 1.0F;
+    result.m[0][3] = x;
+    result.m[1][1] = cosine;
+    result.m[1][2] = -sine;
+    result.m[1][3] = y;
+    result.m[2][1] = sine;
+    result.m[2][2] = cosine;
+    result.m[2][3] = z;
     return result;
 }
 }
@@ -37,6 +61,7 @@ bool VirtualController::QueueSnapshot(
     bool enabled,
     std::uint8_t logicalSlot,
     const char* sourceDevicePath,
+    const char* rotationSourceDevicePath,
     std::int32_t handSelectionPriority,
     const pose_math::RigidOffset& offset,
     std::uint64_t revision)
@@ -47,9 +72,18 @@ bool VirtualController::QueueSnapshot(
     pendingEnabled_ = enabled;
     pendingLogicalSlot_ = enabled ? logicalSlot : 255;
     pendingSourceDevicePath_.fill('\0');
+    pendingRotationSourceDevicePath_.fill('\0');
     if (enabled && sourceDevicePath != nullptr)
     {
         strncpy_s(pendingSourceDevicePath_.data(), pendingSourceDevicePath_.size(), sourceDevicePath, _TRUNCATE);
+        if (rotationSourceDevicePath != nullptr)
+        {
+            strncpy_s(
+                pendingRotationSourceDevicePath_.data(),
+                pendingRotationSourceDevicePath_.size(),
+                rotationSourceDevicePath,
+                _TRUNCATE);
+        }
     }
     pendingHandSelectionPriority_ = handSelectionPriority;
     pendingOffset_ = offset;
@@ -73,6 +107,8 @@ control_protocol::TelemetrySnapshot VirtualController::GetTelemetry() const
 }
 
 std::uint8_t VirtualController::LogicalSlot() const { return logicalSlot_.load(); }
+vr::TrackedDeviceIndex_t VirtualController::SourceDeviceId() const { return sourceId_; }
+vr::TrackedDeviceIndex_t VirtualController::RotationSourceDeviceId() const { return rotationSourceId_; }
 
 bool VirtualController::MatchesHapticComponent(vr::VRInputComponentHandle_t handle) const
 {
@@ -91,6 +127,25 @@ vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_InputProfilePath_String, "{trackswap}/input/trackswap_controller_profile.json");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RenderModelName_String,
         left ? "oculus_quest2_controller_left" : "oculus_quest2_controller_right");
+    // Keep the icon asset generation in the resource name. SteamVR caches named
+    // device icons by resource path, so overwriting an existing PNG can leave a
+    // redesigned icon visually stale even after the driver package is updated.
+    const std::string iconPrefix = std::string("{trackswap}/icons/trackswap_controller_v2_") +
+        (left ? "left_" : "right_");
+    const auto setNamedIcon = [&](vr::ETrackedDeviceProperty property, const char* state)
+    {
+        const std::string path = iconPrefix + state + ".png";
+        vr::VRProperties()->SetStringProperty(properties, property, path.c_str());
+    };
+    setNamedIcon(vr::Prop_NamedIconPathDeviceOff_String, "off");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceSearching_String, "searching");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceSearchingAlert_String, "searching_alert");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceReady_String, "ready");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceReadyAlert_String, "ready_alert");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceNotReady_String, "not_ready");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceStandby_String, "standby");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceAlertLow_String, "alert_low");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceStandbyAlert_String, "standby_alert");
     vr::VRProperties()->SetInt32Property(properties, vr::Prop_ControllerRoleHint_Int32,
         left ? vr::TrackedControllerRole_LeftHand : vr::TrackedControllerRole_RightHand);
     vr::VRProperties()->SetInt32Property(
@@ -125,6 +180,13 @@ vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
     }
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/thumbrest/touch", &thumbrestTouchHandle_);
     vr::VRDriverInput()->CreateHapticComponent(properties, "/output/haptic", &hapticHandle_);
+    vr::VRDriverInput()->CreatePoseComponent(properties, "/pose/openxr_aim", &openXrAimPoseHandle_);
+    vr::VRDriverInput()->CreatePoseComponent(properties, "/pose/openxr_grip", &openXrGripPoseHandle_);
+    const float handedX = left ? 0.007F : -0.007F;
+    const auto openXrAimPose = MakeLocalPoseOffset(handedX, -0.03894766F, 0.00949694F, -39.4F);
+    const auto openXrGripPose = MakeLocalPoseOffset(handedX, -0.00182941F, 0.1019482F, 20.6F);
+    vr::VRDriverInput()->UpdatePoseComponent(openXrAimPoseHandle_, &openXrAimPose, 0.0);
+    vr::VRDriverInput()->UpdatePoseComponent(openXrGripPoseHandle_, &openXrGripPose, 0.0);
     const auto skeletonError = vr::VRDriverInput()->CreateSkeletonComponent(
         properties,
         left ? "/input/skeleton/left" : "/input/skeleton/right",
@@ -149,6 +211,7 @@ void VirtualController::Deactivate()
 {
     objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
+    rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     lastPose_ = pose_math::MakeInvalidPose();
 }
 void VirtualController::EnterStandby() {}
@@ -177,18 +240,47 @@ void VirtualController::Update()
         sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
         searchCountdown_ = 0;
     }
+    if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid &&
+        !rawPoses_[rotationSourceId_].bDeviceIsConnected)
+    {
+        rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
+        rotationSearchCountdown_ = 0;
+    }
     if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid)
     {
         if (searchCountdown_ == 0) { FindSource(); searchCountdown_ = SearchIntervalFrames; }
         else --searchCountdown_;
     }
-    if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid)
+    if (rotationSourceDevicePath_[0] != '\0' &&
+        rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid)
+    {
+        if (rotationSearchCountdown_ == 0) { FindRotationSource(); rotationSearchCountdown_ = SearchIntervalFrames; }
+        else --rotationSearchCountdown_;
+    }
+    if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
+    {
+        PoseHidingHook::RestoreRawPose(sourceId_, rawPoses_[sourceId_]);
+    }
+    if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid && rotationSourceId_ != sourceId_)
+    {
+        PoseHidingHook::RestoreRawPose(rotationSourceId_, rawPoses_[rotationSourceId_]);
+    }
+    const bool splitSource = rotationSourceDevicePath_[0] != '\0';
+    if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid ||
+        (splitSource && rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid))
     {
         lastPose_ = pose_math::MakeInvalidPose(true);
     }
     else
     {
-        lastPose_ = pose_math::ApplyOffset(pose_math::ConvertPose(rawPoses_[sourceId_]), activeOffset_);
+        vr::DriverPose_t basePose = pose_math::ConvertPose(rawPoses_[sourceId_]);
+        if (splitSource)
+        {
+            basePose = pose_math::CombinePose(
+                basePose,
+                pose_math::ConvertPose(rawPoses_[rotationSourceId_]));
+        }
+        lastPose_ = pose_math::ApplyOffset(basePose, activeOffset_);
     }
     PublishTelemetry();
     vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
@@ -201,6 +293,7 @@ void VirtualController::ApplyPending()
     activeEnabled_ = pendingEnabled_;
     logicalSlot_.store(pendingLogicalSlot_);
     sourceDevicePath_ = pendingSourceDevicePath_;
+    rotationSourceDevicePath_ = pendingRotationSourceDevicePath_;
     activeOffset_ = pendingOffset_;
     if (activeHandSelectionPriority_ != pendingHandSelectionPriority_)
     {
@@ -216,7 +309,9 @@ void VirtualController::ApplyPending()
     }
     appliedRevision_ = pendingRevision_;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
+    rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     searchCountdown_ = 0;
+    rotationSearchCountdown_ = 0;
     hasPendingSnapshot_ = false;
     if (!activeEnabled_)
     {
@@ -328,6 +423,19 @@ void VirtualController::FindSource()
     }
 }
 
+void VirtualController::FindRotationSource()
+{
+    for (std::uint32_t index = 0; index < rawPoses_.size(); ++index)
+    {
+        if (rawPoses_[index].bDeviceIsConnected &&
+            DevicePathMatches(index, rotationSourceDevicePath_.data()))
+        {
+            rotationSourceId_ = index;
+            return;
+        }
+    }
+}
+
 void VirtualController::PublishTelemetry()
 {
     control_protocol::TelemetrySnapshot snapshot{};
@@ -336,6 +444,15 @@ void VirtualController::PublishTelemetry()
     if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
     {
         snapshot.source = ToTelemetryPose(pose_math::ConvertPose(rawPoses_[sourceId_]));
+    }
+    if (rotationSourceDevicePath_[0] == '\0')
+    {
+        snapshot.rotationSource = snapshot.source;
+    }
+    else if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid)
+    {
+        snapshot.rotationSource = ToTelemetryPose(
+            pose_math::ConvertPose(rawPoses_[rotationSourceId_]));
     }
     snapshot.output = ToTelemetryPose(lastPose_);
     std::lock_guard<std::mutex> lock(telemetryMutex_);

@@ -16,7 +16,9 @@ internal sealed class RuntimePipeServer
     private readonly XInputInputService? xInput;
     private readonly string pipeName;
     private readonly Action? requestShutdown;
+    private readonly object configurationGate = new();
     private RuntimeConfiguration configuration;
+    private StaticMappingReconciliationWorker? staticMappingWorker;
 
     public RuntimePipeServer(
         ConfigurationStore store,
@@ -40,6 +42,39 @@ internal sealed class RuntimePipeServer
         this.pipeName = pipeName ?? ProtocolConstants.PipeName;
         this.requestShutdown = requestShutdown;
         configuration = initialConfiguration;
+    }
+
+    public void AttachStaticMappingWorker(StaticMappingReconciliationWorker worker)
+    {
+        staticMappingWorker = worker;
+    }
+
+    public long GetConfigurationRevision()
+    {
+        lock (configurationGate)
+        {
+            return configuration.Revision;
+        }
+    }
+
+    public StaticMappingReconciliationResult ReconcileStaticMappings(
+        SteamVrStaticMappingService mappingService)
+    {
+        lock (configurationGate)
+        {
+            StaticMappingReconciliationResult result = mappingService.Reconcile(configuration);
+            if (result.DeletedRouteIds.Count == 0)
+            {
+                return result;
+            }
+
+            var deletedRouteIds = new HashSet<string>(result.DeletedRouteIds, StringComparer.Ordinal);
+            RuntimeConfiguration candidate = CloneConfiguration(configuration);
+            candidate.Routes.RemoveAll(route => deletedRouteIds.Contains(route.RouteId));
+            candidate.Revision = Math.Max(DateTime.UtcNow.Ticks, configuration.Revision + 1);
+            CommitConfiguration(candidate);
+            return result;
+        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -103,6 +138,7 @@ internal sealed class RuntimePipeServer
                 "applyConfiguration" => ApplyConfiguration(request),
                 "getStatus" => CreateStatus(request.RequestId),
                 "getOscStatus" => CreateOscStatus(request.RequestId),
+                "testOscHaptic" => TestOscHaptic(request, cancellationToken),
                 "getXInputStatus" => CreateXInputStatus(request.RequestId),
                 "getTelemetry" => GetTelemetry(request),
                 "captureCalibration" => CaptureCalibration(request, cancellationToken),
@@ -216,16 +252,14 @@ internal sealed class RuntimePipeServer
         {
             throw new InvalidDataException(string.Join(Environment.NewLine, errors));
         }
-        if (candidate.Revision <= configuration.Revision)
+        lock (configurationGate)
         {
-            throw new InvalidDataException("配置修订号必须递增。");
+            if (candidate.Revision <= configuration.Revision)
+            {
+                throw new InvalidDataException("配置修订号必须递增。");
+            }
+            CommitConfiguration(candidate);
         }
-        candidate.Osc.Enabled = OscConfiguration.IsRequiredForRoutes(candidate.Routes);
-        store.Save(candidate);
-        configuration = candidate;
-        synchronizer.Update(candidate);
-        oscInput?.Update(candidate.Osc, candidate.Routes);
-        xInput?.Update(candidate.XInput, candidate.Routes);
         return new MessageEnvelope
         {
             MessageType = "configurationApplied",
@@ -237,20 +271,30 @@ internal sealed class RuntimePipeServer
     private MessageEnvelope CreateStatus(string requestId)
     {
         DriverSynchronizationStatus driverStatus = synchronizer.GetStatus();
-        var status = new RuntimeStatusSnapshot
+        StaticMappingReconciliationStatus mappingStatus =
+            staticMappingWorker?.GetStatus() ?? new StaticMappingReconciliationStatus(false, null);
+        RuntimeStatusSnapshot status;
+        lock (configurationGate)
         {
-            ConfigurationRevision = configuration.Revision,
-            DriverAppliedRevision = driverStatus.AppliedRevision,
-            DriverConnected = driverStatus.IsConnected,
-            LastError = driverStatus.LastError,
-            Configuration = configuration,
-            Osc = oscInput?.GetStatus() ?? new OscRuntimeStatus
+            status = new RuntimeStatusSnapshot
             {
-                Enabled = configuration.Osc.Enabled,
-                Endpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.Port
-            },
-            XInput = xInput?.GetStatus() ?? new XInputRuntimeStatus()
-        };
+                ConfigurationRevision = configuration.Revision,
+                DriverAppliedRevision = driverStatus.AppliedRevision,
+                DriverConnected = driverStatus.IsConnected,
+                LastError = driverStatus.LastError,
+                StaticMappingPending = mappingStatus.IsPending,
+                StaticMappingLastError = mappingStatus.LastError,
+                Configuration = CloneConfiguration(configuration),
+                Osc = oscInput?.GetStatus() ?? new OscRuntimeStatus
+                {
+                    Enabled = configuration.Osc.Enabled,
+                    Endpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.Port,
+                    SendEndpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.SendPort
+                },
+                XInput = xInput?.GetStatus() ?? new XInputRuntimeStatus(),
+                PhysicalSourceHiding = CreatePhysicalSourceHidingStatus(configuration, driverStatus)
+            };
+        }
         return new MessageEnvelope
         {
             MessageType = "status",
@@ -259,18 +303,74 @@ internal sealed class RuntimePipeServer
         };
     }
 
+    private static PhysicalSourceHidingStatus CreatePhysicalSourceHidingStatus(
+        RuntimeConfiguration configuration,
+        DriverSynchronizationStatus driverStatus)
+    {
+        int requestedCount = configuration.PhysicalSourceHidingEnabled
+            ? configuration.Routes
+                .Where(route => route.Enabled && !route.PendingDeletion && route.HidePhysicalSource)
+                .SelectMany(route => route.SplitPoseSource
+                    ? new[] { route.SourceDevicePath, route.RotationSourceDevicePath }
+                    : new[] { route.SourceDevicePath })
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.Ordinal)
+                .Count()
+            : 0;
+        if (requestedCount == 0)
+        {
+            return new PhysicalSourceHidingStatus();
+        }
+        if (!driverStatus.IsConnected)
+        {
+            return new PhysicalSourceHidingStatus
+            {
+                State = PhysicalSourceHidingState.Waiting,
+                RequestedDeviceCount = requestedCount,
+                LastError = driverStatus.LastError
+            };
+        }
+        return driverStatus.PhysicalSourceHiding;
+    }
+
     private MessageEnvelope CreateOscStatus(string requestId)
     {
         OscRuntimeStatus status = oscInput?.GetStatus() ?? new OscRuntimeStatus
         {
             Enabled = configuration.Osc.Enabled,
-            Endpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.Port
+            Endpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.Port,
+            SendEndpoint = configuration.Osc.ListenAddress + ":" + configuration.Osc.SendPort
         };
         return new MessageEnvelope
         {
             MessageType = "oscStatus",
             RequestId = requestId,
             PayloadJson = JsonConvert.SerializeObject(status, RuntimeJson.Settings)
+        };
+    }
+
+    private MessageEnvelope TestOscHaptic(
+        MessageEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        OscHapticTestRequest? payload = JsonConvert.DeserializeObject<OscHapticTestRequest>(
+            request.PayloadJson,
+            RuntimeJson.Settings);
+        if (payload == null ||
+            (payload.Hand != ControllerHand.Left && payload.Hand != ControllerHand.Right))
+        {
+            throw new InvalidDataException("测试震动的手别无效。");
+        }
+        if (oscInput == null)
+        {
+            throw new InvalidDataException("OSC 服务未启动。");
+        }
+        oscInput.SendTestHapticAsync(payload.Hand, cancellationToken).GetAwaiter().GetResult();
+        return new MessageEnvelope
+        {
+            MessageType = "oscHapticTestSent",
+            RequestId = request.RequestId,
+            PayloadJson = "{}"
         };
     }
 
@@ -293,6 +393,28 @@ internal sealed class RuntimePipeServer
             RequestId = requestId,
             PayloadJson = "{}"
         };
+    }
+
+    private void CommitConfiguration(RuntimeConfiguration candidate)
+    {
+        candidate.Osc.Enabled = OscConfiguration.IsRequiredForRoutes(candidate.Routes);
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(candidate);
+        if (errors.Count != 0)
+        {
+            throw new InvalidDataException(string.Join(Environment.NewLine, errors));
+        }
+        store.Save(candidate);
+        configuration = candidate;
+        synchronizer.Update(candidate);
+        oscInput?.Update(candidate.Osc, candidate.Routes);
+        xInput?.Update(candidate.XInput, candidate.Routes);
+    }
+
+    private static RuntimeConfiguration CloneConfiguration(RuntimeConfiguration value)
+    {
+        string json = JsonConvert.SerializeObject(value, RuntimeJson.Settings);
+        return JsonConvert.DeserializeObject<RuntimeConfiguration>(json, RuntimeJson.Settings)
+            ?? throw new InvalidDataException("无法复制 Runtime 配置。");
     }
 
     private static async Task<string> ReadBoundedLineAsync(Stream stream, CancellationToken cancellationToken)

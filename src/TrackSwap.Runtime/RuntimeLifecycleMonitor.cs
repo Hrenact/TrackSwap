@@ -16,14 +16,19 @@ internal static class RuntimeLifecycleMonitor
         RuntimeLifecycleMode mode,
         int? ownerProcessId,
         Action requestShutdown,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? hasPendingWork = null)
     {
         DateTime? idleSince = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             bool ownerAlive = IsProcessAlive(ownerProcessId);
             bool steamVrRunning = IsSteamVrRunning();
-            bool shouldRemainRunning = ShouldRemainRunning(mode, ownerAlive, steamVrRunning);
+            bool shouldRemainRunning = ShouldRemainRunning(
+                mode,
+                ownerAlive,
+                steamVrRunning,
+                hasPendingWork?.Invoke() == true);
             if (shouldRemainRunning)
             {
                 idleSince = null;
@@ -45,11 +50,12 @@ internal static class RuntimeLifecycleMonitor
     public static bool ShouldRemainRunning(
         RuntimeLifecycleMode mode,
         bool ownerAlive,
-        bool steamVrRunning)
+        bool steamVrRunning,
+        bool hasPendingWork = false)
     {
-        return mode == RuntimeLifecycleMode.FollowTrackSwap
+        return hasPendingWork || (mode == RuntimeLifecycleMode.FollowTrackSwap
             ? ownerAlive
-            : ownerAlive || steamVrRunning;
+            : ownerAlive || steamVrRunning);
     }
 
     private static bool IsProcessAlive(int? processId)
@@ -74,7 +80,7 @@ internal static class RuntimeLifecycleMonitor
         }
     }
 
-    private static bool IsSteamVrRunning()
+    internal static bool IsSteamVrRunning()
     {
         return SteamVrProcessNames.Any(name => Process.GetProcessesByName(name).Length != 0);
     }

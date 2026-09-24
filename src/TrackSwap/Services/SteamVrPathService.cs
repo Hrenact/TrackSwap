@@ -31,6 +31,31 @@ namespace TrackSwap.Services
             return Path.GetFullPath(runtimeDirectory.Replace('/', Path.DirectorySeparatorChar));
         }
 
+        public string FindLogPath()
+        {
+            string logDirectory = FindFirstRegisteredPath("log");
+            return string.IsNullOrWhiteSpace(logDirectory)
+                ? null
+                : Path.GetFullPath(logDirectory.Replace('/', Path.DirectorySeparatorChar));
+        }
+
+        public string[] FindExternalDriverPaths()
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string registryPath = Path.Combine(localAppData, "openvr", "openvrpaths.vrpath");
+            if (!File.Exists(registryPath))
+            {
+                return Array.Empty<string>();
+            }
+
+            JObject root = JObject.Parse(File.ReadAllText(registryPath));
+            return (root["external_drivers"] as JArray)?
+                .Values<string>()
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => Path.GetFullPath(path.Replace('/', Path.DirectorySeparatorChar)))
+                .ToArray() ?? Array.Empty<string>();
+        }
+
         private static string FindFirstRegisteredPath(string propertyName)
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

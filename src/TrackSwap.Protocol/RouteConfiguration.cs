@@ -6,6 +6,8 @@ namespace TrackSwap.Protocol
         public string Name { get; set; } = string.Empty;
         public bool Enabled { get; set; } = true;
         public bool PendingDeletion { get; set; }
+        public bool HidePhysicalSource { get; set; }
+        public bool SplitPoseSource { get; set; }
         public int VirtualDeviceSlot { get; set; }
 
         /// <summary>
@@ -22,6 +24,12 @@ namespace TrackSwap.Protocol
 
         /// <summary>Exact registered device path returned by OpenVR.</summary>
         public string SourceDevicePath { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Exact registered device path used for orientation when SplitPoseSource is enabled.
+        /// Empty means the position source also provides orientation.
+        /// </summary>
+        public string RotationSourceDevicePath { get; set; } = string.Empty;
 
         /// <summary>Target used by ReplaceTarget routes; empty for direct-output routes.</summary>
         public string TargetDevicePath { get; set; } = string.Empty;

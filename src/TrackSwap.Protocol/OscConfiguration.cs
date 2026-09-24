@@ -4,21 +4,14 @@ using System.Linq;
 
 namespace TrackSwap.Protocol
 {
-    public enum OscResetTimeout
-    {
-        Never = 0,
-        OneSecond = 1,
-        FiveSeconds = 5,
-        ThirtySeconds = 30,
-        OneMinute = 60
-    }
-
     public sealed class OscConfiguration
     {
         public bool Enabled { get; set; }
         public string ListenAddress { get; set; } = "127.0.0.1";
         public int Port { get; set; } = 9015;
-        public OscResetTimeout ResetTimeout { get; set; } = OscResetTimeout.FiveSeconds;
+        public int SendPort { get; set; } = 9016;
+        public OscTouchAssistConfiguration LeftTouchAssist { get; set; } = new OscTouchAssistConfiguration();
+        public OscTouchAssistConfiguration RightTouchAssist { get; set; } = new OscTouchAssistConfiguration();
 
         public static OscConfiguration CreateDefault()
         {
@@ -35,6 +28,12 @@ namespace TrackSwap.Protocol
         }
     }
 
+    public sealed class OscTouchAssistConfiguration
+    {
+        public bool ThumbDefaultTouched { get; set; } = true;
+        public bool IndexDefaultTouched { get; set; } = true;
+    }
+
     public sealed class OscControllerAddresses
     {
         private OscControllerAddresses(string hand, string primaryButton, string secondaryButton)
@@ -48,6 +47,9 @@ namespace TrackSwap.Protocol
             TriggerValue = prefix + "trigger/value";
             GripValue = prefix + "grip/value";
             MenuButton = prefix + "button/menu";
+            ThumbTouchAssist = prefix + "touch/thumb";
+            IndexTouchAssist = prefix + "touch/index";
+            Haptic = prefix + "haptic";
         }
 
         public string PrimaryButton { get; }
@@ -58,6 +60,9 @@ namespace TrackSwap.Protocol
         public string TriggerValue { get; }
         public string GripValue { get; }
         public string MenuButton { get; }
+        public string ThumbTouchAssist { get; }
+        public string IndexTouchAssist { get; }
+        public string Haptic { get; }
 
         public static OscControllerAddresses ForHand(ControllerHand hand)
         {

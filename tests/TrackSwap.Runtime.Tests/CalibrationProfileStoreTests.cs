@@ -50,10 +50,10 @@ public sealed class CalibrationProfileStoreTests
         {
             writer.Write((ulong)42);
             writer.Write((ulong)1234);
-            for (int poseIndex = 0; poseIndex < 3; poseIndex++)
+            for (int poseIndex = 0; poseIndex < 4; poseIndex++)
             {
                 writer.Write((byte)1);
-                writer.Write((byte)(poseIndex == 1 ? 0 : 1));
+                writer.Write((byte)(poseIndex == 2 ? 0 : 1));
                 writer.Write(200 + poseIndex);
                 for (int valueIndex = 0; valueIndex < 7; valueIndex++)
                 {
@@ -67,9 +67,10 @@ public sealed class CalibrationProfileStoreTests
         Assert.Equal((ulong)42, snapshot.Sequence);
         Assert.Equal(1234, snapshot.AppliedRevision);
         Assert.True(snapshot.Source.Valid);
+        Assert.True(snapshot.RotationSource.Valid);
         Assert.False(snapshot.Output.Valid);
-        Assert.Equal(20, snapshot.Target.PositionX);
-        Assert.Equal(26, snapshot.Target.RotationW);
+        Assert.Equal(30, snapshot.Target.PositionX);
+        Assert.Equal(36, snapshot.Target.RotationW);
     }
 
     [Fact]
@@ -83,7 +84,7 @@ public sealed class CalibrationProfileStoreTests
             {
                 writer.Write((ulong)slot);
                 writer.Write((ulong)(100 + slot));
-                for (int poseIndex = 0; poseIndex < 3; poseIndex++)
+                for (int poseIndex = 0; poseIndex < 4; poseIndex++)
                 {
                     writer.Write((byte)1);
                     writer.Write((byte)1);

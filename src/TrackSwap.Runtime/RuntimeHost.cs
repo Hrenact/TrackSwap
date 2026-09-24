@@ -20,6 +20,7 @@ internal static class RuntimeHost
         var telemetrySampler = new TelemetrySampler();
         using var oscInput = new OscInputService(configuration.Osc, configuration.Routes);
         using var xInput = new XInputInputService(configuration.Routes, configuration.XInput);
+        var hapticFeedback = new HapticFeedbackService(xInput, oscInput);
         using var cancellation = new CancellationTokenSource();
         var server = new RuntimePipeServer(
             store,
@@ -31,6 +32,10 @@ internal static class RuntimeHost
             requestShutdown: cancellation.Cancel,
             oscInput: oscInput,
             xInput: xInput);
+        var staticMappingWorker = new StaticMappingReconciliationWorker(
+            server,
+            new SteamVrStaticMappingService());
+        server.AttachStaticMappingWorker(staticMappingWorker);
         Console.CancelKeyPress += (_, eventArgs) =>
         {
             eventArgs.Cancel = true;
@@ -47,6 +52,8 @@ internal static class RuntimeHost
                 telemetrySampler.RunAsync(cancellation.Token),
                 oscInput.RunAsync(cancellation.Token),
                 xInput.RunAsync(cancellation.Token),
+                hapticFeedback.RunAsync(cancellation.Token),
+                staticMappingWorker.RunAsync(cancellation.Token),
                 server.RunAsync(cancellation.Token)
             };
             if (lifecycleMode.HasValue)
@@ -55,7 +62,8 @@ internal static class RuntimeHost
                     lifecycleMode.Value,
                     ownerProcessId,
                     cancellation.Cancel,
-                    cancellation.Token));
+                    cancellation.Token,
+                    () => staticMappingWorker.HasPendingWork));
             }
             if (ensureTrackSwapUi)
             {

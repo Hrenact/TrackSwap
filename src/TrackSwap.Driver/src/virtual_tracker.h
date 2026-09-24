@@ -25,10 +25,13 @@ public:
     bool QueueSnapshot(
         bool enabled,
         const char* sourceDevicePath,
+        const char* rotationSourceDevicePath,
         const char* targetDevicePath,
         const pose_math::RigidOffset& offset,
         std::uint64_t revision);
     control_protocol::TelemetrySnapshot GetTelemetry() const;
+    vr::TrackedDeviceIndex_t SourceDeviceId() const;
+    vr::TrackedDeviceIndex_t RotationSourceDeviceId() const;
     void Update();
 
     vr::EVRInitError Activate(std::uint32_t objectId) override;
@@ -41,6 +44,7 @@ public:
 private:
     bool DevicePathMatches(std::uint32_t deviceIndex, const char* expectedPath) const;
     void FindSource();
+    void FindRotationSource();
     void FindTarget();
     void ApplyPendingSource();
     void PublishTelemetry();
@@ -52,6 +56,8 @@ private:
 
     std::array<char, MaximumDevicePathBytes> sourceDevicePath_{};
     std::array<char, MaximumDevicePathBytes> pendingSourceDevicePath_{};
+    std::array<char, MaximumDevicePathBytes> rotationSourceDevicePath_{};
+    std::array<char, MaximumDevicePathBytes> pendingRotationSourceDevicePath_{};
     std::array<char, MaximumDevicePathBytes> targetDevicePath_{};
     std::array<char, MaximumDevicePathBytes> pendingTargetDevicePath_{};
     pose_math::RigidOffset activeOffset_ = pose_math::IdentityOffset();
@@ -59,8 +65,10 @@ private:
     std::array<vr::TrackedDevicePose_t, vr::k_unMaxTrackedDeviceCount> rawPoses_{};
     vr::TrackedDeviceIndex_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     vr::TrackedDeviceIndex_t sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
+    vr::TrackedDeviceIndex_t rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     vr::TrackedDeviceIndex_t targetId_ = vr::k_unTrackedDeviceIndexInvalid;
     std::uint32_t searchCountdown_ = 0;
+    std::uint32_t rotationSearchCountdown_ = 0;
     std::uint32_t targetSearchCountdown_ = 0;
     bool lastHealth_ = false;
     bool renderModelVisible_ = true;

@@ -15,6 +15,8 @@
   "/pose/base": "Controller Base",
   "/pose/handgrip": "Hand Grip Pose",
   "/pose/tip": "Controller Tip",
+  "/pose/openxr_aim": "OpenXR Aim",
+  "/pose/openxr_grip": "OpenXR Grip",
   "/input/skeleton/left": "Left Hand Skeleton",
   "/input/skeleton/right": "Right Hand Skeleton"
 }

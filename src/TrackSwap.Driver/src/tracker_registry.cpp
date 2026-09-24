@@ -5,6 +5,7 @@
 #include <openvr_driver.h>
 
 #include <cmath>
+#include <cstring>
 
 namespace trackswap
 {
@@ -34,6 +35,8 @@ bool TrackerRegistry::QueueControllerSnapshot(
     bool enabled,
     std::uint8_t logicalSlot,
     const char* sourceDevicePath,
+    const char* rotationSourceDevicePath,
+    bool hidePhysicalSource,
     std::int32_t handSelectionPriority,
     const pose_math::RigidOffset& offset,
     std::uint64_t revision)
@@ -41,10 +44,49 @@ bool TrackerRegistry::QueueControllerSnapshot(
     const std::size_t index = hand == ControllerHand::Left ? 0U : hand == ControllerHand::Right ? 1U : 2U;
     if (index >= controllers_.size()) return false;
     if (enabled) controllerRegistrationRequested_[index].store(true);
+    {
+        std::lock_guard<std::mutex> lock(hideSourceMutex_);
+        const std::uint8_t previousLogicalSlot = controllerHideLogicalSlots_[index];
+        if (previousLogicalSlot < controllerHideSourceRequested_.size() &&
+            (!enabled || logicalSlot != previousLogicalSlot))
+        {
+            controllerHideSourceRequested_[previousLogicalSlot] = false;
+            controllerHideSourcePaths_[previousLogicalSlot].fill('\0');
+            controllerHideRotationSourcePaths_[previousLogicalSlot].fill('\0');
+        }
+        if (enabled && logicalSlot < controllerHideSourceRequested_.size())
+        {
+            controllerHideLogicalSlots_[index] = logicalSlot;
+            controllerHideSourceRequested_[logicalSlot] = hidePhysicalSource;
+            controllerHideSourcePaths_[logicalSlot].fill('\0');
+            controllerHideRotationSourcePaths_[logicalSlot].fill('\0');
+            if (hidePhysicalSource && sourceDevicePath != nullptr)
+            {
+                strncpy_s(
+                    controllerHideSourcePaths_[logicalSlot].data(),
+                    controllerHideSourcePaths_[logicalSlot].size(),
+                    sourceDevicePath,
+                    _TRUNCATE);
+                if (rotationSourceDevicePath != nullptr)
+                {
+                    strncpy_s(
+                        controllerHideRotationSourcePaths_[logicalSlot].data(),
+                        controllerHideRotationSourcePaths_[logicalSlot].size(),
+                        rotationSourceDevicePath,
+                        _TRUNCATE);
+                }
+            }
+        }
+        else
+        {
+            controllerHideLogicalSlots_[index] = 255;
+        }
+    }
     return controllers_[index]->QueueSnapshot(
         enabled,
         logicalSlot,
         sourceDevicePath,
+        rotationSourceDevicePath,
         handSelectionPriority,
         offset,
         revision);
@@ -95,13 +137,37 @@ bool TrackerRegistry::QueueSnapshot(
     std::uint8_t slot,
     bool enabled,
     const char* sourceDevicePath,
+    const char* rotationSourceDevicePath,
     const char* targetDevicePath,
+    bool hidePhysicalSource,
     const pose_math::RigidOffset& offset,
     std::uint64_t revision)
 {
     if (slot >= directTrackers_.size())
     {
         return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(hideSourceMutex_);
+        trackerHideSourceRequested_[slot] = enabled && hidePhysicalSource;
+        trackerHideSourcePaths_[slot].fill('\0');
+        trackerHideRotationSourcePaths_[slot].fill('\0');
+        if (enabled && hidePhysicalSource && sourceDevicePath != nullptr)
+        {
+            strncpy_s(
+                trackerHideSourcePaths_[slot].data(),
+                trackerHideSourcePaths_[slot].size(),
+                sourceDevicePath,
+                _TRUNCATE);
+            if (rotationSourceDevicePath != nullptr)
+            {
+                strncpy_s(
+                    trackerHideRotationSourcePaths_[slot].data(),
+                    trackerHideRotationSourcePaths_[slot].size(),
+                    rotationSourceDevicePath,
+                    _TRUNCATE);
+            }
+        }
     }
     const bool proxy = enabled && targetDevicePath != nullptr && targetDevicePath[0] != '\0';
     activeProxy_[slot].store(proxy);
@@ -114,11 +180,13 @@ bool TrackerRegistry::QueueSnapshot(
     const bool activeQueued = active->QueueSnapshot(
         enabled,
         sourceDevicePath,
+        rotationSourceDevicePath,
         targetDevicePath,
         offset,
         revision);
     const bool inactiveQueued = inactive->QueueSnapshot(
         false,
+        "",
         "",
         "",
         offset,
@@ -195,6 +263,103 @@ void TrackerRegistry::QueueHapticEvent(const vr::VREvent_t& event)
     hapticWriteIndex_.store(nextIndex, std::memory_order_release);
 }
 
+void TrackerRegistry::InitializePoseHiding(vr::IVRDriverContext* driverContext)
+{
+    poseHidingHook_.Initialize(driverContext);
+}
+
+void TrackerRegistry::ShutdownPoseHiding()
+{
+    poseHidingHook_.Shutdown();
+}
+
+control_protocol::PhysicalSourceHidingStatus TrackerRegistry::GetPhysicalSourceHidingStatus() const
+{
+    return poseHidingHook_.GetStatus();
+}
+
+void TrackerRegistry::UpdatePoseHiding()
+{
+    std::array<bool, control_protocol::MaximumRoutes> requested{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> paths{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> rotationPaths{};
+    {
+        std::lock_guard<std::mutex> lock(hideSourceMutex_);
+        for (std::size_t slot = 0; slot < requested.size(); ++slot)
+        {
+            if (controllerHideSourceRequested_[slot])
+            {
+                requested[slot] = true;
+                paths[slot] = controllerHideSourcePaths_[slot];
+                rotationPaths[slot] = controllerHideRotationSourcePaths_[slot];
+            }
+            else if (trackerHideSourceRequested_[slot])
+            {
+                requested[slot] = true;
+                paths[slot] = trackerHideSourcePaths_[slot];
+                rotationPaths[slot] = trackerHideRotationSourcePaths_[slot];
+            }
+        }
+    }
+
+    std::array<const char*, control_protocol::MaximumRoutes * 2> requestedPaths{};
+    std::size_t requestedPathCount = 0;
+    for (std::size_t slot = 0; slot < requested.size(); ++slot)
+    {
+        if (!requested[slot]) continue;
+        requestedPaths[requestedPathCount++] = paths[slot].data();
+        if (rotationPaths[slot][0] != '\0')
+        {
+            requestedPaths[requestedPathCount++] = rotationPaths[slot].data();
+        }
+    }
+    std::uint8_t uniqueRequested = 0;
+    for (std::size_t index = 0; index < requestedPathCount; ++index)
+    {
+        bool duplicate = false;
+        for (std::size_t earlier = 0; earlier < index; ++earlier)
+        {
+            if (std::strcmp(requestedPaths[index], requestedPaths[earlier]) == 0)
+            {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) ++uniqueRequested;
+    }
+
+    poseHidingHook_.SetRequestedDeviceCount(uniqueRequested);
+    if (uniqueRequested == 0)
+    {
+        poseHidingHook_.Shutdown();
+        return;
+    }
+    if (!poseHidingHook_.EnsureInstalled()) return;
+
+    std::array<bool, vr::k_unMaxTrackedDeviceCount> hiddenIds{};
+    for (std::size_t slot = 0; slot < requested.size(); ++slot)
+    {
+        if (!requested[slot]) continue;
+        VirtualTracker* tracker = activeProxy_[slot].load()
+            ? proxyTrackers_[slot].get()
+            : directTrackers_[slot].get();
+        vr::TrackedDeviceIndex_t sourceId = tracker->SourceDeviceId();
+        vr::TrackedDeviceIndex_t rotationSourceId = tracker->RotationSourceDeviceId();
+        for (const auto& controller : controllers_)
+        {
+            if (controller->LogicalSlot() == slot)
+            {
+                sourceId = controller->SourceDeviceId();
+                rotationSourceId = controller->RotationSourceDeviceId();
+                break;
+            }
+        }
+        if (sourceId < hiddenIds.size()) hiddenIds[sourceId] = true;
+        if (rotationSourceId < hiddenIds.size()) hiddenIds[rotationSourceId] = true;
+    }
+    poseHidingHook_.SetHiddenDeviceIds(hiddenIds);
+}
+
 void TrackerRegistry::RunFrame()
 {
     vr::VREvent_t event{};
@@ -223,9 +388,13 @@ void TrackerRegistry::RunFrame()
         }
         if (!proxyRegistered_[slot] && proxyRegistrationRequested_[slot].exchange(false))
         {
+            // Replacement proxies are internal pose carriers for TrackingOverrides,
+            // not user-facing body trackers. Keep direct outputs as GenericTracker,
+            // but classify proxies as tracking references so applications do not
+            // offer them as additional wearable trackers.
             proxyRegistered_[slot] = vr::VRServerDriverHost()->TrackedDeviceAdded(
                 proxyTrackers_[slot]->SerialNumber(),
-                vr::TrackedDeviceClass_GenericTracker,
+                vr::TrackedDeviceClass_TrackingReference,
                 proxyTrackers_[slot].get());
             vr::VRDriverLog()->Log(proxyRegistered_[slot]
                 ? "TrackSwap registered a requested replacement proxy."
@@ -250,5 +419,6 @@ void TrackerRegistry::RunFrame()
         }
         if (controllerRegistered_[index]) controllers_[index]->Update();
     }
+    UpdatePoseHiding();
 }
 } // namespace trackswap

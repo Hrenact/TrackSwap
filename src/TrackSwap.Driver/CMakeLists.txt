@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(TrackSwapDriver VERSION 0.0.2 LANGUAGES CXX)
+project(TrackSwapDriver VERSION 0.0.2 LANGUAGES C CXX)
 
 include(CTest)
 
@@ -29,6 +29,31 @@ if(NOT openvr_POPULATED)
     FetchContent_Populate(openvr)
 endif()
 
+# MinHook is used only for the opt-in physical-source hiding feature. Keep the
+# dependency pinned so the injected code is reproducible.
+set(TRACKSWAP_MINHOOK_REVISION "565968b28583221751cc2810e09ea621745fc3a3" CACHE STRING "Pinned MinHook commit")
+FetchContent_Declare(
+    minhook
+    GIT_REPOSITORY https://github.com/TsudaKageyu/minhook.git
+    GIT_TAG ${TRACKSWAP_MINHOOK_REVISION}
+    GIT_SHALLOW FALSE
+    GIT_PROGRESS TRUE
+    UPDATE_DISCONNECTED TRUE
+)
+FetchContent_GetProperties(minhook)
+if(NOT minhook_POPULATED)
+    FetchContent_Populate(minhook)
+endif()
+add_library(trackswap_minhook STATIC
+    "${minhook_SOURCE_DIR}/src/buffer.c"
+    "${minhook_SOURCE_DIR}/src/hook.c"
+    "${minhook_SOURCE_DIR}/src/trampoline.c"
+    "${minhook_SOURCE_DIR}/src/hde/hde64.c")
+target_include_directories(trackswap_minhook PUBLIC "${minhook_SOURCE_DIR}/include")
+target_include_directories(trackswap_minhook PRIVATE
+    "${minhook_SOURCE_DIR}/src"
+    "${minhook_SOURCE_DIR}/src/hde")
+
 set(TRACKSWAP_OPENVR_HAND_SIMULATION_DIR
     "${openvr_SOURCE_DIR}/samples/drivers/drivers/handskeletonsimulation/src")
 set(TRACKSWAP_OPENVR_VRMATH_DIR
@@ -43,6 +68,8 @@ add_library(driver_trackswap SHARED
     src/finger_animation.h
     src/pose_math.cpp
     src/pose_math.h
+    src/pose_hiding_hook.cpp
+    src/pose_hiding_hook.h
     src/runtime_launcher.cpp
     src/runtime_launcher.h
     src/tracker_registry.cpp
@@ -61,6 +88,7 @@ target_include_directories(driver_trackswap PRIVATE
     "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}"
     "${TRACKSWAP_OPENVR_VRMATH_DIR}")
 target_compile_definitions(driver_trackswap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(driver_trackswap PRIVATE trackswap_minhook)
 target_compile_options(driver_trackswap PRIVATE /W4 /WX /permissive- /EHsc)
 set_source_files_properties(
     "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}/hand_simulation.cpp"

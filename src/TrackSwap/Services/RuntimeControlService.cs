@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,6 +38,17 @@ namespace TrackSwap.Services
         public Task<OscRuntimeStatus> GetOscStatusAsync()
         {
             return SendAsync<OscRuntimeStatus>("getOscStatus", new { });
+        }
+
+        public async Task TestOscHapticAsync(ControllerHand hand)
+        {
+            MessageEnvelope response = await SendAsync(
+                "testOscHaptic",
+                JsonConvert.SerializeObject(new OscHapticTestRequest { Hand = hand }, JsonSettings));
+            if (!string.Equals(response.MessageType, "oscHapticTestSent", StringComparison.Ordinal))
+            {
+                throw CreateUnexpectedResponseException(response);
+            }
         }
 
         public Task<XInputRuntimeStatus> GetXInputStatusAsync()
@@ -95,27 +107,10 @@ namespace TrackSwap.Services
             out string error)
         {
             error = null;
-            string applicationDirectory = AppDomain.CurrentDomain.BaseDirectory;
-            string[] candidates =
-            {
-                Path.Combine(applicationDirectory, "runtime", "TrackSwap.Runtime.exe"),
-                Path.Combine(applicationDirectory, "TrackSwap.Runtime.exe"),
-                Path.GetFullPath(Path.Combine(
-                    applicationDirectory,
-                    "..", "..", "..", "..", "TrackSwap.Runtime", "bin", "Release", "net8.0-windows", "TrackSwap.Runtime.exe"))
-            };
-            string executable = null;
-            foreach (string candidate in candidates)
-            {
-                if (File.Exists(candidate))
-                {
-                    executable = candidate;
-                    break;
-                }
-            }
+            string executable = FindRuntimeExecutablePath();
             if (executable == null)
             {
-                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v008 程序包。";
+                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v009 程序包。";
                 return false;
             }
 
@@ -139,6 +134,20 @@ namespace TrackSwap.Services
                 error = exception.Message;
                 return false;
             }
+        }
+
+        public string FindRuntimeExecutablePath()
+        {
+            string applicationDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            string[] candidates =
+            {
+                Path.Combine(applicationDirectory, "runtime", "TrackSwap.Runtime.exe"),
+                Path.Combine(applicationDirectory, "TrackSwap.Runtime.exe"),
+                Path.GetFullPath(Path.Combine(
+                    applicationDirectory,
+                    "..", "..", "..", "..", "TrackSwap.Runtime", "bin", "Release", "net8.0-windows", "TrackSwap.Runtime.exe"))
+            };
+            return candidates.FirstOrDefault(File.Exists);
         }
 
         private static async Task<T> SendAsync<T>(string messageType, object payload)

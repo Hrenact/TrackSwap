@@ -15,6 +15,7 @@ internal sealed class DriverSynchronizer
     private bool isDriverConnected;
     private long lastAppliedRevision;
     private string? lastError;
+    private PhysicalSourceHidingStatus physicalSourceHiding = new();
 
     public void Update(RuntimeConfiguration value)
     {
@@ -31,7 +32,8 @@ internal sealed class DriverSynchronizer
             return new DriverSynchronizationStatus(
                 isDriverConnected,
                 lastAppliedRevision,
-                lastError);
+                lastError,
+                physicalSourceHiding);
         }
     }
 
@@ -57,6 +59,7 @@ internal sealed class DriverSynchronizer
                         DriverControlClient.ApplySnapshot(
                             slot,
                             route,
+                            snapshot.PhysicalSourceHidingEnabled && route?.HidePhysicalSource == true,
                             (ulong)snapshot.Revision,
                             TimeSpan.FromSeconds(1));
                     }
@@ -68,15 +71,19 @@ internal sealed class DriverSynchronizer
                         DriverControlClient.ApplyControllerSnapshot(
                             hand,
                             route,
+                            snapshot.PhysicalSourceHidingEnabled && route?.HidePhysicalSource == true,
                             snapshot.ControllerHandSelectionPriority,
                             (ulong)snapshot.Revision,
                             TimeSpan.FromSeconds(1));
                     }
+                    PhysicalSourceHidingStatus hidingStatus =
+                        DriverControlClient.GetPhysicalSourceHidingStatus(TimeSpan.FromSeconds(1));
                     lock (syncRoot)
                     {
                         isDriverConnected = true;
                         lastAppliedRevision = snapshot.Revision;
                         lastError = null;
+                        physicalSourceHiding = hidingStatus;
                     }
                 }
                 catch (Exception exception) when (exception is IOException || exception is TimeoutException || exception is UnauthorizedAccessException)
@@ -96,14 +103,20 @@ internal sealed class DriverSynchronizer
 
 internal sealed class DriverSynchronizationStatus
 {
-    public DriverSynchronizationStatus(bool isConnected, long appliedRevision, string? lastError)
+    public DriverSynchronizationStatus(
+        bool isConnected,
+        long appliedRevision,
+        string? lastError,
+        PhysicalSourceHidingStatus physicalSourceHiding)
     {
         IsConnected = isConnected;
         AppliedRevision = appliedRevision;
         LastError = lastError;
+        PhysicalSourceHiding = physicalSourceHiding;
     }
 
     public bool IsConnected { get; }
     public long AppliedRevision { get; }
     public string? LastError { get; }
+    public PhysicalSourceHidingStatus PhysicalSourceHiding { get; }
 }

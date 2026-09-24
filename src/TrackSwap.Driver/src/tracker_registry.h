@@ -8,6 +8,7 @@
 
 #include "control_protocol.h"
 #include "pose_math.h"
+#include "pose_hiding_hook.h"
 #include "virtual_tracker.h"
 #include "virtual_controller.h"
 
@@ -24,7 +25,9 @@ public:
         std::uint8_t slot,
         bool enabled,
         const char* sourceDevicePath,
+        const char* rotationSourceDevicePath,
         const char* targetDevicePath,
+        bool hidePhysicalSource,
         const pose_math::RigidOffset& offset,
         std::uint64_t revision);
     bool QueueControllerSnapshot(
@@ -32,12 +35,17 @@ public:
         bool enabled,
         std::uint8_t logicalSlot,
         const char* sourceDevicePath,
+        const char* rotationSourceDevicePath,
+        bool hidePhysicalSource,
         std::int32_t handSelectionPriority,
         const pose_math::RigidOffset& offset,
         std::uint64_t revision);
     bool QueueControllerInput(const control_protocol::ControllerInputState& input);
     control_protocol::TelemetryBatch GetTelemetry() const;
     control_protocol::HapticFeedbackBatch GetHapticEvents();
+    control_protocol::PhysicalSourceHidingStatus GetPhysicalSourceHidingStatus() const;
+    void InitializePoseHiding(vr::IVRDriverContext* driverContext);
+    void ShutdownPoseHiding();
     void RunFrame();
 
 private:
@@ -58,7 +66,18 @@ private:
     std::atomic<std::size_t> hapticReadIndex_{0};
     std::atomic<std::size_t> hapticWriteIndex_{0};
     std::uint64_t hapticSequence_ = 0;
+    static constexpr std::size_t MaximumDevicePathBytes = 512;
+    std::array<bool, control_protocol::MaximumRoutes> trackerHideSourceRequested_{};
+    std::array<bool, control_protocol::MaximumRoutes> controllerHideSourceRequested_{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> trackerHideSourcePaths_{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> controllerHideSourcePaths_{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> trackerHideRotationSourcePaths_{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> controllerHideRotationSourcePaths_{};
+    std::array<std::uint8_t, 2> controllerHideLogicalSlots_{{255, 255}};
+    std::mutex hideSourceMutex_;
+    PoseHidingHook poseHidingHook_;
 
     void QueueHapticEvent(const vr::VREvent_t& event);
+    void UpdatePoseHiding();
 };
 } // namespace trackswap
