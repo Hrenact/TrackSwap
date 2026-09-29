@@ -7,7 +7,7 @@ namespace trackswap::control_protocol
 {
 constexpr wchar_t PipePath[] = LR"(\\.\pipe\TrackSwap.Driver.v1)";
 constexpr std::uint32_t Magic = 0x50575354;
-constexpr std::uint16_t Version = 8;
+constexpr std::uint16_t Version = 11;
 constexpr std::uint16_t SetSourceMessageType = 1;
 constexpr std::uint16_t SetOffsetMessageType = 2;
 constexpr std::uint16_t ApplySnapshotMessageType = 3;
@@ -16,6 +16,7 @@ constexpr std::uint16_t ApplyControllerSnapshotMessageType = 5;
 constexpr std::uint16_t ApplyControllerInputMessageType = 6;
 constexpr std::uint16_t GetHapticEventsMessageType = 7;
 constexpr std::uint16_t GetPhysicalSourceHidingStatusMessageType = 8;
+constexpr std::uint16_t ApplyHmdSnapshotMessageType = 9;
 constexpr std::uint16_t ResponseFlag = 0x8000;
 constexpr std::size_t MaximumPayloadBytes = 8192;
 constexpr std::size_t MaximumRoutes = 16;

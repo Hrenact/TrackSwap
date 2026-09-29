@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Protocol;
 
 namespace TrackSwap.Models
 {
@@ -20,7 +21,8 @@ namespace TrackSwap.Models
             string serialNumber = null,
             string roleTargetPath = null,
             string renderModelName = null,
-            TrackedDeviceKind deviceKind = TrackedDeviceKind.Unknown)
+            TrackedDeviceKind deviceKind = TrackedDeviceKind.Unknown,
+            PoseSourceKind poseSourceKind = PoseSourceKind.Device)
         {
             DisplayName = displayName;
             DevicePath = devicePath;
@@ -30,6 +32,7 @@ namespace TrackSwap.Models
             RoleTargetPath = roleTargetPath;
             RenderModelName = renderModelName;
             DeviceKind = deviceKind;
+            PoseSourceKind = poseSourceKind;
         }
 
         public string DisplayName { get; }
@@ -49,6 +52,8 @@ namespace TrackSwap.Models
         public string RenderModelName { get; }
 
         public TrackedDeviceKind DeviceKind { get; }
+
+        public PoseSourceKind PoseSourceKind { get; }
 
         public static string BaseDisplayName(string displayName)
         {

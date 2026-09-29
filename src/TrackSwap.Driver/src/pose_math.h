@@ -13,6 +13,7 @@ struct RigidOffset
 RigidOffset IdentityOffset();
 bool IsValidOffset(const RigidOffset& offset);
 vr::DriverPose_t MakeInvalidPose(bool deviceIsConnected = false);
+vr::DriverPose_t MakeValidIdentityPose(bool applyHeadModel = false);
 vr::DriverPose_t ConvertPose(const vr::TrackedDevicePose_t& sourcePose);
 vr::DriverPose_t CombinePose(
     const vr::DriverPose_t& positionSourcePose,

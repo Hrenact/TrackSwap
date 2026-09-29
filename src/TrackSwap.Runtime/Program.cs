@@ -18,7 +18,7 @@ internal static class Program
                 "Runtime no-argument launch; lifecycle=" + preferences.RuntimeLifecycleMode +
                 ", followUi=" + preferences.FollowSteamVrWithTrackSwap +
                 ", needed=" + neededForSteamVrSession +
-                ", localAppData=" + Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+                ", dataDirectory=" + TrackSwapDataPaths.ActiveDataDirectory);
             return neededForSteamVrSession
                 ? RunHost(
                     GetDefaultConfigurationPath(),
@@ -84,7 +84,7 @@ internal static class Program
             return ParseAndSetOffset(args);
         }
 
-        Console.WriteLine("TrackSwap Runtime v009");
+        Console.WriteLine("TrackSwap Runtime v010");
         Console.WriteLine("Use --run [config-path] [--lifecycle FollowTrackSwap|FollowSteamVr] [--owner-pid PID]");
         Console.WriteLine("to start the runtime host and IPC service. A no-argument launch is reserved for SteamVR.");
         Console.WriteLine("Use --print-contract, --validate-config <path>, --switch-source <exact-device-path>,");
@@ -160,8 +160,7 @@ internal static class Program
     private static string GetDefaultConfigurationPath()
     {
         return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TrackSwap",
+            TrackSwapDataPaths.ActiveDataDirectory,
             "runtime-config.json");
     }
 

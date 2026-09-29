@@ -60,6 +60,7 @@ const char* VirtualController::SerialNumber() const { return serialNumber_.c_str
 bool VirtualController::QueueSnapshot(
     bool enabled,
     std::uint8_t logicalSlot,
+    bool manualPose,
     const char* sourceDevicePath,
     const char* rotationSourceDevicePath,
     std::int32_t handSelectionPriority,
@@ -70,6 +71,7 @@ bool VirtualController::QueueSnapshot(
     if (revision < latestAcceptedRevision_) return false;
     if (revision == latestAcceptedRevision_ && revision != 0) return true;
     pendingEnabled_ = enabled;
+    pendingManualPose_ = enabled && manualPose;
     pendingLogicalSlot_ = enabled ? logicalSlot : 255;
     pendingSourceDevicePath_.fill('\0');
     pendingRotationSourceDevicePath_.fill('\0');
@@ -246,27 +248,31 @@ void VirtualController::Update()
         rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
         rotationSearchCountdown_ = 0;
     }
-    if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid)
+    if (!activeManualPose_ && sourceId_ == vr::k_unTrackedDeviceIndexInvalid)
     {
         if (searchCountdown_ == 0) { FindSource(); searchCountdown_ = SearchIntervalFrames; }
         else --searchCountdown_;
     }
-    if (rotationSourceDevicePath_[0] != '\0' &&
+    if (!activeManualPose_ && rotationSourceDevicePath_[0] != '\0' &&
         rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid)
     {
         if (rotationSearchCountdown_ == 0) { FindRotationSource(); rotationSearchCountdown_ = SearchIntervalFrames; }
         else --rotationSearchCountdown_;
     }
-    if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
+    if (!activeManualPose_ && sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
     {
         PoseHidingHook::RestoreRawPose(sourceId_, rawPoses_[sourceId_]);
     }
-    if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid && rotationSourceId_ != sourceId_)
+    if (!activeManualPose_ && rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid && rotationSourceId_ != sourceId_)
     {
         PoseHidingHook::RestoreRawPose(rotationSourceId_, rawPoses_[rotationSourceId_]);
     }
     const bool splitSource = rotationSourceDevicePath_[0] != '\0';
-    if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid ||
+    if (activeManualPose_)
+    {
+        lastPose_ = pose_math::ApplyOffset(pose_math::MakeValidIdentityPose(), activeOffset_);
+    }
+    else if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid ||
         (splitSource && rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid))
     {
         lastPose_ = pose_math::MakeInvalidPose(true);
@@ -291,6 +297,7 @@ void VirtualController::ApplyPending()
     std::lock_guard<std::mutex> lock(pendingMutex_);
     if (!hasPendingSnapshot_) return;
     activeEnabled_ = pendingEnabled_;
+    activeManualPose_ = pendingEnabled_ && pendingManualPose_;
     logicalSlot_.store(pendingLogicalSlot_);
     sourceDevicePath_ = pendingSourceDevicePath_;
     rotationSourceDevicePath_ = pendingRotationSourceDevicePath_;
@@ -315,6 +322,7 @@ void VirtualController::ApplyPending()
     hasPendingSnapshot_ = false;
     if (!activeEnabled_)
     {
+        activeManualPose_ = false;
         activeInput_ = {};
     }
 }
@@ -441,7 +449,11 @@ void VirtualController::PublishTelemetry()
     control_protocol::TelemetrySnapshot snapshot{};
     { std::lock_guard<std::mutex> lock(telemetryMutex_); snapshot.sequence = telemetry_.sequence + 1; }
     snapshot.appliedRevision = appliedRevision_;
-    if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
+    if (activeManualPose_)
+    {
+        snapshot.source = ToTelemetryPose(pose_math::MakeValidIdentityPose());
+    }
+    else if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
     {
         snapshot.source = ToTelemetryPose(pose_math::ConvertPose(rawPoses_[sourceId_]));
     }

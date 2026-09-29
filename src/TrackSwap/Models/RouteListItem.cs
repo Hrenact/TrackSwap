@@ -18,6 +18,8 @@ namespace TrackSwap.Models
             ? "请选择运行模式"
             : Route.Mode == RouteMode.VirtualController
                 ? ProtocolConstants.GetControllerSerial(Route.ControllerHand)
+                : Route.Mode == RouteMode.VirtualHmd
+                    ? ProtocolConstants.VirtualHmdSerial
                 : ProtocolConstants.GetOutputSerial(Route.Mode, Route.VirtualDeviceSlot);
         public string StatusText { get; }
         public Brush StatusBrush { get; }

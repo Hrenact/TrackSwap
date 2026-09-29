@@ -3,5 +3,6 @@
   "name": "trackswap",
   "directory": "",
   "resourceOnly": false,
+  "redirectsDisplay": true,
   "hmd_presence": []
 }

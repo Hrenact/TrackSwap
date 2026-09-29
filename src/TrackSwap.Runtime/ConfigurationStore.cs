@@ -29,13 +29,16 @@ internal sealed class ConfigurationStore
             removedLegacyOscSettings |= RemoveProperty(osc, "resetTimeout");
         }
         bool addedXInputTouchAssistDefaults = EnsureXInputTouchAssistDefaults(root);
+        bool migratedVirtualHmdManualPose = MigrateSourceFreeVirtualHmdToManualPose(root);
+        bool normalizedManualPoseDefault = NormalizeLegacyManualPoseDefault(root);
         RuntimeConfiguration? configuration = root.ToObject<RuntimeConfiguration>(
             JsonSerializer.Create(RuntimeJson.Settings));
         EnsureValid(configuration);
         bool expectedOscEnabled = OscConfiguration.IsRequiredForRoutes(configuration!.Routes);
         bool normalizedOscEnabled = configuration.Osc.Enabled != expectedOscEnabled;
         configuration.Osc.Enabled = expectedOscEnabled;
-        if (removedLegacyOscSettings || addedXInputTouchAssistDefaults || normalizedOscEnabled)
+        if (removedLegacyOscSettings || addedXInputTouchAssistDefaults ||
+            migratedVirtualHmdManualPose || normalizedManualPoseDefault || normalizedOscEnabled)
         {
             Save(configuration);
         }
@@ -124,6 +127,63 @@ internal sealed class ConfigurationStore
             "right",
             XInputConfiguration.CreateDefaultRightMapping(),
             serializer);
+        return changed;
+    }
+
+    private static bool MigrateSourceFreeVirtualHmdToManualPose(JObject root)
+    {
+        if (root.GetValue("routes", StringComparison.OrdinalIgnoreCase) is not JArray routes)
+        {
+            return false;
+        }
+
+        bool changed = false;
+        foreach (JObject route in routes.OfType<JObject>())
+        {
+            JToken? mode = route.GetValue("mode", StringComparison.OrdinalIgnoreCase);
+            bool virtualHmd = mode?.Type == JTokenType.Integer
+                ? mode.Value<int>() == (int)RouteMode.VirtualHmd
+                : string.Equals(mode?.Value<string>(), nameof(RouteMode.VirtualHmd), StringComparison.OrdinalIgnoreCase);
+            string? sourcePath = route.GetValue("sourceDevicePath", StringComparison.OrdinalIgnoreCase)?.Value<string>();
+            bool split = route.GetValue("splitPoseSource", StringComparison.OrdinalIgnoreCase)?.Value<bool>() == true;
+            if (!virtualHmd || split || !string.IsNullOrWhiteSpace(sourcePath) ||
+                route.GetValue("poseSourceKind", StringComparison.OrdinalIgnoreCase) != null)
+            {
+                continue;
+            }
+
+            route["poseSourceKind"] = (int)PoseSourceKind.Manual;
+            route["manualPose"] = JObject.FromObject(PoseOffset.DefaultManualPose());
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static bool NormalizeLegacyManualPoseDefault(JObject root)
+    {
+        if (root.GetValue("routes", StringComparison.OrdinalIgnoreCase) is not JArray routes)
+        {
+            return false;
+        }
+
+        bool changed = false;
+        foreach (JObject route in routes.OfType<JObject>())
+        {
+            if (route.GetValue("manualPose", StringComparison.OrdinalIgnoreCase) is not JObject pose)
+            {
+                continue;
+            }
+            double Read(string name, double fallback = 0.0) =>
+                pose.GetValue(name, StringComparison.OrdinalIgnoreCase)?.Value<double>() ?? fallback;
+            if (Read("translationX") == 0.0 && Read("translationY") == 170.0 &&
+                Read("translationZ") == 0.0 && Read("rotationX") == 0.0 &&
+                Read("rotationY") == 0.0 && Read("rotationZ") == 0.0 &&
+                Read("rotationW", 1.0) == 1.0)
+            {
+                route["manualPose"] = JObject.FromObject(PoseOffset.DefaultManualPose());
+                changed = true;
+            }
+        }
         return changed;
     }
 

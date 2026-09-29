@@ -16,6 +16,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrackSwap.HapticPhoneDiagno
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrackSwap.HapticPhoneDiagnostic.Tests", "tests\TrackSwap.HapticPhoneDiagnostic.Tests\TrackSwap.HapticPhoneDiagnostic.Tests.csproj", "{1328384A-F670-415F-BC40-EEF13B5428F0}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{07A7D323-673A-47B7-B9EC-1B84DAEFC776}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrackSwap.Tests", "tests\TrackSwap.Tests\TrackSwap.Tests.csproj", "{DF2752C0-E8BE-4CB6-9733-E3C3281A1E6D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -50,5 +54,12 @@ Global
 		{1328384A-F670-415F-BC40-EEF13B5428F0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1328384A-F670-415F-BC40-EEF13B5428F0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1328384A-F670-415F-BC40-EEF13B5428F0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DF2752C0-E8BE-4CB6-9733-E3C3281A1E6D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DF2752C0-E8BE-4CB6-9733-E3C3281A1E6D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DF2752C0-E8BE-4CB6-9733-E3C3281A1E6D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DF2752C0-E8BE-4CB6-9733-E3C3281A1E6D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{DF2752C0-E8BE-4CB6-9733-E3C3281A1E6D} = {07A7D323-673A-47B7-B9EC-1B84DAEFC776}
 	EndGlobalSection
 EndGlobal

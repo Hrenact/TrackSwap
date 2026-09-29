@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Install', 'Uninstall')]
+    [ValidateSet('Install', 'Uninstall', 'CleanupMappings')]
     [string]$Mode,
 
     [Parameter(Mandatory = $true)]
@@ -115,39 +115,41 @@ function Test-TrackSwapManifestPath([string]$Candidate, [string]$Expected) {
 
 $configDirectory = Get-SteamVrConfigDirectory
 $resolvedManifest = [System.IO.Path]::GetFullPath($ManifestPath)
-$appConfigPath = Join-Path $configDirectory 'appconfig.json'
-$appConfig = Read-JsonObject $appConfigPath
-$manifestProperty = $appConfig.Property('manifest_paths')
-[Newtonsoft.Json.Linq.JArray]$manifestPaths = $null
-if ($null -ne $manifestProperty) {
-    $manifestPaths = $manifestProperty.Value
-}
-if ($null -eq $manifestPaths) {
-    $appConfig.Merge([Newtonsoft.Json.Linq.JObject]::Parse('{"manifest_paths":[]}'))
-    $manifestPaths = $appConfig.Property('manifest_paths').Value -as [Newtonsoft.Json.Linq.JArray]
-}
+if ($Mode -ne 'CleanupMappings') {
+    $appConfigPath = Join-Path $configDirectory 'appconfig.json'
+    $appConfig = Read-JsonObject $appConfigPath
+    $manifestProperty = $appConfig.Property('manifest_paths')
+    [Newtonsoft.Json.Linq.JArray]$manifestPaths = $null
+    if ($null -ne $manifestProperty) {
+        $manifestPaths = $manifestProperty.Value
+    }
+    if ($null -eq $manifestPaths) {
+        $appConfig.Merge([Newtonsoft.Json.Linq.JObject]::Parse('{"manifest_paths":[]}'))
+        $manifestPaths = $appConfig.Property('manifest_paths').Value -as [Newtonsoft.Json.Linq.JArray]
+    }
 
-$manifestIndex = $manifestPaths.Count - 1
-while ($manifestIndex -ge 0) {
-    $entry = $manifestPaths[$manifestIndex]
-    $candidatePath = if ($entry -is [Newtonsoft.Json.Linq.JValue]) {
-        [string]$entry.Value
+    $manifestIndex = $manifestPaths.Count - 1
+    while ($manifestIndex -ge 0) {
+        $entry = $manifestPaths[$manifestIndex]
+        $candidatePath = if ($entry -is [Newtonsoft.Json.Linq.JValue]) {
+            [string]$entry.Value
+        }
+        else {
+            [string]$entry
+        }
+        if (Test-TrackSwapManifestPath $candidatePath $resolvedManifest) {
+            $manifestPaths.RemoveAt($manifestIndex)
+        }
+        $manifestIndex--
     }
-    else {
-        [string]$entry
+    if ($Mode -eq 'Install') {
+        if (-not (Test-Path -LiteralPath $resolvedManifest)) {
+            throw "TrackSwap.vrmanifest was not found at $resolvedManifest."
+        }
+        $manifestPaths.Add([Newtonsoft.Json.Linq.JValue]::new($resolvedManifest))
     }
-    if (Test-TrackSwapManifestPath $candidatePath $resolvedManifest) {
-        $manifestPaths.RemoveAt($manifestIndex)
-    }
-    $manifestIndex--
+    Write-JsonObjectAtomic $appConfigPath $appConfig
 }
-if ($Mode -eq 'Install') {
-    if (-not (Test-Path -LiteralPath $resolvedManifest)) {
-        throw "TrackSwap.vrmanifest was not found at $resolvedManifest."
-    }
-    $manifestPaths.Add([Newtonsoft.Json.Linq.JValue]::new($resolvedManifest))
-}
-Write-JsonObjectAtomic $appConfigPath $appConfig
 
 $vrAppConfigDirectory = Join-Path $configDirectory 'vrappconfig'
 $vrAppConfigPath = Join-Path $vrAppConfigDirectory 'com.hrenact.trackswap.vrappconfig'
@@ -158,9 +160,11 @@ if ($Mode -eq 'Install') {
         Write-JsonObjectAtomic $vrAppConfigPath $vrAppConfig
     }
 }
-else {
+elseif ($Mode -eq 'Uninstall') {
     Remove-Item -LiteralPath $vrAppConfigPath -Force -ErrorAction SilentlyContinue
+}
 
+if ($Mode -ne 'Install') {
     $settingsPath = Join-Path $configDirectory 'steamvr.vrsettings'
     if (Test-Path -LiteralPath $settingsPath) {
         $settings = Read-JsonObject $settingsPath
@@ -182,6 +186,21 @@ else {
                 if ($removed) {
                     $settingsChanged = $true
                 }
+            }
+        }
+
+        $driverSettingsProperty = $settings.Property('driver_trackswap')
+        if ($null -ne $driverSettingsProperty -and
+            $driverSettingsProperty.Value -is [Newtonsoft.Json.Linq.JObject]) {
+            [Newtonsoft.Json.Linq.JObject]$driverSettings = $driverSettingsProperty.Value
+            $legacyHmdProperty = $driverSettings.Property('enableVirtualHmdPrototype')
+            if ($null -ne $legacyHmdProperty) {
+                $legacyHmdProperty.Remove()
+                $settingsChanged = $true
+            }
+            if ([bool]$driverSettings['enableVirtualHmd']) {
+                $driverSettings['enableVirtualHmd'] = $false
+                $settingsChanged = $true
             }
         }
 

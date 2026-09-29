@@ -72,10 +72,15 @@ add_library(driver_trackswap SHARED
     src/pose_hiding_hook.h
     src/runtime_launcher.cpp
     src/runtime_launcher.h
+    src/shared_display_protocol.h
     src/tracker_registry.cpp
     src/tracker_registry.h
+    src/virtual_display_redirect.cpp
+    src/virtual_display_redirect.h
     src/virtual_controller.cpp
     src/virtual_controller.h
+    src/virtual_hmd_prototype.cpp
+    src/virtual_hmd_prototype.h
     src/virtual_tracker.cpp
     src/virtual_tracker.h
     "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}/hand_simulation.cpp"
@@ -88,7 +93,7 @@ target_include_directories(driver_trackswap PRIVATE
     "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}"
     "${TRACKSWAP_OPENVR_VRMATH_DIR}")
 target_compile_definitions(driver_trackswap PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(driver_trackswap PRIVATE trackswap_minhook)
+target_link_libraries(driver_trackswap PRIVATE trackswap_minhook d3d11 dxgi)
 target_compile_options(driver_trackswap PRIVATE /W4 /WX /permissive- /EHsc)
 set_source_files_properties(
     "${TRACKSWAP_OPENVR_HAND_SIMULATION_DIR}/hand_simulation.cpp"
@@ -99,7 +104,20 @@ set_target_properties(driver_trackswap PROPERTIES
     PREFIX ""
 )
 
+add_executable(trackswap_vr_viewer WIN32
+    viewer/main.cpp
+    viewer/viewer.rc
+    src/shared_display_protocol.h)
+target_compile_features(trackswap_vr_viewer PRIVATE cxx_std_17)
+target_include_directories(trackswap_vr_viewer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_definitions(trackswap_vr_viewer PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+target_compile_options(trackswap_vr_viewer PRIVATE /W4 /WX /permissive- /EHsc /utf-8)
+target_link_libraries(trackswap_vr_viewer PRIVATE
+    d3d11 d3dcompiler dxgi dwmapi windowscodecs ole32 shell32 uuid)
+set_target_properties(trackswap_vr_viewer PROPERTIES OUTPUT_NAME "TrackSwap.Viewer")
+
 install(TARGETS driver_trackswap RUNTIME DESTINATION bin/win64)
+install(TARGETS trackswap_vr_viewer RUNTIME DESTINATION bin/win64)
 install(FILES driver.vrdrivermanifest DESTINATION .)
 install(DIRECTORY resources/ DESTINATION resources)
 

@@ -73,8 +73,7 @@ namespace TrackSwap.Services
 
                 CopySanitizedLog(
                     Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "TrackSwap",
+                        TrackSwapDataPaths.ActiveDataDirectory,
                         "runtime-ui-launch.log"),
                     Path.Combine(temporaryDirectory, "runtime-ui-launch.log"),
                     line => true,
@@ -173,6 +172,7 @@ namespace TrackSwap.Services
             builder.AppendLine("待删除: " + routes.Count(route => route.PendingDeletion));
             builder.AppendLine("虚拟追踪器: " + routes.Count(route => route.Mode == RouteMode.DirectProxy));
             builder.AppendLine("虚拟控制器: " + routes.Count(route => route.Mode == RouteMode.VirtualController));
+            builder.AppendLine("虚拟头显: " + routes.Count(route => route.Mode == RouteMode.VirtualHmd));
             builder.AppendLine("替换设备位姿: " + routes.Count(route => route.Mode == RouteMode.ReplaceTarget));
             builder.AppendLine("OSC 输入: " + routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.Osc));
             builder.AppendLine("XInput 输入: " + routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.XInput));

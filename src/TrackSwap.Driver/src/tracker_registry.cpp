@@ -30,10 +30,39 @@ TrackerRegistry::TrackerRegistry()
     }
 }
 
+void TrackerRegistry::AttachVirtualHmd(VirtualHmd* virtualHmd)
+{
+    virtualHmd_ = virtualHmd;
+}
+
+bool TrackerRegistry::QueueHmdSnapshot(bool enabled, std::uint8_t logicalSlot, bool manualPose,
+    const char* sourceDevicePath, const char* rotationSourceDevicePath,
+    bool hidePhysicalSource, const pose_math::RigidOffset& offset, std::uint64_t revision)
+{
+    if (virtualHmd_ == nullptr || (enabled && logicalSlot >= control_protocol::MaximumRoutes)) return false;
+    {
+        std::lock_guard<std::mutex> lock(hideSourceMutex_);
+        hmdHideSourceRequested_ = enabled && hidePhysicalSource;
+        hmdHideLogicalSlot_ = enabled ? logicalSlot : 255;
+        hmdHideSourcePath_.fill('\0');
+        hmdHideRotationSourcePath_.fill('\0');
+        if (hmdHideSourceRequested_ && sourceDevicePath != nullptr)
+        {
+            strncpy_s(hmdHideSourcePath_.data(), hmdHideSourcePath_.size(), sourceDevicePath, _TRUNCATE);
+            if (rotationSourceDevicePath != nullptr)
+                strncpy_s(hmdHideRotationSourcePath_.data(), hmdHideRotationSourcePath_.size(),
+                    rotationSourceDevicePath, _TRUNCATE);
+        }
+    }
+    return virtualHmd_->QueueSnapshot(enabled, logicalSlot, manualPose, sourceDevicePath,
+        rotationSourceDevicePath, offset, revision);
+}
+
 bool TrackerRegistry::QueueControllerSnapshot(
     ControllerHand hand,
     bool enabled,
     std::uint8_t logicalSlot,
+    bool manualPose,
     const char* sourceDevicePath,
     const char* rotationSourceDevicePath,
     bool hidePhysicalSource,
@@ -85,6 +114,7 @@ bool TrackerRegistry::QueueControllerSnapshot(
     return controllers_[index]->QueueSnapshot(
         enabled,
         logicalSlot,
+        manualPose,
         sourceDevicePath,
         rotationSourceDevicePath,
         handSelectionPriority,
@@ -136,6 +166,7 @@ bool TrackerRegistry::QueueOffset(std::uint8_t slot, const pose_math::RigidOffse
 bool TrackerRegistry::QueueSnapshot(
     std::uint8_t slot,
     bool enabled,
+    bool manualPose,
     const char* sourceDevicePath,
     const char* rotationSourceDevicePath,
     const char* targetDevicePath,
@@ -179,12 +210,14 @@ bool TrackerRegistry::QueueSnapshot(
     VirtualTracker* inactive = proxy ? directTrackers_[slot].get() : proxyTrackers_[slot].get();
     const bool activeQueued = active->QueueSnapshot(
         enabled,
+        manualPose,
         sourceDevicePath,
         rotationSourceDevicePath,
         targetDevicePath,
         offset,
         revision);
     const bool inactiveQueued = inactive->QueueSnapshot(
+        false,
         false,
         "",
         "",
@@ -211,6 +244,11 @@ control_protocol::TelemetryBatch TrackerRegistry::GetTelemetry() const
         {
             batch.snapshots[slot] = controller->GetTelemetry();
         }
+    }
+    if (virtualHmd_ != nullptr)
+    {
+        const std::uint8_t slot = virtualHmd_->LogicalSlot();
+        if (slot < control_protocol::MaximumRoutes) batch.snapshots[slot] = virtualHmd_->GetTelemetry();
     }
     return batch;
 }
@@ -280,39 +318,42 @@ control_protocol::PhysicalSourceHidingStatus TrackerRegistry::GetPhysicalSourceH
 
 void TrackerRegistry::UpdatePoseHiding()
 {
-    std::array<bool, control_protocol::MaximumRoutes> requested{};
-    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> paths{};
-    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> rotationPaths{};
+    std::array<bool, control_protocol::MaximumRoutes> trackerRequested{};
+    std::array<bool, control_protocol::MaximumRoutes> controllerRequested{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> trackerPaths{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> controllerPaths{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> trackerRotationPaths{};
+    std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> controllerRotationPaths{};
+    bool hmdRequested = false;
+    std::array<char, MaximumDevicePathBytes> hmdPath{};
+    std::array<char, MaximumDevicePathBytes> hmdRotationPath{};
     {
         std::lock_guard<std::mutex> lock(hideSourceMutex_);
-        for (std::size_t slot = 0; slot < requested.size(); ++slot)
-        {
-            if (controllerHideSourceRequested_[slot])
-            {
-                requested[slot] = true;
-                paths[slot] = controllerHideSourcePaths_[slot];
-                rotationPaths[slot] = controllerHideRotationSourcePaths_[slot];
-            }
-            else if (trackerHideSourceRequested_[slot])
-            {
-                requested[slot] = true;
-                paths[slot] = trackerHideSourcePaths_[slot];
-                rotationPaths[slot] = trackerHideRotationSourcePaths_[slot];
-            }
-        }
+        trackerRequested = trackerHideSourceRequested_;
+        controllerRequested = controllerHideSourceRequested_;
+        trackerPaths = trackerHideSourcePaths_;
+        controllerPaths = controllerHideSourcePaths_;
+        trackerRotationPaths = trackerHideRotationSourcePaths_;
+        controllerRotationPaths = controllerHideRotationSourcePaths_;
+        hmdRequested = hmdHideSourceRequested_;
+        hmdPath = hmdHideSourcePath_;
+        hmdRotationPath = hmdHideRotationSourcePath_;
     }
 
-    std::array<const char*, control_protocol::MaximumRoutes * 2> requestedPaths{};
+    std::array<const char*, (control_protocol::MaximumRoutes * 4) + 2> requestedPaths{};
     std::size_t requestedPathCount = 0;
-    for (std::size_t slot = 0; slot < requested.size(); ++slot)
+    const auto appendPaths = [&](bool requested, const auto& path, const auto& rotationPath)
     {
-        if (!requested[slot]) continue;
-        requestedPaths[requestedPathCount++] = paths[slot].data();
-        if (rotationPaths[slot][0] != '\0')
-        {
-            requestedPaths[requestedPathCount++] = rotationPaths[slot].data();
-        }
+        if (!requested) return;
+        requestedPaths[requestedPathCount++] = path.data();
+        if (rotationPath[0] != '\0') requestedPaths[requestedPathCount++] = rotationPath.data();
+    };
+    for (std::size_t slot = 0; slot < control_protocol::MaximumRoutes; ++slot)
+    {
+        appendPaths(trackerRequested[slot], trackerPaths[slot], trackerRotationPaths[slot]);
+        appendPaths(controllerRequested[slot], controllerPaths[slot], controllerRotationPaths[slot]);
     }
+    appendPaths(hmdRequested, hmdPath, hmdRotationPath);
     std::uint8_t uniqueRequested = 0;
     for (std::size_t index = 0; index < requestedPathCount; ++index)
     {
@@ -337,26 +378,27 @@ void TrackerRegistry::UpdatePoseHiding()
     if (!poseHidingHook_.EnsureInstalled()) return;
 
     std::array<bool, vr::k_unMaxTrackedDeviceCount> hiddenIds{};
-    for (std::size_t slot = 0; slot < requested.size(); ++slot)
+    const auto hideIds = [&](vr::TrackedDeviceIndex_t sourceId, vr::TrackedDeviceIndex_t rotationSourceId)
     {
-        if (!requested[slot]) continue;
-        VirtualTracker* tracker = activeProxy_[slot].load()
-            ? proxyTrackers_[slot].get()
-            : directTrackers_[slot].get();
-        vr::TrackedDeviceIndex_t sourceId = tracker->SourceDeviceId();
-        vr::TrackedDeviceIndex_t rotationSourceId = tracker->RotationSourceDeviceId();
-        for (const auto& controller : controllers_)
-        {
-            if (controller->LogicalSlot() == slot)
-            {
-                sourceId = controller->SourceDeviceId();
-                rotationSourceId = controller->RotationSourceDeviceId();
-                break;
-            }
-        }
         if (sourceId < hiddenIds.size()) hiddenIds[sourceId] = true;
         if (rotationSourceId < hiddenIds.size()) hiddenIds[rotationSourceId] = true;
+    };
+    for (std::size_t slot = 0; slot < control_protocol::MaximumRoutes; ++slot)
+    {
+        if (trackerRequested[slot])
+        {
+            VirtualTracker* tracker = activeProxy_[slot].load() ? proxyTrackers_[slot].get() : directTrackers_[slot].get();
+            hideIds(tracker->SourceDeviceId(), tracker->RotationSourceDeviceId());
+        }
+        if (controllerRequested[slot])
+        {
+            for (const auto& controller : controllers_)
+                if (controller->LogicalSlot() == slot)
+                    hideIds(controller->SourceDeviceId(), controller->RotationSourceDeviceId());
+        }
     }
+    if (hmdRequested && virtualHmd_ != nullptr)
+        hideIds(virtualHmd_->SourceDeviceId(), virtualHmd_->RotationSourceDeviceId());
     poseHidingHook_.SetHiddenDeviceIds(hiddenIds);
 }
 

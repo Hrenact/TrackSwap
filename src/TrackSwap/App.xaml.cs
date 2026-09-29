@@ -1,4 +1,6 @@
 using System.Threading;
+using System.Diagnostics;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -22,6 +24,24 @@ namespace TrackSwap
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            string waitValue = e.Args
+                .SkipWhile(argument => !string.Equals(argument, "--wait-for-pid", System.StringComparison.OrdinalIgnoreCase))
+                .Skip(1)
+                .FirstOrDefault();
+            if (int.TryParse(waitValue, out int waitProcessId))
+            {
+                try
+                {
+                    Process.GetProcessById(waitProcessId).WaitForExit(15000);
+                }
+                catch (System.ArgumentException)
+                {
+                }
+                catch (System.InvalidOperationException)
+                {
+                }
+            }
+
             _singleInstanceMutex = new Mutex(
                 initiallyOwned: true,
                 name: @"Local\TrackSwap.UI.v1",

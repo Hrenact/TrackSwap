@@ -22,6 +22,12 @@ namespace TrackSwap.Protocol
         /// <summary>Required only for VirtualController routes.</summary>
         public ControlInputSource ControlInputSource { get; set; }
 
+        /// <summary>
+        /// Selects whether the route reads an OpenVR device or publishes a persisted fixed pose.
+        /// Manual pose is currently supported only by virtual-HMD routes.
+        /// </summary>
+        public PoseSourceKind PoseSourceKind { get; set; } = PoseSourceKind.Device;
+
         /// <summary>Exact registered device path returned by OpenVR.</summary>
         public string SourceDevicePath { get; set; } = string.Empty;
 
@@ -35,5 +41,11 @@ namespace TrackSwap.Protocol
         public string TargetDevicePath { get; set; } = string.Empty;
 
         public PoseOffset Offset { get; set; } = PoseOffset.Identity();
+
+        /// <summary>
+        /// Absolute standing-space pose used when PoseSourceKind is Manual.
+        /// Translation is expressed in centimetres.
+        /// </summary>
+        public PoseOffset ManualPose { get; set; } = PoseOffset.DefaultManualPose();
     }
 }

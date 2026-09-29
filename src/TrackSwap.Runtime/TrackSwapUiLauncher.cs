@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using TrackSwap.Protocol;
 
 namespace TrackSwap.Runtime;
 
@@ -123,8 +124,7 @@ internal static class TrackSwapUiLauncher
         try
         {
             string directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "TrackSwap");
+                TrackSwapDataPaths.ActiveDataDirectory);
             Directory.CreateDirectory(directory);
             File.AppendAllText(
                 Path.Combine(directory, "runtime-ui-launch.log"),

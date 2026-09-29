@@ -144,6 +144,19 @@ vr::DriverPose_t MakeInvalidPose(bool deviceIsConnected)
     return pose;
 }
 
+vr::DriverPose_t MakeValidIdentityPose(bool applyHeadModel)
+{
+    vr::DriverPose_t pose{};
+    pose.qWorldFromDriverRotation.w = 1.0;
+    pose.qDriverFromHeadRotation.w = 1.0;
+    pose.qRotation.w = 1.0;
+    pose.result = vr::TrackingResult_Running_OK;
+    pose.poseIsValid = true;
+    pose.deviceIsConnected = true;
+    pose.shouldApplyHeadModel = applyHeadModel;
+    return pose;
+}
+
 vr::DriverPose_t ConvertPose(const vr::TrackedDevicePose_t& sourcePose)
 {
     if (!sourcePose.bDeviceIsConnected || !sourcePose.bPoseIsValid)

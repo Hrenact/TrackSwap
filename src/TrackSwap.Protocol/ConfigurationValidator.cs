@@ -46,6 +46,7 @@ namespace TrackSwap.Protocol
             var sources = new HashSet<string>(StringComparer.Ordinal);
             var targets = new HashSet<string>(StringComparer.Ordinal);
             var controllerHands = new HashSet<ControllerHand>();
+            bool hasVirtualHmd = false;
 
             foreach (RouteConfiguration? route in configuration.Routes)
             {
@@ -92,7 +93,30 @@ namespace TrackSwap.Protocol
                     errors.Add($"虚拟设备槽位 {route.VirtualDeviceSlot} 被重复使用。");
                 }
 
-                ValidateSourcePath(route.SourceDevicePath, prefix, errors);
+                if (!Enum.IsDefined(typeof(PoseSourceKind), route.PoseSourceKind))
+                {
+                    errors.Add($"{prefix}使用了不受支持的位姿来源类型。");
+                }
+                bool manualPose = route.PoseSourceKind == PoseSourceKind.Manual;
+                if (manualPose)
+                {
+                    if (!string.IsNullOrWhiteSpace(route.SourceDevicePath))
+                    {
+                        errors.Add($"{prefix}使用手动位姿时不能同时指定实体来源路径。");
+                    }
+                    if (route.SplitPoseSource)
+                    {
+                        errors.Add($"{prefix}使用手动位姿时不能拆分来源。");
+                    }
+                    if (route.HidePhysicalSource)
+                    {
+                        errors.Add($"{prefix}使用手动位姿时没有可隐藏的物理来源。");
+                    }
+                }
+                else
+                {
+                    ValidateSourcePath(route.SourceDevicePath, prefix, errors);
+                }
                 if (route.SplitPoseSource)
                 {
                     ValidateSourcePath(route.RotationSourceDevicePath, prefix + "的旋转来源", errors);
@@ -144,6 +168,14 @@ namespace TrackSwap.Protocol
                         errors.Add($"{prefix}使用了不受支持的控制输入来源。");
                     }
                 }
+                if (route.Mode == RouteMode.VirtualHmd && hasVirtualHmd)
+                {
+                    errors.Add("只能创建一个虚拟头显。");
+                }
+                else if (route.Mode == RouteMode.VirtualHmd)
+                {
+                    hasVirtualHmd = true;
+                }
                 ValidateCombinedPathSize(
                     route.SourceDevicePath,
                     route.SplitPoseSource ? route.RotationSourceDevicePath : string.Empty,
@@ -184,6 +216,7 @@ namespace TrackSwap.Protocol
                 }
 
                 ValidateOffset(route.Offset, prefix, errors);
+                ValidateOffset(route.ManualPose, prefix + "的手动位姿", errors);
             }
 
             ValidateCycles(configuration.Routes, errors);

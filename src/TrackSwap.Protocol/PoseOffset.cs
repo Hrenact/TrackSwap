@@ -1,9 +1,9 @@
 namespace TrackSwap.Protocol
 {
     /// <summary>
-    /// A rigid transform expressed in the source device's local coordinate frame.
-    /// Translation is in centimetres. Quaternion component order is (x, y, z, w).
-    /// The driver applies this as T_output = T_source * T_offset.
+    /// A rigid transform whose translation is expressed in centimetres and whose
+    /// quaternion component order is (x, y, z, w). Route Offset values are local
+    /// to a device source; ManualPose values are absolute in standing space.
     /// </summary>
     public sealed class PoseOffset
     {
@@ -18,6 +18,11 @@ namespace TrackSwap.Protocol
         public static PoseOffset Identity()
         {
             return new PoseOffset();
+        }
+
+        public static PoseOffset DefaultManualPose()
+        {
+            return Identity();
         }
     }
 }

@@ -9,18 +9,19 @@
     <AssemblyName>TrackSwap</AssemblyName>
     <RootNamespace>TrackSwap</RootNamespace>
     <AssemblyTitle>TrackSwap</AssemblyTitle>
-    <Product>TrackSwap v009</Product>
+    <Product>TrackSwap v010</Product>
     <Description>SteamVR 位姿映射管理工具</Description>
     <Authors>Hrenact</Authors>
     <Copyright>Copyright © 2026 Hrenact</Copyright>
-    <AssemblyVersion>0.0.8.0</AssemblyVersion>
-    <FileVersion>0.0.8.0</FileVersion>
-    <InformationalVersion>v009</InformationalVersion>
+    <AssemblyVersion>0.0.9.0</AssemblyVersion>
+    <FileVersion>0.0.9.0</FileVersion>
+    <InformationalVersion>v010</InformationalVersion>
     <ApplicationIcon>Assets\TrackSwap.ico</ApplicationIcon>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="TrackSwap.Tests" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />

@@ -16,6 +16,7 @@ namespace TrackSwap.Protocol
         public const string ProxySerialPrefix = "TRKSWAP-PROXY-";
         public const string LeftControllerSerial = "TRKSWAP-CONTROLLER-L";
         public const string RightControllerSerial = "TRKSWAP-CONTROLLER-R";
+        public const string VirtualHmdSerial = "TRKSWAP-HMD";
         public const string HeadRolePath = "/user/head";
         public const string LeftHandRolePath = "/user/hand/left";
         public const string RightHandRolePath = "/user/hand/right";
@@ -32,7 +33,8 @@ namespace TrackSwap.Protocol
 
         public static string GetOutputSerial(RouteMode mode, int slot)
         {
-            return mode == RouteMode.DirectProxy ? GetTrackerSerial(slot) : GetProxySerial(slot);
+            return mode == RouteMode.VirtualHmd ? VirtualHmdSerial :
+                mode == RouteMode.DirectProxy ? GetTrackerSerial(slot) : GetProxySerial(slot);
         }
 
         public static string GetProxyDevicePath(int slot)
@@ -46,7 +48,8 @@ namespace TrackSwap.Protocol
                 devicePath.StartsWith("/devices/trackswap/", System.StringComparison.OrdinalIgnoreCase) &&
                 (devicePath.IndexOf(TrackerSerialPrefix, System.StringComparison.OrdinalIgnoreCase) >= 0 ||
                  devicePath.IndexOf(ProxySerialPrefix, System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 devicePath.IndexOf("TRKSWAP-CONTROLLER-", System.StringComparison.OrdinalIgnoreCase) >= 0);
+                 devicePath.IndexOf("TRKSWAP-CONTROLLER-", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 devicePath.IndexOf(VirtualHmdSerial, System.StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         public static string GetControllerSerial(ControllerHand hand)
@@ -59,7 +62,7 @@ namespace TrackSwap.Protocol
     public static class DriverControlProtocol
     {
         public const uint Magic = 0x50575354; // "TSWP" in little-endian byte order.
-        public const ushort Version = 8;
+        public const ushort Version = 11;
         public const ushort SetSourceMessageType = 1;
         public const ushort SetOffsetMessageType = 2;
         public const ushort ApplySnapshotMessageType = 3;
@@ -68,11 +71,13 @@ namespace TrackSwap.Protocol
         public const ushort ApplyControllerInputMessageType = 6;
         public const ushort GetHapticEventsMessageType = 7;
         public const ushort GetPhysicalSourceHidingStatusMessageType = 8;
+        public const ushort ApplyHmdSnapshotMessageType = 9;
         public const ushort ResponseFlag = 0x8000;
         public const int HeaderBytes = 20;
         public const int MaximumPayloadBytes = 8192;
-        public const int ApplySnapshotFixedBytes = 73;
-        public const int ApplyControllerSnapshotFixedBytes = 76;
+        public const int ApplySnapshotFixedBytes = 74;
+        public const int ApplyControllerSnapshotFixedBytes = 77;
+        public const int ApplyHmdSnapshotFixedBytes = 72;
         public const int MaximumCombinedDevicePathBytes = MaximumPayloadBytes - ApplySnapshotFixedBytes;
         public const int TelemetryPoseBytes = 62;
         public const int TelemetrySnapshotBytes = 264;

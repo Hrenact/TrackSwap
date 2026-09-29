@@ -288,7 +288,7 @@ void ControlServer::Run()
             else if (valid && request.messageType == control_protocol::ApplySnapshotMessageType)
             {
                 constexpr std::size_t FixedBytes =
-                    (3 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
+                    (4 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
                     (3 * sizeof(std::uint16_t)) + (7 * sizeof(double));
                 valid = request.payloadBytes >= FixedBytes;
                 if (valid)
@@ -296,11 +296,12 @@ void ControlServer::Run()
                     const std::uint8_t slot = static_cast<std::uint8_t>(payload[0]);
                     const bool enabled = payload[1] != 0;
                     const bool hidePhysicalSource = payload[2] != 0;
+                    const bool manualPose = payload[3] != 0;
                     std::uint64_t revision = 0;
                     std::uint16_t sourcePathBytes = 0;
                     std::uint16_t rotationSourcePathBytes = 0;
                     std::uint16_t targetPathBytes = 0;
-                    constexpr std::size_t PrefixBytes = 3 * sizeof(std::uint8_t);
+                    constexpr std::size_t PrefixBytes = 4 * sizeof(std::uint8_t);
                     std::memcpy(&revision, payload.data() + PrefixBytes, sizeof(revision));
                     std::memcpy(
                         &sourcePathBytes,
@@ -315,9 +316,12 @@ void ControlServer::Run()
                         payload.data() + PrefixBytes + sizeof(revision) + sizeof(sourcePathBytes) +
                             sizeof(rotationSourcePathBytes),
                         sizeof(targetPathBytes));
-                    valid = slot < control_protocol::MaximumRoutes &&
-                        ((!enabled && sourcePathBytes == 0 && targetPathBytes == 0) ||
-                         (enabled && sourcePathBytes > 0)) &&
+                    valid = payload[3] <= 1 && slot < control_protocol::MaximumRoutes &&
+                        ((!enabled && !manualPose && sourcePathBytes == 0 &&
+                            rotationSourcePathBytes == 0 && targetPathBytes == 0) ||
+                         (enabled && manualPose && !hidePhysicalSource && sourcePathBytes == 0 &&
+                            rotationSourcePathBytes == 0) ||
+                         (enabled && !manualPose && sourcePathBytes > 0)) &&
                         request.payloadBytes == FixedBytes + sourcePathBytes +
                             rotationSourcePathBytes + targetPathBytes;
                     if (valid)
@@ -326,7 +330,7 @@ void ControlServer::Run()
                             sizeof(sourcePathBytes) + sizeof(rotationSourcePathBytes) + sizeof(targetPathBytes);
                         const char* rotationSourcePath = sourcePath + sourcePathBytes;
                         const char* targetPath = rotationSourcePath + rotationSourcePathBytes;
-                        valid = !enabled || (IsValidSourcePath(sourcePath, sourcePathBytes) &&
+                        valid = !enabled || manualPose || (IsValidSourcePath(sourcePath, sourcePathBytes) &&
                             (rotationSourcePathBytes == 0 ||
                                 IsValidSourcePath(rotationSourcePath, rotationSourcePathBytes)) &&
                             (targetPathBytes == 0 || IsValidTargetPath(targetPath, targetPathBytes)));
@@ -350,6 +354,7 @@ void ControlServer::Run()
                             valid = registry_->QueueSnapshot(
                                 slot,
                                 enabled,
+                                manualPose,
                                 terminatedSource.data(),
                                 terminatedRotationSource.data(),
                                 terminatedTarget.data(),
@@ -372,7 +377,7 @@ void ControlServer::Run()
             else if (valid && request.messageType == control_protocol::ApplyControllerSnapshotMessageType)
             {
                 constexpr std::size_t FixedBytes =
-                    (4 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
+                    (5 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
                     sizeof(std::int32_t) + (2 * sizeof(std::uint16_t)) + (7 * sizeof(double));
                 valid = request.payloadBytes >= FixedBytes;
                 if (valid)
@@ -381,11 +386,12 @@ void ControlServer::Run()
                     const bool enabled = payload[1] != 0;
                     const std::uint8_t logicalSlot = static_cast<std::uint8_t>(payload[2]);
                     const bool hidePhysicalSource = payload[3] != 0;
+                    const bool manualPose = payload[4] != 0;
                     std::uint64_t revision = 0;
                     std::int32_t handSelectionPriority = 0;
                     std::uint16_t sourcePathBytes = 0;
                     std::uint16_t rotationSourcePathBytes = 0;
-                    constexpr std::size_t PrefixBytes = 4 * sizeof(std::uint8_t);
+                    constexpr std::size_t PrefixBytes = 5 * sizeof(std::uint8_t);
                     std::memcpy(&revision, payload.data() + PrefixBytes, sizeof(revision));
                     std::memcpy(
                         &handSelectionPriority,
@@ -400,14 +406,19 @@ void ControlServer::Run()
                         payload.data() + PrefixBytes + sizeof(revision) + sizeof(handSelectionPriority) +
                             sizeof(sourcePathBytes),
                         sizeof(rotationSourcePathBytes));
-                    valid = (hand == ControllerHand::Left || hand == ControllerHand::Right) &&
-                        ((!enabled && sourcePathBytes == 0 && logicalSlot == 255) ||
-                         (enabled && sourcePathBytes > 0 && logicalSlot < control_protocol::MaximumRoutes)) &&
+                    valid = payload[4] <= 1 &&
+                        (hand == ControllerHand::Left || hand == ControllerHand::Right) &&
+                        ((!enabled && !manualPose && sourcePathBytes == 0 &&
+                            rotationSourcePathBytes == 0 && logicalSlot == 255) ||
+                         (enabled && manualPose && !hidePhysicalSource && sourcePathBytes == 0 &&
+                            rotationSourcePathBytes == 0 && logicalSlot < control_protocol::MaximumRoutes) ||
+                         (enabled && !manualPose && sourcePathBytes > 0 &&
+                            logicalSlot < control_protocol::MaximumRoutes)) &&
                         request.payloadBytes == FixedBytes + sourcePathBytes + rotationSourcePathBytes;
                     const char* sourcePath = payload.data() + PrefixBytes + sizeof(revision) +
                         sizeof(handSelectionPriority) + sizeof(sourcePathBytes) + sizeof(rotationSourcePathBytes);
                     const char* rotationSourcePath = sourcePath + sourcePathBytes;
-                    if (valid) valid = !enabled || IsValidSourcePath(sourcePath, sourcePathBytes);
+                    if (valid) valid = !enabled || manualPose || IsValidSourcePath(sourcePath, sourcePathBytes);
                     if (valid && enabled && rotationSourcePathBytes > 0)
                     {
                         valid = IsValidSourcePath(rotationSourcePath, rotationSourcePathBytes);
@@ -436,12 +447,69 @@ void ControlServer::Run()
                                 hand,
                                 enabled,
                                 logicalSlot,
+                                manualPose,
                                 terminatedSource.data(),
                                 terminatedRotationSource.data(),
                                 hidePhysicalSource,
                                 handSelectionPriority,
                                 offset,
                                 revision);
+                        }
+                    }
+                }
+            }
+            else if (valid && request.messageType == control_protocol::ApplyHmdSnapshotMessageType)
+            {
+                constexpr std::size_t PrefixBytes = 4 * sizeof(std::uint8_t);
+                constexpr std::size_t FixedBytes = PrefixBytes + sizeof(std::uint64_t) +
+                    (2 * sizeof(std::uint16_t)) + (7 * sizeof(double));
+                valid = request.payloadBytes >= FixedBytes;
+                if (valid)
+                {
+                    const bool enabled = payload[0] != 0;
+                    const std::uint8_t logicalSlot = static_cast<std::uint8_t>(payload[1]);
+                    const bool hidePhysicalSource = payload[2] != 0;
+                    const bool manualPose = payload[3] != 0;
+                    std::uint64_t revision = 0;
+                    std::uint16_t sourcePathBytes = 0;
+                    std::uint16_t rotationSourcePathBytes = 0;
+                    std::memcpy(&revision, payload.data() + PrefixBytes, sizeof(revision));
+                    std::memcpy(&sourcePathBytes, payload.data() + PrefixBytes + sizeof(revision), sizeof(sourcePathBytes));
+                    std::memcpy(&rotationSourcePathBytes,
+                        payload.data() + PrefixBytes + sizeof(revision) + sizeof(sourcePathBytes),
+                        sizeof(rotationSourcePathBytes));
+                    valid = payload[3] <= 1 &&
+                        ((!enabled && !manualPose && sourcePathBytes == 0 &&
+                            rotationSourcePathBytes == 0 && logicalSlot == 255) ||
+                         (enabled && manualPose && !hidePhysicalSource && sourcePathBytes == 0 &&
+                            rotationSourcePathBytes == 0 && logicalSlot < control_protocol::MaximumRoutes) ||
+                         (enabled && !manualPose && sourcePathBytes > 0 &&
+                            logicalSlot < control_protocol::MaximumRoutes)) &&
+                        request.payloadBytes == FixedBytes + sourcePathBytes + rotationSourcePathBytes;
+                    const char* sourcePath = payload.data() + PrefixBytes + sizeof(revision) +
+                        sizeof(sourcePathBytes) + sizeof(rotationSourcePathBytes);
+                    const char* rotationSourcePath = sourcePath + sourcePathBytes;
+                    if (valid && enabled && sourcePathBytes > 0)
+                        valid = IsValidSourcePath(sourcePath, sourcePathBytes);
+                    if (valid && enabled && rotationSourcePathBytes > 0)
+                        valid = IsValidSourcePath(rotationSourcePath, rotationSourcePathBytes);
+                    std::array<double, 7> values{};
+                    if (valid)
+                    {
+                        std::memcpy(values.data(), rotationSourcePath + rotationSourcePathBytes, sizeof(values));
+                        const pose_math::RigidOffset offset{
+                            {values[0], values[1], values[2]},
+                            {values[6], values[3], values[4], values[5]}};
+                        valid = pose_math::IsValidOffset(offset);
+                        if (valid)
+                        {
+                            std::array<char, control_protocol::MaximumPayloadBytes + 1> terminatedSource{};
+                            std::array<char, control_protocol::MaximumPayloadBytes + 1> terminatedRotationSource{};
+                            std::memcpy(terminatedSource.data(), sourcePath, sourcePathBytes);
+                            std::memcpy(terminatedRotationSource.data(), rotationSourcePath, rotationSourcePathBytes);
+                            valid = registry_->QueueHmdSnapshot(enabled, logicalSlot, manualPose,
+                                terminatedSource.data(), terminatedRotationSource.data(),
+                                hidePhysicalSource, offset, revision);
                         }
                     }
                 }

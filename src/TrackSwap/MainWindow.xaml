@@ -310,12 +310,39 @@
                                     <ColumnDefinition Width="34" />
                                     <ColumnDefinition x:Name="RuntimeTargetColumn" Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel x:Name="RuntimeProxyPanel">
+                                <Grid x:Name="RuntimeProxyPanel">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
                                     <TextBlock Text="输出设备" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
-                                    <Border Margin="0,7,0,0" MinHeight="40" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2" Padding="10">
-                                        <TextBlock x:Name="RuntimeProxyText" Text="TRKSWAP-TRACKER-00" VerticalAlignment="Center" FontFamily="Consolas" />
-                                    </Border>
-                                </StackPanel>
+                                    <Grid Grid.Row="1" Margin="0,7,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="14" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="14" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border MinHeight="40" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2" Padding="10">
+                                            <TextBlock x:Name="RuntimeProxyText" Text="TRKSWAP-TRACKER-00" VerticalAlignment="Center" FontFamily="Consolas" />
+                                        </Border>
+                                        <Button x:Name="OpenSteamVrRoomSetupButton"
+                                                Grid.Column="2"
+                                                Content="打开 SteamVR 房间设置"
+                                                Padding="13,7"
+                                                VerticalAlignment="Center"
+                                                Visibility="Collapsed"
+                                                Click="OpenSteamVrRoomSetupButton_Click" />
+                                        <Button x:Name="OpenVrViewButton"
+                                                Grid.Column="4"
+                                                Content="打开 VR 视图"
+                                                Padding="13,7"
+                                                VerticalAlignment="Center"
+                                                Visibility="Collapsed"
+                                                Click="OpenVrViewButton_Click" />
+                                    </Grid>
+                                </Grid>
                                 <TextBlock x:Name="RuntimeTargetArrow" Grid.Column="1" Text="→" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
                                 <StackPanel x:Name="RuntimeTargetPanel" Grid.Column="2">
                                     <TextBlock Text="替换目标" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
@@ -360,7 +387,7 @@
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock Text="局部位姿偏移" FontSize="15" FontWeight="Medium" />
+                                        <TextBlock x:Name="PoseEditorTitleText" Text="局部位姿偏移" FontSize="15" FontWeight="Medium" />
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="重置" Padding="9,4" Click="ResetRuntimeOffsetButton_Click" />
                                 </Grid>
@@ -451,6 +478,7 @@
                         <Button x:Name="SettingsRuntimeCategoryButton" Content="运行与诊断" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsSteamVrCategoryButton" Content="SteamVR" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsDevicesCategoryButton" Content="设备记录" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                        <Button x:Name="SettingsFilesCategoryButton" Content="文件管理" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsOscCategoryButton" Content="OSC" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsXInputCategoryButton" Content="XInput" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         <Button x:Name="SettingsAdvancedCategoryButton" Content="高级选项" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
@@ -700,6 +728,114 @@
                                             </ItemsControl>
                                         </StackPanel>
                                         <Button Grid.Row="3" Grid.ColumnSpan="2" Content="清空设备记录" HorizontalAlignment="Right" Margin="0,8,0,0" Click="ClearDeviceHistoryButton_Click" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel x:Name="FilesSettingsPanel" Visibility="Collapsed">
+                                <TextBlock Text="文件管理" FontSize="18" FontWeight="Medium" />
+                                <TextBlock Text="查看 TrackSwap 使用的文件位置、迁移旧版数据，或导入导出完整配置。" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+
+                                <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <TextBlock Text="当前数据位置" FontSize="15" FontWeight="Medium" />
+                                        <TextBlock x:Name="CurrentDataLocationText" Margin="0,8,0,0" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="CurrentDataLocationStateText" Margin="0,7,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        <Button Content="打开数据文件夹" HorizontalAlignment="Left" Margin="0,14,0,0" Tag="{Binding ElementName=CurrentDataLocationText, Path=Text}" Click="OpenFolderButton_Click" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border x:Name="LegacyMigrationCard" Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,20,0">
+                                            <TextBlock Text="旧版数据" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock x:Name="LegacyMigrationDescriptionText" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="LegacyDataLocationText" Margin="0,8,0,0" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <Button x:Name="MigrateLegacyDataButton" Content="从旧版迁移" Click="MigrateLegacyDataButton_Click" />
+                                            <Button x:Name="CleanupLegacyDataButton" Content="清理旧版文件" Margin="0,8,0,0" Click="CleanupLegacyDataButton_Click" Visibility="Collapsed" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,20,0">
+                                            <TextBlock Text="配置备份" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Text="导出全部路由、OSC、XInput、高级选项和界面设置。备份中可能包含物理设备路径，请勿公开分享。" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="ExportConfigurationButton" Content="导出配置" Click="ExportConfigurationButton_Click" />
+                                            <Button x:Name="ImportConfigurationButton" Content="导入配置" Margin="8,0,0,0" Click="ImportConfigurationButton_Click" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <TextBlock Text="文件位置" FontSize="15" FontWeight="Medium" />
+                                        <TextBlock Text="“安装目录外”表示 SteamVR 要求 TrackSwap 登记或修改的共享文件；TrackSwap 不会移动这些文件。" Margin="0,4,0,12" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        <ItemsControl x:Name="FileLocationsItemsControl">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,7" Padding="12,10" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <StackPanel>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="{Binding Name}" />
+                                                                    <TextBlock Text="{Binding LocationLabel}" Margin="10,0,0,0" Foreground="{Binding LocationBrush}" FontSize="10" />
+                                                                    <TextBlock Text="{Binding ExistenceLabel}" Margin="8,0,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                                                </StackPanel>
+                                                                <TextBlock Text="{Binding Description}" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                                                <TextBlock Text="{Binding Path}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                            <Button Grid.Column="1" Content="定位" Margin="14,0,0,0" VerticalAlignment="Center" Tag="{Binding Path}" Click="LocatePathButton_Click" />
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Margin="0,14,0,0" Padding="20" Background="#211516" BorderBrush="#553034" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,24,0">
+                                            <TextBlock Text="重置数据" FontSize="15" FontWeight="Medium" Foreground="{StaticResource DestructiveBrush}" />
+                                            <TextBlock Text="当 TrackSwap 出现配置问题，或希望清空数据从头开始时使用。将删除配置、偏好、设备记录、日志和自动备份，保留 SteamVR 集成；完成后退出，重新打开即可继续使用。" Margin="0,4,0,0" Foreground="{StaticResource DestructiveMutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" x:Name="ResetTrackSwapDataButton" Content="重置数据" Style="{StaticResource DestructiveButton}" VerticalAlignment="Center" Click="ResetTrackSwapDataButton_Click" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Margin="0,14,0,0" Padding="20" Background="#211516" BorderBrush="#553034" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,24,0">
+                                            <TextBlock Text="预卸载准备" FontSize="15" FontWeight="Medium" Foreground="{StaticResource DestructiveBrush}" />
+                                            <TextBlock Text="永久删除全部 TrackSwap 数据，并移除驱动注册、应用清单、自动启动记录和 TrackSwap 位姿覆盖。不会启动卸载器或删除程序文件；完成后 TrackSwap 将退出，由用户自行卸载。" Margin="0,4,0,0" Foreground="{StaticResource DestructiveMutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" x:Name="RemoveTrackSwapDataAndIntegrationButton" Content="开始准备" Style="{StaticResource DestructiveButton}" VerticalAlignment="Center" Click="RemoveTrackSwapDataAndIntegrationButton_Click" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -1064,5 +1200,44 @@
                 </Border>
             </StackPanel>
         </Border>
+        <Grid x:Name="DestructiveCleanupOverlay"
+              Grid.RowSpan="2"
+              Grid.ColumnSpan="2"
+              Panel.ZIndex="1000"
+              Background="#F0000000"
+              Focusable="True"
+              Visibility="Collapsed">
+            <Border Width="380"
+                    Padding="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="#704044"
+                    BorderThickness="1"
+                    CornerRadius="3">
+                <StackPanel>
+                    <TextBlock x:Name="DestructiveCleanupTitleText"
+                               Text="正在清理…"
+                               HorizontalAlignment="Center"
+                               Foreground="{StaticResource DestructiveBrush}"
+                               FontSize="16"
+                               FontWeight="Medium" />
+                    <TextBlock x:Name="DestructiveCleanupDescriptionText"
+                               Margin="0,8,0,0"
+                               HorizontalAlignment="Center"
+                               Foreground="{StaticResource DestructiveMutedBrush}"
+                               FontSize="11"
+                               Text="请稍候，不要关闭 TrackSwap。"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <Border Width="120"
+                            Height="2"
+                            Margin="0,18,0,0"
+                            HorizontalAlignment="Center"
+                            Background="{StaticResource DestructiveBrush}"
+                            Opacity="0.65" />
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

@@ -26,7 +26,7 @@ public sealed class SteamVrStaticMappingServiceTests
                 CreateReplacementRoute("route-1", slot: 1, "/devices/new/target")
             }
         };
-        var service = new SteamVrStaticMappingService(() => fixture.SettingsPath, () => false);
+        var service = CreateService(fixture);
 
         StaticMappingReconciliationResult result = service.Reconcile(configuration);
 
@@ -40,7 +40,7 @@ public sealed class SteamVrStaticMappingServiceTests
         Assert.Equal(
             "/devices/unrelated/target",
             (string?)root["TrackingOverrides"]?["/devices/unrelated/source"]);
-        Assert.Single(Directory.GetFiles(fixture.DirectoryPath, "*.trackswap-*.backup"));
+        Assert.Single(Directory.GetFiles(fixture.BackupDirectory, "*.trackswap-*.backup"));
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class SteamVrStaticMappingServiceTests
                 CreateReplacementRoute("keep-me", 1, "/devices/new/right")
             }
         };
-        var service = new SteamVrStaticMappingService(() => fixture.SettingsPath, () => false);
+        var service = CreateService(fixture);
 
         StaticMappingReconciliationResult result = service.Reconcile(configuration);
 
@@ -90,7 +90,7 @@ public sealed class SteamVrStaticMappingServiceTests
             Revision = 1,
             Routes = { CreateReplacementRoute("route", 0, "/devices/target") }
         };
-        var service = new SteamVrStaticMappingService(() => fixture.SettingsPath, () => true);
+        var service = CreateService(fixture, steamVrRunning: true);
 
         StaticMappingReconciliationResult result = service.Reconcile(configuration);
 
@@ -103,11 +103,81 @@ public sealed class SteamVrStaticMappingServiceTests
     public void MissingSteamVrSettingsDoesNotCreatePermanentWorkWithoutReplacementRoutes()
     {
         using var fixture = new SteamVrSettingsFixture();
-        var service = new SteamVrStaticMappingService(() => fixture.SettingsPath, () => false);
+        var service = CreateService(fixture);
 
         StaticMappingReconciliationResult result = service.Reconcile(new RuntimeConfiguration());
 
         Assert.True(result.IsCompleted);
+    }
+
+    [Fact]
+    public void ReconcilesVirtualHmdBootstrapSettingAndRemovesPrototypeKey()
+    {
+        using var fixture = new SteamVrSettingsFixture();
+        fixture.WriteSettings("""
+            {
+              "driver_trackswap": {
+                "enable": true,
+                "enableVirtualHmdPrototype": true
+              }
+            }
+            """);
+        var configuration = new RuntimeConfiguration
+        {
+            Revision = 2,
+            Routes =
+            {
+                new RouteConfiguration
+                {
+                    RouteId = "hmd",
+                    Name = "HMD",
+                    Enabled = true,
+                    Mode = RouteMode.VirtualHmd,
+                    VirtualDeviceSlot = 3,
+                    SourceDevicePath = "/devices/test/head-source",
+                    Offset = PoseOffset.Identity()
+                }
+            }
+        };
+
+        StaticMappingReconciliationResult result = CreateService(fixture).Reconcile(configuration);
+
+        Assert.True(result.IsCompleted);
+        JObject root = JObject.Parse(File.ReadAllText(fixture.SettingsPath));
+        Assert.True((bool?)root["driver_trackswap"]?["enableVirtualHmd"]);
+        Assert.Null(root["driver_trackswap"]?["enableVirtualHmdPrototype"]);
+    }
+
+    [Fact]
+    public void ManualVirtualHmdStillEnablesDriverRegistration()
+    {
+        using var fixture = new SteamVrSettingsFixture();
+        fixture.WriteSettings("""{ "driver_trackswap": { "enableVirtualHmd": false } }""");
+        var configuration = new RuntimeConfiguration
+        {
+            Revision = 3,
+            Routes =
+            {
+                new RouteConfiguration
+                {
+                    RouteId = "hmd-manual",
+                    Name = "Manual HMD",
+                    Enabled = true,
+                    Mode = RouteMode.VirtualHmd,
+                    PoseSourceKind = PoseSourceKind.Manual,
+                    VirtualDeviceSlot = 0,
+                    SourceDevicePath = string.Empty,
+                    ManualPose = PoseOffset.DefaultManualPose(),
+                    Offset = PoseOffset.Identity()
+                }
+            }
+        };
+
+        StaticMappingReconciliationResult result = CreateService(fixture).Reconcile(configuration);
+
+        Assert.True(result.IsCompleted);
+        JObject root = JObject.Parse(File.ReadAllText(fixture.SettingsPath));
+        Assert.True((bool?)root["driver_trackswap"]?["enableVirtualHmd"]);
     }
 
     [Fact]
@@ -137,7 +207,7 @@ public sealed class SteamVrStaticMappingServiceTests
             new CalibrationProfileStore(Path.Combine(fixture.DirectoryPath, "profiles.json")),
             new OpenVrCalibrationService(),
             new TelemetrySampler());
-        var service = new SteamVrStaticMappingService(() => fixture.SettingsPath, () => false);
+        var service = CreateService(fixture);
 
         StaticMappingReconciliationResult result = server.ReconcileStaticMappings(service);
 
@@ -164,6 +234,16 @@ public sealed class SteamVrStaticMappingServiceTests
         };
     }
 
+    private static SteamVrStaticMappingService CreateService(
+        SteamVrSettingsFixture fixture,
+        bool steamVrRunning = false)
+    {
+        return new SteamVrStaticMappingService(
+            () => fixture.SettingsPath,
+            () => steamVrRunning,
+            () => fixture.BackupDirectory);
+    }
+
     private sealed class SteamVrSettingsFixture : IDisposable
     {
         public SteamVrSettingsFixture()
@@ -174,10 +254,13 @@ public sealed class SteamVrStaticMappingServiceTests
                 Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(DirectoryPath);
             SettingsPath = Path.Combine(DirectoryPath, "steamvr.vrsettings");
+            BackupDirectory = Path.Combine(DirectoryPath, "Backups");
+            Directory.CreateDirectory(BackupDirectory);
         }
 
         public string DirectoryPath { get; }
         public string SettingsPath { get; }
+        public string BackupDirectory { get; }
 
         public void WriteSettings(string contents)
         {

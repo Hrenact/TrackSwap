@@ -37,7 +37,10 @@ internal static class DriverControlClient
         TimeSpan timeout)
     {
         bool enabled = route?.Enabled == true;
-        byte[] sourcePath = enabled ? Encoding.UTF8.GetBytes(route!.SourceDevicePath) : Array.Empty<byte>();
+        bool manualPose = enabled && route!.PoseSourceKind == PoseSourceKind.Manual;
+        byte[] sourcePath = enabled
+            ? Encoding.UTF8.GetBytes(route!.SourceDevicePath ?? string.Empty)
+            : Array.Empty<byte>();
         byte[] rotationSourcePath = enabled && route!.SplitPoseSource
             ? Encoding.UTF8.GetBytes(route.RotationSourceDevicePath)
             : Array.Empty<byte>();
@@ -45,7 +48,9 @@ internal static class DriverControlClient
             ? Encoding.UTF8.GetBytes(route.TargetDevicePath)
             : Array.Empty<byte>();
         if (slot < 0 || slot >= ProtocolConstants.MaximumRoutes ||
-            (enabled && sourcePath.Length == 0) ||
+            (enabled && manualPose && (sourcePath.Length != 0 || rotationSourcePath.Length != 0 ||
+                route!.SplitPoseSource || hidePhysicalSource)) ||
+            (enabled && !manualPose && sourcePath.Length == 0) ||
             sourcePath.Length > ushort.MaxValue || rotationSourcePath.Length > ushort.MaxValue ||
             targetPath.Length > ushort.MaxValue ||
             sourcePath.Length + rotationSourcePath.Length + targetPath.Length >
@@ -60,6 +65,7 @@ internal static class DriverControlClient
             writer.Write((byte)slot);
             writer.Write(enabled ? (byte)1 : (byte)0);
             writer.Write(enabled && hidePhysicalSource ? (byte)1 : (byte)0);
+            writer.Write(manualPose ? (byte)1 : (byte)0);
             writer.Write(revision);
             writer.Write((ushort)sourcePath.Length);
             writer.Write((ushort)rotationSourcePath.Length);
@@ -67,7 +73,9 @@ internal static class DriverControlClient
             writer.Write(sourcePath);
             writer.Write(rotationSourcePath);
             writer.Write(targetPath);
-            PoseOffset offset = route?.Offset ?? PoseOffset.Identity();
+            PoseOffset offset = manualPose
+                ? route!.ManualPose ?? PoseOffset.DefaultManualPose()
+                : route?.Offset ?? PoseOffset.Identity();
             WriteOffsetForOpenVr(writer, offset);
         }
         return SendAccepted(DriverControlProtocol.ApplySnapshotMessageType, payloadStream.ToArray(), timeout);
@@ -82,12 +90,18 @@ internal static class DriverControlClient
         TimeSpan timeout)
     {
         bool enabled = route?.Enabled == true;
-        byte[] sourcePath = enabled ? Encoding.UTF8.GetBytes(route!.SourceDevicePath) : Array.Empty<byte>();
+        bool manualPose = enabled && route!.PoseSourceKind == PoseSourceKind.Manual;
+        byte[] sourcePath = enabled
+            ? Encoding.UTF8.GetBytes(route!.SourceDevicePath ?? string.Empty)
+            : Array.Empty<byte>();
         byte[] rotationSourcePath = enabled && route!.SplitPoseSource
             ? Encoding.UTF8.GetBytes(route.RotationSourceDevicePath)
             : Array.Empty<byte>();
         if ((hand != ControllerHand.Left && hand != ControllerHand.Right) ||
-            (enabled && (route!.Mode != RouteMode.VirtualController || route.ControllerHand != hand || sourcePath.Length == 0)) ||
+            (enabled && (route!.Mode != RouteMode.VirtualController || route.ControllerHand != hand)) ||
+            (enabled && manualPose && (sourcePath.Length != 0 || rotationSourcePath.Length != 0 ||
+                route!.SplitPoseSource || hidePhysicalSource)) ||
+            (enabled && !manualPose && sourcePath.Length == 0) ||
             sourcePath.Length > ushort.MaxValue || rotationSourcePath.Length > ushort.MaxValue ||
             sourcePath.Length + rotationSourcePath.Length > DriverControlProtocol.MaximumPayloadBytes -
                 DriverControlProtocol.ApplyControllerSnapshotFixedBytes)
@@ -102,16 +116,76 @@ internal static class DriverControlClient
             writer.Write(enabled ? (byte)1 : (byte)0);
             writer.Write(enabled ? (byte)route!.VirtualDeviceSlot : byte.MaxValue);
             writer.Write(enabled && hidePhysicalSource ? (byte)1 : (byte)0);
+            writer.Write(manualPose ? (byte)1 : (byte)0);
             writer.Write(revision);
             writer.Write(handSelectionPriority);
             writer.Write((ushort)sourcePath.Length);
             writer.Write((ushort)rotationSourcePath.Length);
             writer.Write(sourcePath);
             writer.Write(rotationSourcePath);
-            PoseOffset offset = route?.Offset ?? PoseOffset.Identity();
+            PoseOffset offset = manualPose
+                ? route!.ManualPose ?? PoseOffset.DefaultManualPose()
+                : route?.Offset ?? PoseOffset.Identity();
             WriteOffsetForOpenVr(writer, offset);
         }
         return SendAccepted(DriverControlProtocol.ApplyControllerSnapshotMessageType, payloadStream.ToArray(), timeout);
+    }
+
+    public static string ApplyHmdSnapshot(
+        RouteConfiguration? route,
+        bool hidePhysicalSource,
+        ulong revision,
+        TimeSpan timeout)
+    {
+        return SendAccepted(
+            DriverControlProtocol.ApplyHmdSnapshotMessageType,
+            BuildHmdSnapshotPayload(route, hidePhysicalSource, revision),
+            timeout);
+    }
+
+    internal static byte[] BuildHmdSnapshotPayload(
+        RouteConfiguration? route,
+        bool hidePhysicalSource,
+        ulong revision)
+    {
+        bool enabled = route?.Enabled == true;
+        bool manualPose = enabled && route!.PoseSourceKind == PoseSourceKind.Manual;
+        byte[] sourcePath = enabled
+            ? Encoding.UTF8.GetBytes(route!.SourceDevicePath ?? string.Empty)
+            : Array.Empty<byte>();
+        byte[] rotationSourcePath = enabled && route!.SplitPoseSource
+            ? Encoding.UTF8.GetBytes(route.RotationSourceDevicePath)
+            : Array.Empty<byte>();
+        if ((enabled && route!.Mode != RouteMode.VirtualHmd) ||
+            (enabled && manualPose && (sourcePath.Length != 0 || rotationSourcePath.Length != 0 ||
+                route!.SplitPoseSource || hidePhysicalSource)) ||
+            (enabled && !manualPose && sourcePath.Length == 0) ||
+            sourcePath.Length > ushort.MaxValue || rotationSourcePath.Length > ushort.MaxValue ||
+            sourcePath.Length + rotationSourcePath.Length >
+                DriverControlProtocol.MaximumPayloadBytes - DriverControlProtocol.ApplyHmdSnapshotFixedBytes)
+        {
+            throw new IOException("虚拟头显快照无效。");
+        }
+
+        using var payloadStream = new MemoryStream();
+        using (var writer = new BinaryWriter(payloadStream, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(enabled ? (byte)1 : (byte)0);
+            writer.Write(enabled ? (byte)route!.VirtualDeviceSlot : byte.MaxValue);
+            writer.Write(enabled && hidePhysicalSource ? (byte)1 : (byte)0);
+            writer.Write(manualPose ? (byte)1 : (byte)0);
+            writer.Write(revision);
+            writer.Write((ushort)sourcePath.Length);
+            writer.Write((ushort)rotationSourcePath.Length);
+            writer.Write(sourcePath);
+            writer.Write(rotationSourcePath);
+            WriteOffsetForOpenVr(
+                writer,
+                manualPose
+                    ? route!.ManualPose ?? PoseOffset.DefaultManualPose()
+                    : route?.Offset ?? PoseOffset.Identity());
+        }
+        return payloadStream.ToArray();
     }
 
     public static string ApplyControllerInput(

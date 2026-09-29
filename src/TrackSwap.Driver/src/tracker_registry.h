@@ -11,6 +11,7 @@
 #include "pose_hiding_hook.h"
 #include "virtual_tracker.h"
 #include "virtual_controller.h"
+#include "virtual_hmd_prototype.h"
 
 namespace trackswap
 {
@@ -24,6 +25,7 @@ public:
     bool QueueSnapshot(
         std::uint8_t slot,
         bool enabled,
+        bool manualPose,
         const char* sourceDevicePath,
         const char* rotationSourceDevicePath,
         const char* targetDevicePath,
@@ -34,12 +36,17 @@ public:
         ControllerHand hand,
         bool enabled,
         std::uint8_t logicalSlot,
+        bool manualPose,
         const char* sourceDevicePath,
         const char* rotationSourceDevicePath,
         bool hidePhysicalSource,
         std::int32_t handSelectionPriority,
         const pose_math::RigidOffset& offset,
         std::uint64_t revision);
+    bool QueueHmdSnapshot(bool enabled, std::uint8_t logicalSlot, bool manualPose, const char* sourceDevicePath,
+        const char* rotationSourceDevicePath, bool hidePhysicalSource,
+        const pose_math::RigidOffset& offset, std::uint64_t revision);
+    void AttachVirtualHmd(VirtualHmd* virtualHmd);
     bool QueueControllerInput(const control_protocol::ControllerInputState& input);
     control_protocol::TelemetryBatch GetTelemetry() const;
     control_protocol::HapticFeedbackBatch GetHapticEvents();
@@ -74,6 +81,11 @@ private:
     std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> trackerHideRotationSourcePaths_{};
     std::array<std::array<char, MaximumDevicePathBytes>, control_protocol::MaximumRoutes> controllerHideRotationSourcePaths_{};
     std::array<std::uint8_t, 2> controllerHideLogicalSlots_{{255, 255}};
+    bool hmdHideSourceRequested_ = false;
+    std::uint8_t hmdHideLogicalSlot_ = 255;
+    std::array<char, MaximumDevicePathBytes> hmdHideSourcePath_{};
+    std::array<char, MaximumDevicePathBytes> hmdHideRotationSourcePath_{};
+    VirtualHmd* virtualHmd_ = nullptr;
     std::mutex hideSourceMutex_;
     PoseHidingHook poseHidingHook_;
 

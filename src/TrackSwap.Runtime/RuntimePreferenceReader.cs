@@ -8,8 +8,7 @@ internal static class RuntimePreferenceReader
     public static RuntimePreferences Read()
     {
         string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TrackSwap",
+            TrackSwapDataPaths.ActiveDataDirectory,
             "ui-preferences.json");
         if (!File.Exists(path))
         {

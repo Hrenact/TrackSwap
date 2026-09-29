@@ -6,11 +6,21 @@ using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using TrackSwap.Models;
+using TrackSwap.Protocol;
 
 namespace TrackSwap.Services
 {
     public sealed class SteamVrSettingsService
     {
+        public bool ReadVirtualHmdEnabled(string settingsPath)
+        {
+            if (string.IsNullOrWhiteSpace(settingsPath) || !File.Exists(settingsPath))
+            {
+                return false;
+            }
+            return (bool?)ReadRoot(settingsPath)["driver_trackswap"]?["enableVirtualHmd"] == true;
+        }
+
         public IReadOnlyList<DeviceOption> ReadKnownSources(string settingsPath)
         {
             JObject root = ReadRoot(settingsPath);
@@ -121,13 +131,13 @@ namespace TrackSwap.Services
             string fullSettingsPath = Path.GetFullPath(settingsPath);
             string directory = Path.GetDirectoryName(fullSettingsPath);
             string pattern = Path.GetFileName(fullSettingsPath) + ".trackswap-*.backup";
-            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-            {
-                return Array.Empty<BackupOption>();
-            }
-
             var backups = new List<BackupOption>();
-            foreach (string backupPath in Directory.GetFiles(directory, pattern, SearchOption.TopDirectoryOnly))
+            string managedBackupDirectory = GetManagedSteamVrBackupDirectory();
+            IEnumerable<string> backupPaths = new[] { managedBackupDirectory, directory }
+                .Where(candidate => !string.IsNullOrWhiteSpace(candidate) && Directory.Exists(candidate))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .SelectMany(candidate => Directory.GetFiles(candidate, pattern, SearchOption.TopDirectoryOnly));
+            foreach (string backupPath in backupPaths)
             {
                 var file = new FileInfo(backupPath);
                 try
@@ -174,16 +184,68 @@ namespace TrackSwap.Services
                 .ToList();
         }
 
+        public int MigrateLegacyBackups(string settingsPath)
+        {
+            if (string.IsNullOrWhiteSpace(settingsPath))
+            {
+                return 0;
+            }
+
+            string fullSettingsPath = Path.GetFullPath(settingsPath);
+            string sourceDirectory = Path.GetDirectoryName(fullSettingsPath);
+            string destinationDirectory = GetManagedSteamVrBackupDirectory();
+            if (string.IsNullOrWhiteSpace(sourceDirectory) ||
+                !Directory.Exists(sourceDirectory) ||
+                string.Equals(sourceDirectory, destinationDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+
+            string pattern = Path.GetFileName(fullSettingsPath) + ".trackswap-*.backup";
+            string[] sourcePaths = Directory.GetFiles(sourceDirectory, pattern, SearchOption.TopDirectoryOnly);
+            if (sourcePaths.Length == 0)
+            {
+                return 0;
+            }
+
+            Directory.CreateDirectory(destinationDirectory);
+            int migrated = 0;
+            foreach (string sourcePath in sourcePaths)
+            {
+                string destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(sourcePath));
+                if (File.Exists(destinationPath))
+                {
+                    destinationPath = Path.Combine(
+                        destinationDirectory,
+                        Path.GetFileNameWithoutExtension(sourcePath) + "-migrated-" +
+                        Guid.NewGuid().ToString("N") + Path.GetExtension(sourcePath));
+                }
+
+                File.Copy(sourcePath, destinationPath, false);
+                if (new FileInfo(sourcePath).Length != new FileInfo(destinationPath).Length ||
+                    !File.ReadAllBytes(sourcePath).SequenceEqual(File.ReadAllBytes(destinationPath)))
+                {
+                    File.Delete(destinationPath);
+                    throw new IOException("SteamVR 配置备份复制校验失败：" + Path.GetFileName(sourcePath));
+                }
+                File.Delete(sourcePath);
+                migrated++;
+            }
+            return migrated;
+        }
+
         public string RestoreTrackingOverrides(string settingsPath, string backupPath)
         {
             string fullSettingsPath = Path.GetFullPath(settingsPath);
             string fullBackupPath = Path.GetFullPath(backupPath);
             string settingsDirectory = Path.GetDirectoryName(fullSettingsPath);
             string backupDirectory = Path.GetDirectoryName(fullBackupPath);
+            string managedBackupDirectory = GetManagedSteamVrBackupDirectory();
             string expectedPrefix = Path.GetFileName(fullSettingsPath) + ".trackswap-";
             string backupFileName = Path.GetFileName(fullBackupPath);
 
-            if (!string.Equals(settingsDirectory, backupDirectory, StringComparison.OrdinalIgnoreCase)
+            if ((!string.Equals(settingsDirectory, backupDirectory, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(managedBackupDirectory, backupDirectory, StringComparison.OrdinalIgnoreCase))
                 || !backupFileName.StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase)
                 || !backupFileName.EndsWith(".backup", StringComparison.OrdinalIgnoreCase))
             {
@@ -306,13 +368,20 @@ namespace TrackSwap.Services
         private static string WriteWithBackup(string settingsPath, JObject root)
         {
             string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
-            string backupPath = settingsPath + ".trackswap-" + timestamp + ".backup";
+            string backupDirectory = GetManagedSteamVrBackupDirectory();
+            Directory.CreateDirectory(backupDirectory);
+            string backupPath = Path.Combine(
+                backupDirectory,
+                Path.GetFileName(settingsPath) + ".trackswap-" + timestamp + ".backup");
             string temporaryPath = settingsPath + ".trackswap.tmp";
 
             int duplicateIndex = 1;
             while (File.Exists(backupPath))
             {
-                backupPath = settingsPath + ".trackswap-" + timestamp + "-" + duplicateIndex + ".backup";
+                backupPath = Path.Combine(
+                    backupDirectory,
+                    Path.GetFileName(settingsPath) + ".trackswap-" + timestamp + "-" +
+                    duplicateIndex + ".backup");
                 duplicateIndex++;
             }
 
@@ -333,6 +402,14 @@ namespace TrackSwap.Services
             }
 
             return backupPath;
+        }
+
+        private static string GetManagedSteamVrBackupDirectory()
+        {
+            return Path.Combine(
+                TrackSwapDataPaths.ActiveDataDirectory,
+                "Backups",
+                "SteamVR");
         }
 
         private static JObject ReadRoot(string settingsPath)

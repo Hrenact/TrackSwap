@@ -31,6 +31,7 @@ public:
     bool QueueSnapshot(
         bool enabled,
         std::uint8_t logicalSlot,
+        bool manualPose,
         const char* sourceDevicePath,
         const char* rotationSourceDevicePath,
         std::int32_t handSelectionPriority,
@@ -80,6 +81,8 @@ private:
     std::uint32_t rotationSearchCountdown_ = 0;
     bool activeEnabled_ = false;
     bool pendingEnabled_ = false;
+    bool activeManualPose_ = false;
+    bool pendingManualPose_ = false;
     bool hasPendingSnapshot_ = false;
     std::uint64_t pendingRevision_ = 0;
     std::uint64_t latestAcceptedRevision_ = 0;

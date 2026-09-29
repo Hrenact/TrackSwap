@@ -85,6 +85,7 @@ void VirtualTracker::QueueOffset(const pose_math::RigidOffset& offset)
 
 bool VirtualTracker::QueueSnapshot(
     bool enabled,
+    bool manualPose,
     const char* sourceDevicePath,
     const char* rotationSourceDevicePath,
     const char* targetDevicePath,
@@ -102,6 +103,7 @@ bool VirtualTracker::QueueSnapshot(
     }
 
     pendingEnabled_ = enabled;
+    pendingManualPose_ = enabled && manualPose;
     hasPendingEnabled_ = true;
     pendingSourceDevicePath_.fill('\0');
     pendingRotationSourceDevicePath_.fill('\0');
@@ -272,7 +274,7 @@ void VirtualTracker::Update()
         targetSearchCountdown_ = 0;
     }
 
-    if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid)
+    if (!activeManualPose_ && sourceId_ == vr::k_unTrackedDeviceIndexInvalid)
     {
         if (searchCountdown_ == 0)
         {
@@ -285,7 +287,7 @@ void VirtualTracker::Update()
         }
     }
 
-    if (rotationSourceDevicePath_[0] != '\0' &&
+    if (!activeManualPose_ && rotationSourceDevicePath_[0] != '\0' &&
         rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid)
     {
         if (rotationSearchCountdown_ == 0)
@@ -313,17 +315,22 @@ void VirtualTracker::Update()
         }
     }
 
-    if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
+    if (!activeManualPose_ && sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
     {
         PoseHidingHook::RestoreRawPose(sourceId_, rawPoses_[sourceId_]);
     }
-    if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid && rotationSourceId_ != sourceId_)
+    if (!activeManualPose_ && rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid && rotationSourceId_ != sourceId_)
     {
         PoseHidingHook::RestoreRawPose(rotationSourceId_, rawPoses_[rotationSourceId_]);
     }
 
     const bool splitSource = rotationSourceDevicePath_[0] != '\0';
-    if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid ||
+    if (activeManualPose_)
+    {
+        lastPose_ = pose_math::ApplyOffset(pose_math::MakeValidIdentityPose(), activeOffset_);
+        SetHealth(true);
+    }
+    else if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid ||
         (splitSource && rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid))
     {
         // Keep an enabled proxy registered while its physical source is absent.
@@ -440,9 +447,11 @@ void VirtualTracker::ApplyPendingSource()
     if (enabledChanged)
     {
         activeEnabled_ = pendingEnabled;
+        activeManualPose_ = pendingEnabled && pendingManualPose_;
         if (!activeEnabled_)
         {
             ConfigureSource(nullptr);
+            activeManualPose_ = false;
             rotationSourceDevicePath_.fill('\0');
             rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
             targetDevicePath_.fill('\0');
@@ -611,7 +620,11 @@ void VirtualTracker::PublishTelemetry()
         snapshot.sequence = telemetry_.sequence + 1;
     }
     snapshot.appliedRevision = appliedSnapshotRevision_;
-    if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
+    if (activeManualPose_)
+    {
+        snapshot.source = ToTelemetryPose(pose_math::MakeValidIdentityPose());
+    }
+    else if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid)
     {
         snapshot.source = ToTelemetryPose(rawPoses_[sourceId_]);
     }

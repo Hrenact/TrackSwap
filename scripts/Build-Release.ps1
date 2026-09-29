@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]{3}$')]
-    [string]$Version = 'v009',
+    [string]$Version = 'v010',
     [switch]$Clean
 )
 
@@ -33,8 +33,15 @@ dotnet build (Join-Path $repositoryRoot 'TrackSwap.sln') -c Release
 if ($LASTEXITCODE -ne 0) { throw "Managed build failed with exit code $LASTEXITCODE." }
 dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.Protocol.Tests\TrackSwap.Protocol.Tests.csproj') -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw "Protocol tests failed with exit code $LASTEXITCODE." }
+dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.Tests\TrackSwap.Tests.csproj') -c Release --no-build
+if ($LASTEXITCODE -ne 0) { throw "UI storage tests failed with exit code $LASTEXITCODE." }
 dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.Runtime.Tests\TrackSwap.Runtime.Tests.csproj') -c Release
 if ($LASTEXITCODE -ne 0) { throw "Runtime tests failed with exit code $LASTEXITCODE." }
+dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.HapticPhoneDiagnostic.Tests\TrackSwap.HapticPhoneDiagnostic.Tests.csproj') -c Release --no-build
+if ($LASTEXITCODE -ne 0) { throw "Phone haptic diagnostic tests failed with exit code $LASTEXITCODE." }
+& powershell -NoProfile -ExecutionPolicy Bypass -File `
+    (Join-Path $repositoryRoot 'tests\InstallerRegistration.Tests.ps1')
+if ($LASTEXITCODE -ne 0) { throw "Installer registration tests failed with exit code $LASTEXITCODE." }
 
 & (Join-Path $PSScriptRoot 'Build-Driver.ps1') `
     -Configuration Release `
@@ -49,6 +56,11 @@ $runtimeDirectory = Join-Path $stageDirectory 'runtime'
 dotnet publish (Join-Path $repositoryRoot 'src\TrackSwap.Runtime\TrackSwap.Runtime.csproj') `
     -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $runtimeDirectory
 if ($LASTEXITCODE -ne 0) { throw "Runtime publish failed with exit code $LASTEXITCODE." }
+
+# Symbols are useful in CI artifacts, but the end-user ZIP and Steam depot must
+# not ship developer PDBs or expose source-path metadata.
+Get-ChildItem -LiteralPath $stageDirectory -Filter '*.pdb' -Recurse -File |
+    Remove-Item -Force
 
 New-Item -ItemType Directory -Path (Join-Path $stageDirectory 'driver') -Force | Out-Null
 Copy-Item -LiteralPath $driverPackageDirectory -Destination (Join-Path $stageDirectory 'driver\trackswap') -Recurse -Force

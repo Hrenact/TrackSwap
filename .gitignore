@@ -11,4 +11,5 @@ packages/
 publish/
 artifacts/
 .deps/
+UserData/
 CMakeUserPresets.json

@@ -21,8 +21,7 @@ namespace TrackSwap.Services
         public DeviceHistoryService(string filePath = null)
         {
             _filePath = filePath ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "TrackSwap",
+                TrackSwapDataPaths.ActiveDataDirectory,
                 "device-history.json");
         }
 

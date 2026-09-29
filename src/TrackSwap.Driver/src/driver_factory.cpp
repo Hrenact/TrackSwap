@@ -6,6 +6,8 @@
 #include "tracker_registry.h"
 #include "control_server.h"
 #include "runtime_launcher.h"
+#include "virtual_display_redirect.h"
+#include "virtual_hmd_prototype.h"
 
 namespace
 {
@@ -16,6 +18,33 @@ public:
     {
         VR_INIT_SERVER_DRIVER_CONTEXT(driverContext);
         trackerRegistry_.InitializePoseHiding(driverContext);
+        trackerRegistry_.AttachVirtualHmd(&virtualHmd_);
+
+        vr::EVRSettingsError virtualHmdSettingError = vr::VRSettingsError_None;
+        const bool enableVirtualHmd = vr::VRSettings()->GetBool(
+            "driver_trackswap",
+            "enableVirtualHmd",
+            &virtualHmdSettingError);
+        if (virtualHmdSettingError == vr::VRSettingsError_None && enableVirtualHmd)
+        {
+            if (virtualDisplayRedirect_.Initialize())
+            {
+                virtualDisplayRedirectRegistered_ = vr::VRServerDriverHost()->TrackedDeviceAdded(
+                    trackswap::VirtualDisplayRedirect::SerialNumber,
+                    vr::TrackedDeviceClass_DisplayRedirect,
+                    &virtualDisplayRedirect_);
+            }
+            virtualHmdRegistered_ = vr::VRServerDriverHost()->TrackedDeviceAdded(
+                trackswap::VirtualHmd::SerialNumber,
+                vr::TrackedDeviceClass_HMD,
+                &virtualHmd_);
+            vr::VRDriverLog()->Log(virtualHmdRegistered_
+                ? "TrackSwap registered the virtual HMD."
+                : "TrackSwap failed to register the virtual HMD.");
+            vr::VRDriverLog()->Log(virtualDisplayRedirectRegistered_
+                ? "TrackSwap registered the virtual display redirect."
+                : "TrackSwap failed to register the virtual display redirect.");
+        }
         if (!controlServer_.Start(&trackerRegistry_))
         {
             vr::VRDriverLog()->Log("TrackSwap failed to start its driver control endpoint.");
@@ -39,6 +68,9 @@ public:
     {
         controlServer_.Stop();
         trackerRegistry_.ShutdownPoseHiding();
+        virtualHmdRegistered_ = false;
+        virtualDisplayRedirectRegistered_ = false;
+        virtualDisplayRedirect_.Shutdown();
         VR_CLEANUP_SERVER_DRIVER_CONTEXT();
     }
 
@@ -50,6 +82,10 @@ public:
     void RunFrame() override
     {
         trackerRegistry_.RunFrame();
+        if (virtualHmdRegistered_)
+        {
+            virtualHmd_.Update();
+        }
     }
 
     bool ShouldBlockStandbyMode() override
@@ -68,6 +104,10 @@ public:
 private:
     trackswap::TrackerRegistry trackerRegistry_;
     trackswap::ControlServer controlServer_;
+    trackswap::VirtualHmd virtualHmd_;
+    trackswap::VirtualDisplayRedirect virtualDisplayRedirect_;
+    bool virtualHmdRegistered_ = false;
+    bool virtualDisplayRedirectRegistered_ = false;
 };
 
 TrackSwapServerProvider g_serverProvider;

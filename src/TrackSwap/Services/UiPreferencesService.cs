@@ -18,10 +18,11 @@ namespace TrackSwap.Services
         public UiPreferencesService(string filePath = null)
         {
             _filePath = filePath ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "TrackSwap",
+                TrackSwapDataPaths.ActiveDataDirectory,
                 "ui-preferences.json");
         }
+
+        public string FilePath => _filePath;
 
         public UiPreferences Load()
         {

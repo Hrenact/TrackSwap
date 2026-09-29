@@ -5,7 +5,6 @@ using System.Windows;
 using System.Windows.Controls;
 using TrackSwap.Models;
 using TrackSwap.Services;
-using MessageBox = TrackSwap.AppDialog;
 
 namespace TrackSwap
 {
@@ -44,7 +43,7 @@ namespace TrackSwap
         {
             if (_statusService.IsRunning())
             {
-                MessageBox.Show(this, "请先完全退出 SteamVR，避免退出时覆盖恢复结果。", "SteamVR 正在运行", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, "请先完全退出 SteamVR，避免退出时覆盖恢复结果。", "SteamVR 正在运行", MessageBoxButton.OK, MessageBoxImage.Warning);
                 RuntimeWarningText.Text = "请先退出 SteamVR 后再恢复";
                 return;
             }
@@ -55,7 +54,7 @@ namespace TrackSwap
                 return;
             }
 
-            MessageBoxResult result = MessageBox.Show(
+            MessageBoxResult result = AppDialog.Show(
                 this,
                 "恢复 " + backup.DisplayTime + " 的位姿配置？\n\n"
                     + backup.Summary + "\n\n"
@@ -72,7 +71,7 @@ namespace TrackSwap
             try
             {
                 string safetyBackup = _settingsService.RestoreTrackingOverrides(_settingsPath, backup.FilePath);
-                MessageBox.Show(
+                AppDialog.Show(
                     this,
                     "位姿配置已恢复。\n\n恢复前快照：" + Path.GetFileName(safetyBackup),
                     "恢复完成",
@@ -82,7 +81,7 @@ namespace TrackSwap
             }
             catch (Exception exception)
             {
-                MessageBox.Show(this, exception.Message, "恢复失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, "恢复失败", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

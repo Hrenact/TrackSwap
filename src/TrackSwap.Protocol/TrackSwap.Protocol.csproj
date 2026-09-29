@@ -7,4 +7,7 @@
     <AssemblyName>TrackSwap.Protocol</AssemblyName>
     <RootNamespace>TrackSwap.Protocol</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TrackSwap.Protocol.Tests" />
+  </ItemGroup>
 </Project>

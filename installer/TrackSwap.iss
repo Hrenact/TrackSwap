@@ -1,5 +1,5 @@
 #ifndef TrackSwapVersion
-  #define TrackSwapVersion "v009"
+  #define TrackSwapVersion "v010"
 #endif
 #ifndef SourceDir
   #error SourceDir must point to a complete TrackSwap release directory.
@@ -57,9 +57,6 @@ Name: "{autodesktop}\TrackSwap"; Filename: "{app}\TrackSwap.exe"; WorkingDir: "{
 
 [Run]
 Filename: "{app}\TrackSwap.exe"; Description: "打开 TrackSwap"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
-
-[UninstallDelete]
-Type: filesandordirs; Name: "{localappdata}\TrackSwap"
 
 [Code]
 function PowerShellPath(): String;
@@ -146,7 +143,7 @@ begin
   begin
     ManifestArguments := '-Mode Uninstall -ManifestPath "' +
       ExpandConstant('{app}\TrackSwap.vrmanifest') + '" -JsonLibraryPath "' +
-      ExpandConstant('{app}\Newtonsoft.Json.dll') + '" -PurgeUserData';
+      ExpandConstant('{app}\Newtonsoft.Json.dll') + '"';
     if not RunPowerShellScript(
       ExpandConstant('{app}\scripts\Manage-SteamVrRegistration.ps1'),
       ManifestArguments) then

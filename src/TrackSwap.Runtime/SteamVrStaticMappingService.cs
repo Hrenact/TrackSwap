@@ -9,13 +9,19 @@ internal sealed class SteamVrStaticMappingService
 {
     private readonly Func<string?> settingsPathProvider;
     private readonly Func<bool> steamVrRunning;
+    private readonly Func<string> backupDirectoryProvider;
 
     public SteamVrStaticMappingService(
         Func<string?>? settingsPathProvider = null,
-        Func<bool>? steamVrRunning = null)
+        Func<bool>? steamVrRunning = null,
+        Func<string>? backupDirectoryProvider = null)
     {
         this.settingsPathProvider = settingsPathProvider ?? FindSettingsPath;
         this.steamVrRunning = steamVrRunning ?? RuntimeLifecycleMonitor.IsSteamVrRunning;
+        this.backupDirectoryProvider = backupDirectoryProvider ?? (() => Path.Combine(
+            TrackSwapDataPaths.ActiveDataDirectory,
+            "Backups",
+            "SteamVR"));
     }
 
     public StaticMappingReconciliationResult Reconcile(RuntimeConfiguration configuration)
@@ -29,7 +35,8 @@ internal sealed class SteamVrStaticMappingService
         if (string.IsNullOrWhiteSpace(settingsPath) || !File.Exists(settingsPath))
         {
             bool requiresSettingsFile = configuration.Routes.Any(route =>
-                route.PendingDeletion || (route.Enabled && route.Mode == RouteMode.ReplaceTarget));
+                route.PendingDeletion || (route.Enabled &&
+                    (route.Mode == RouteMode.ReplaceTarget || route.Mode == RouteMode.VirtualHmd)));
             if (!requiresSettingsFile)
             {
                 return StaticMappingReconciliationResult.Completed;
@@ -39,6 +46,16 @@ internal sealed class SteamVrStaticMappingService
 
         JObject root = JObject.Parse(File.ReadAllText(settingsPath));
         JObject original = (JObject)root.DeepClone();
+        JObject? driverSettings = root["driver_trackswap"] as JObject;
+        if (driverSettings == null)
+        {
+            driverSettings = new JObject();
+            root["driver_trackswap"] = driverSettings;
+        }
+        driverSettings.Remove("enableVirtualHmdPrototype");
+        bool enableVirtualHmd = configuration.Routes.Any(route =>
+            route.Enabled && !route.PendingDeletion && route.Mode == RouteMode.VirtualHmd);
+        driverSettings["enableVirtualHmd"] = enableVirtualHmd;
         JObject? overrides = root["TrackingOverrides"] as JObject;
         List<RouteConfiguration> pendingDeletions = configuration.Routes
             .Where(route => route.PendingDeletion)
@@ -173,7 +190,7 @@ internal sealed class SteamVrStaticMappingService
         return null;
     }
 
-    private static void WriteIfChanged(string settingsPath, JObject original, JObject updated)
+    private void WriteIfChanged(string settingsPath, JObject original, JObject updated)
     {
         if (JToken.DeepEquals(original, updated))
         {
@@ -181,12 +198,19 @@ internal sealed class SteamVrStaticMappingService
         }
 
         string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
-        string backupPath = settingsPath + ".trackswap-" + timestamp + ".backup";
+        string backupDirectory = backupDirectoryProvider();
+        Directory.CreateDirectory(backupDirectory);
+        string backupPath = Path.Combine(
+            backupDirectory,
+            Path.GetFileName(settingsPath) + ".trackswap-" + timestamp + ".backup");
         string temporaryPath = settingsPath + ".trackswap.tmp";
         int duplicateIndex = 1;
         while (File.Exists(backupPath))
         {
-            backupPath = settingsPath + ".trackswap-" + timestamp + "-" + duplicateIndex + ".backup";
+            backupPath = Path.Combine(
+                backupDirectory,
+                Path.GetFileName(settingsPath) + ".trackswap-" + timestamp + "-" +
+                duplicateIndex + ".backup");
             duplicateIndex++;
         }
 

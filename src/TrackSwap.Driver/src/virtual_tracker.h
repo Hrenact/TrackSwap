@@ -24,6 +24,7 @@ public:
     void QueueOffset(const pose_math::RigidOffset& offset);
     bool QueueSnapshot(
         bool enabled,
+        bool manualPose,
         const char* sourceDevicePath,
         const char* rotationSourceDevicePath,
         const char* targetDevicePath,
@@ -74,6 +75,8 @@ private:
     bool renderModelVisible_ = true;
     bool activeEnabled_ = false;
     bool pendingEnabled_ = false;
+    bool activeManualPose_ = false;
+    bool pendingManualPose_ = false;
     bool hasPendingEnabled_ = false;
     bool hasPendingSource_ = false;
     bool hasPendingOffset_ = false;

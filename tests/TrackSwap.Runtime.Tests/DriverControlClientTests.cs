@@ -41,4 +41,58 @@ public sealed class DriverControlClientTests
         Assert.Equal(120.0f, feedback.Frequency);
         Assert.Equal(0.75f, feedback.Amplitude);
     }
+
+    [Fact]
+    public void EncodesExplicitManualHmdPoseWithoutDevicePaths()
+    {
+        var route = new RouteConfiguration
+        {
+            Enabled = true,
+            Mode = RouteMode.VirtualHmd,
+            VirtualDeviceSlot = 4,
+            PoseSourceKind = PoseSourceKind.Manual,
+            SourceDevicePath = string.Empty,
+            ManualPose = new PoseOffset
+            {
+                TranslationX = 25.0,
+                TranslationY = 175.0,
+                TranslationZ = -50.0,
+                RotationW = 1.0
+            }
+        };
+
+        byte[] payload = DriverControlClient.BuildHmdSnapshotPayload(route, false, 123);
+        using var reader = new BinaryReader(new MemoryStream(payload));
+
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal(4, reader.ReadByte());
+        Assert.Equal(0, reader.ReadByte());
+        Assert.Equal(1, reader.ReadByte());
+        Assert.Equal((ulong)123, reader.ReadUInt64());
+        Assert.Equal(0, reader.ReadUInt16());
+        Assert.Equal(0, reader.ReadUInt16());
+        Assert.Equal(0.25, reader.ReadDouble(), 12);
+        Assert.Equal(1.75, reader.ReadDouble(), 12);
+        Assert.Equal(-0.5, reader.ReadDouble(), 12);
+        Assert.Equal(0.0, reader.ReadDouble(), 12);
+        Assert.Equal(0.0, reader.ReadDouble(), 12);
+        Assert.Equal(0.0, reader.ReadDouble(), 12);
+        Assert.Equal(1.0, reader.ReadDouble(), 12);
+        Assert.Equal(DriverControlProtocol.ApplyHmdSnapshotFixedBytes, payload.Length);
+    }
+
+    [Fact]
+    public void RejectsImplicitSourceFreeHmdSnapshot()
+    {
+        var route = new RouteConfiguration
+        {
+            Enabled = true,
+            Mode = RouteMode.VirtualHmd,
+            PoseSourceKind = PoseSourceKind.Device,
+            SourceDevicePath = string.Empty
+        };
+
+        Assert.Throws<IOException>(() =>
+            DriverControlClient.BuildHmdSnapshotPayload(route, false, 1));
+    }
 }

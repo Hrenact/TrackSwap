@@ -44,6 +44,10 @@ try {
     "trackswap_controller_250820_NeedToUpdateAutosave_steamvrinput": false,
     "oculus_touch_250820_CurrentURL_steamvrinput": "keep-this-binding"
   },
+  "driver_trackswap": {
+    "enableVirtualHmd": true,
+    "unrelated": "keep"
+  },
   "other": { "keep": true }
 }
 '@ | Set-Content `
@@ -76,10 +80,40 @@ try {
     }
 
     & (Join-Path $repositoryRoot 'scripts\Manage-SteamVrRegistration.ps1') `
+        -Mode CleanupMappings `
+        -ManifestPath $manifestPath `
+        -JsonLibraryPath $jsonLibrary
+
+    $resetApp = Get-Content `
+        -LiteralPath (Join-Path $configDirectory 'appconfig.json') `
+        -Raw | ConvertFrom-Json
+    $resetSettings = Get-Content `
+        -LiteralPath (Join-Path $configDirectory 'steamvr.vrsettings') `
+        -Raw | ConvertFrom-Json
+    if (@($resetApp.manifest_paths).Count -ne 2 -or
+        $resetApp.manifest_paths -notcontains $manifestPath -or
+        -not (Test-Path -LiteralPath (
+            Join-Path $configDirectory 'vrappconfig\com.hrenact.trackswap.vrappconfig'))) {
+        throw 'Data reset unexpectedly removed TrackSwap integration registration.'
+    }
+    if ($resetSettings.TrackingOverrides.PSObject.Properties.Name -contains
+            '/devices/trackswap/TRKSWAP-PROXY-00' -or
+        $resetSettings.TrackingOverrides.'/devices/other/source' -ne
+            '/devices/other/target' -or
+        $resetSettings.'steam.app.438100'.PSObject.Properties.Name -contains
+            'trackswap_controller_250820_CurrentURL_steamvrinput' -or
+        $resetSettings.'steam.app.438100'.oculus_touch_250820_CurrentURL_steamvrinput -ne
+            'keep-this-binding' -or
+        $resetSettings.driver_trackswap.enableVirtualHmd -ne $false -or
+        $resetSettings.driver_trackswap.unrelated -ne 'keep') {
+        throw ('Data reset mapping cleanup assertions failed: ' +
+            ($resetSettings | ConvertTo-Json -Depth 8 -Compress))
+    }
+
+    & (Join-Path $repositoryRoot 'scripts\Manage-SteamVrRegistration.ps1') `
         -Mode Uninstall `
         -ManifestPath $manifestPath `
-        -JsonLibraryPath $jsonLibrary `
-        -PurgeUserData
+        -JsonLibraryPath $jsonLibrary
 
     $uninstalledApp = Get-Content `
         -LiteralPath (Join-Path $configDirectory 'appconfig.json') `
@@ -101,6 +135,8 @@ try {
             'trackswap_controller_250820_NeedToUpdateAutosave_steamvrinput' -or
         $uninstalledSettings.'steam.app.438100'.oculus_touch_250820_CurrentURL_steamvrinput -ne
             'keep-this-binding' -or
+        $uninstalledSettings.driver_trackswap.enableVirtualHmd -ne $false -or
+        $uninstalledSettings.driver_trackswap.unrelated -ne 'keep' -or
         -not $uninstalledSettings.other.keep) {
         throw ('Tracking override cleanup assertions failed: ' +
             ($uninstalledSettings | ConvertTo-Json -Depth 8 -Compress))
@@ -109,8 +145,9 @@ try {
         Join-Path $configDirectory 'vrappconfig\com.hrenact.trackswap.vrappconfig')) {
         throw 'TrackSwap vrappconfig remained after uninstall.'
     }
-    if (Test-Path -LiteralPath (Join-Path $localAppData 'TrackSwap')) {
-        throw 'TrackSwap user data remained after uninstall.'
+    if (-not (Test-Path -LiteralPath (
+        Join-Path $localAppData 'TrackSwap\runtime-config.json'))) {
+        throw 'Ordinary uninstall unexpectedly removed TrackSwap user data.'
     }
 
     Write-Host 'Installer registration tests passed.'

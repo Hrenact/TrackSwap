@@ -118,4 +118,93 @@ public sealed class ConfigurationStoreTests
             }
         }
     }
+
+    [Fact]
+    public void LoadMigratesSourceFreeVirtualHmdBootstrapToExplicitManualPose()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "trackswap-tests", Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "runtime.json");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var configuration = new RuntimeConfiguration
+            {
+                Revision = 42,
+                Routes = new List<RouteConfiguration>
+                {
+                    new RouteConfiguration
+                    {
+                        RouteId = "hmd",
+                        Name = "Virtual HMD",
+                        Mode = RouteMode.VirtualHmd,
+                        SourceDevicePath = string.Empty,
+                        TargetDevicePath = string.Empty,
+                        Offset = PoseOffset.Identity()
+                    }
+                }
+            };
+            JObject root = JObject.FromObject(configuration, JsonSerializer.Create(RuntimeJson.Settings));
+            JObject route = Assert.IsType<JObject>(Assert.IsType<JArray>(root["routes"])[0]);
+            Assert.True(route.Remove("poseSourceKind"));
+            Assert.True(route.Remove("manualPose"));
+            File.WriteAllText(path, root.ToString(Formatting.None));
+
+            RuntimeConfiguration loaded = new ConfigurationStore(path).Load();
+
+            RouteConfiguration loadedRoute = Assert.Single(loaded.Routes);
+            Assert.Equal(PoseSourceKind.Manual, loadedRoute.PoseSourceKind);
+            Assert.Equal(0.0, loadedRoute.ManualPose.TranslationY);
+            JObject persisted = JObject.Parse(File.ReadAllText(path));
+            Assert.Equal((int)PoseSourceKind.Manual, persisted["routes"]?[0]?["poseSourceKind"]?.Value<int>());
+            Assert.Equal(0.0, persisted["routes"]?[0]?["manualPose"]?["translationY"]?.Value<double>());
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void LoadNormalizesTheRetiredRaisedManualPoseDefaultToOrigin()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "trackswap-tests", Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "runtime.json");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var configuration = new RuntimeConfiguration
+            {
+                Revision = 43,
+                Routes = new List<RouteConfiguration>
+                {
+                    new RouteConfiguration
+                    {
+                        RouteId = "tracker",
+                        Name = "Manual tracker",
+                        Mode = RouteMode.DirectProxy,
+                        PoseSourceKind = PoseSourceKind.Manual,
+                        SourceDevicePath = string.Empty,
+                        ManualPose = new PoseOffset { TranslationY = 170.0 }
+                    }
+                }
+            };
+            File.WriteAllText(path, JsonConvert.SerializeObject(configuration, RuntimeJson.Settings));
+
+            RuntimeConfiguration loaded = new ConfigurationStore(path).Load();
+
+            Assert.Equal(0.0, Assert.Single(loaded.Routes).ManualPose.TranslationY);
+            JObject persisted = JObject.Parse(File.ReadAllText(path));
+            Assert.Equal(0.0, persisted["routes"]?[0]?["manualPose"]?["translationY"]?.Value<double>());
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
 }

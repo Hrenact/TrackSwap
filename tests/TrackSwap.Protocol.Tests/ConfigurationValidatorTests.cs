@@ -29,6 +29,28 @@ public sealed class ConfigurationValidatorTests
     }
 
     [Fact]
+    public void VirtualHmdDoesNotRequireTargetButRejectsASecondHmd()
+    {
+        var configuration = CreateConfiguration();
+        configuration.Routes[0].Mode = RouteMode.VirtualHmd;
+        configuration.Routes[0].TargetDevicePath = string.Empty;
+        configuration.Routes.Add(new RouteConfiguration
+        {
+            RouteId = "second-hmd",
+            Name = "Second HMD",
+            Mode = RouteMode.VirtualHmd,
+            VirtualDeviceSlot = 1,
+            SourceDevicePath = "/devices/test/second-hmd-source",
+            Offset = PoseOffset.Identity()
+        });
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(errors, error => error.Contains("只能创建一个虚拟头显", StringComparison.Ordinal));
+        Assert.Equal("TRKSWAP-HMD", ProtocolConstants.GetOutputSerial(RouteMode.VirtualHmd, 0));
+    }
+
+    [Fact]
     public void SupportsSixteenRoutesButRejectsSeventeen()
     {
         var configuration = CreateConfiguration();
@@ -303,9 +325,10 @@ public sealed class ConfigurationValidatorTests
     {
         Assert.Equal(0x50575354U, DriverControlProtocol.Magic);
         Assert.Equal(20, DriverControlProtocol.HeaderBytes);
-        Assert.Equal(8, DriverControlProtocol.Version);
-        Assert.Equal(73, DriverControlProtocol.ApplySnapshotFixedBytes);
-        Assert.Equal(76, DriverControlProtocol.ApplyControllerSnapshotFixedBytes);
+        Assert.Equal(11, DriverControlProtocol.Version);
+        Assert.Equal(74, DriverControlProtocol.ApplySnapshotFixedBytes);
+        Assert.Equal(77, DriverControlProtocol.ApplyControllerSnapshotFixedBytes);
+        Assert.Equal(72, DriverControlProtocol.ApplyHmdSnapshotFixedBytes);
         Assert.Equal(260, DriverControlProtocol.PhysicalSourceHidingStatusBytes);
         Assert.Equal(
             0x8001,
@@ -320,7 +343,7 @@ public sealed class ConfigurationValidatorTests
             0x8004,
             DriverControlProtocol.GetTelemetryMessageType | DriverControlProtocol.ResponseFlag);
         Assert.Equal(264, DriverControlProtocol.TelemetrySnapshotBytes);
-        Assert.Equal(8119, DriverControlProtocol.MaximumCombinedDevicePathBytes);
+        Assert.Equal(8118, DriverControlProtocol.MaximumCombinedDevicePathBytes);
         Assert.Equal(4225, DriverControlProtocol.TelemetryBatchBytes);
     }
 
@@ -355,6 +378,42 @@ public sealed class ConfigurationValidatorTests
         Assert.Contains(sameErrors, error => error.Contains("不能相同", StringComparison.Ordinal));
 
         route.RotationSourceDevicePath = "/devices/test/rotation-source";
+        Assert.Empty(ConfigurationValidator.Validate(configuration));
+    }
+
+    [Fact]
+    public void VirtualHmdRequiresExplicitManualPoseInsteadOfSourceFreeBootstrap()
+    {
+        RuntimeConfiguration configuration = CreateConfiguration();
+        RouteConfiguration route = configuration.Routes[0];
+        route.Mode = RouteMode.VirtualHmd;
+        route.SourceDevicePath = string.Empty;
+        route.TargetDevicePath = string.Empty;
+
+        IReadOnlyList<string> missingErrors = ConfigurationValidator.Validate(configuration);
+        Assert.Contains(missingErrors, error => error.Contains("sourceDevicePath", StringComparison.Ordinal));
+
+        route.PoseSourceKind = PoseSourceKind.Manual;
+        route.ManualPose = PoseOffset.DefaultManualPose();
+        Assert.Empty(ConfigurationValidator.Validate(configuration));
+
+        route.SplitPoseSource = true;
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+        Assert.Contains(errors, error => error.Contains("手动位姿时不能拆分来源", StringComparison.Ordinal));
+
+        route.SplitPoseSource = false;
+        route.HidePhysicalSource = true;
+        configuration.PhysicalSourceHidingEnabled = true;
+        errors = ConfigurationValidator.Validate(configuration);
+        Assert.Contains(errors, error => error.Contains("没有可隐藏的物理来源", StringComparison.Ordinal));
+
+        route.HidePhysicalSource = false;
+        route.Mode = RouteMode.DirectProxy;
+        Assert.Empty(ConfigurationValidator.Validate(configuration));
+
+        route.Mode = RouteMode.VirtualController;
+        route.ControllerHand = ControllerHand.Left;
+        route.ControlInputSource = ControlInputSource.None;
         Assert.Empty(ConfigurationValidator.Validate(configuration));
     }
 

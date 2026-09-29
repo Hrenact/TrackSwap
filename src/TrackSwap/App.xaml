@@ -15,6 +15,7 @@
         <SolidColorBrush x:Key="SuccessBrush" Color="#4ED18B" />
         <SolidColorBrush x:Key="WarningBrush" Color="#F2B84B" />
         <SolidColorBrush x:Key="DestructiveBrush" Color="#F07878" />
+        <SolidColorBrush x:Key="DestructiveMutedBrush" Color="#B98A8A" />
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
@@ -85,6 +86,12 @@
             <Setter Property="Background" Value="{StaticResource AccentBrush}" />
             <Setter Property="Foreground" Value="#101316" />
             <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+
+        <Style x:Key="DestructiveButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#341B1D" />
+            <Setter Property="Foreground" Value="{StaticResource DestructiveBrush}" />
+            <Setter Property="BorderBrush" Value="#704044" />
         </Style>
 
         <Style TargetType="Slider">

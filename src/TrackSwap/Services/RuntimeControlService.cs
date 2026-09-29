@@ -110,7 +110,7 @@ namespace TrackSwap.Services
             string executable = FindRuntimeExecutablePath();
             if (executable == null)
             {
-                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v009 程序包。";
+                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v010 程序包。";
                 return false;
             }
 

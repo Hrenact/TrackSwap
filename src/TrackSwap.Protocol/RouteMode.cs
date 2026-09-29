@@ -5,6 +5,7 @@ namespace TrackSwap.Protocol
         Unspecified = -1,
         ReplaceTarget = 0,
         DirectProxy = 1,
-        VirtualController = 2
+        VirtualController = 2,
+        VirtualHmd = 3
     }
 }
