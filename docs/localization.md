@@ -53,7 +53,7 @@ TrackSwap 不执行语言包中的任何代码，也不加载 XAML、DLL 或脚�
 
 ## Crowdin 协作
 
-Crowdin 使用仓库根目录的 `crowdin.yml`。上传到 Crowdin 的源文件是 `localization/crowdin/source.csv`，它仅是由官方简体中文目录生成的交换文件，不是第二份文案真源。CSV 中包含语义键、中文原文和来自源码引用位置的英文上下文。
+Crowdin 使用仓库根目录的 `crowdin.yml`。上传到 Crowdin 的源文件是 `localization/crowdin/source.csv`，它仅是由官方简体中文目录生成的交换文件，不是第二份文案真源。CSV 中包含语义键、中文原文、独立的空译文列和来自源码引用位置的英文上下文。不要把源文和译文配置为同一个 `source_or_translation` 列；Crowdin 必须只把实际译文写入 `translation` 列，使未翻译项保持为空。
 
 更新中文目录后，在仓库根目录运行：
 
@@ -68,4 +68,4 @@ Crowdin 导出的翻译 CSV 位于 `localization/crowdin/translations/%locale%.c
   -InputPath ./localization/crowdin/translations/en-US.csv
 ```
 
-转换器会拒绝过期键、重复键以及 `{0}` 等占位符不一致的译文；未翻译键会被省略并发出警告。生成的 JSON 默认位于 `localization/packs`。
+转换器只读取独立的 `translation` 列，并会拒绝过期键、重复键以及 `{0}` 等占位符不一致的译文；未翻译键会被省略并发出警告。即使译文恰好与中文源文完全相同，只要 Crowdin 将它写入译文列，转换器也会保留。生成的 JSON 默认位于 `localization/packs`。

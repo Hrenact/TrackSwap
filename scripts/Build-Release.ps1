@@ -42,6 +42,7 @@ if ($LASTEXITCODE -ne 0) { throw "Phone haptic diagnostic tests failed with exit
 & powershell -NoProfile -ExecutionPolicy Bypass -File `
     (Join-Path $repositoryRoot 'tests\InstallerRegistration.Tests.ps1')
 if ($LASTEXITCODE -ne 0) { throw "Installer registration tests failed with exit code $LASTEXITCODE." }
+& (Join-Path $repositoryRoot 'tests\LocalizationCrowdin.Tests.ps1')
 
 & (Join-Path $PSScriptRoot 'Build-Driver.ps1') `
     -Configuration Release `

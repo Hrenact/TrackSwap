@@ -63,7 +63,7 @@ function Get-RelativePath([string]$FullPath) {
 }
 
 $lines = [Collections.Generic.List[string]]::new()
-$lines.Add('"identifier","source_phrase","context"')
+$lines.Add('"identifier","source_phrase","translation","context"')
 foreach ($key in ($catalog.strings.Keys | Sort-Object)) {
     $files = @($sourceFiles | Where-Object { $sourceTexts[$_.FullName].Contains($key) })
     if ($files.Count -eq 0) {
@@ -81,6 +81,7 @@ foreach ($key in ($catalog.strings.Keys | Sort-Object)) {
     $lines.Add(
         (ConvertTo-CsvField $key) + ',' +
         (ConvertTo-CsvField ([string]$catalog.strings[$key])) + ',' +
+        (ConvertTo-CsvField '') + ',' +
         (ConvertTo-CsvField $context))
 }
 

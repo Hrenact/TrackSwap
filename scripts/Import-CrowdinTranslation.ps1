@@ -18,8 +18,10 @@ if ($rows.Count -eq 0) {
 }
 
 $columns = @($rows[0].PSObject.Properties.Name)
-if (-not ($columns -contains 'identifier') -or -not ($columns -contains 'source_phrase')) {
-    throw 'The Crowdin CSV must contain identifier and source_phrase columns.'
+if (-not ($columns -contains 'identifier') -or
+    -not ($columns -contains 'source_phrase') -or
+    -not ($columns -contains 'translation')) {
+    throw 'The Crowdin CSV must contain identifier, source_phrase, and translation columns.'
 }
 
 if ([string]::IsNullOrWhiteSpace($Locale)) {
@@ -55,7 +57,7 @@ $staleKeys = [Collections.Generic.List[string]]::new()
 $invalidPlaceholders = [Collections.Generic.List[string]]::new()
 foreach ($row in $rows) {
     $key = [string]$row.identifier
-    $translation = [string]$row.source_phrase
+    $translation = [string]$row.translation
     if ([string]::IsNullOrWhiteSpace($key)) { continue }
     if (-not $catalog.strings.Contains($key)) {
         $staleKeys.Add($key)
