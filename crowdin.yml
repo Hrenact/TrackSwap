@@ -7,3 +7,4 @@ files:
     scheme: identifier,source_phrase,translation,context
     update_option: update_as_unapproved
     skip_untranslated_strings: true
+    export_only_approved: true

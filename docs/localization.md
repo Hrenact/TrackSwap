@@ -53,7 +53,7 @@ TrackSwap 不执行语言包中的任何代码，也不加载 XAML、DLL 或脚�
 
 ## Crowdin 协作
 
-Crowdin 使用仓库根目录的 `crowdin.yml`。上传到 Crowdin 的源文件是 `localization/crowdin/source.csv`，它仅是由官方简体中文目录生成的交换文件，不是第二份文案真源。CSV 中包含语义键、中文原文、独立的空译文列和来自源码引用位置的英文上下文。不要把源文和译文配置为同一个 `source_or_translation` 列；同时必须为该文件启用 `skip_untranslated_strings: true`，阻止 Crowdin 在导出时用中文源文填充空译文。
+Crowdin 使用仓库根目录的 `crowdin.yml`。上传到 Crowdin 的源文件是 `localization/crowdin/source.csv`，它仅是由官方简体中文目录生成的交换文件，不是第二份文案真源。CSV 中包含语义键、中文原文、独立的空译文列和来自源码引用位置的英文上下文。不要把源文和译文配置为同一个 `source_or_translation` 列。该文件组必须同时启用 `skip_untranslated_strings: true` 与 `export_only_approved: true`：未翻译或尚未批准的内容不能进入交付语言包，也不能由 Crowdin 用中文源文回填译文列。
 
 更新中文目录后，在仓库根目录运行：
 

@@ -12,6 +12,9 @@ try {
     if ($crowdinConfiguration -notmatch '(?m)^\s+skip_untranslated_strings:\s*true\s*$') {
         throw 'Crowdin must skip untranslated strings instead of exporting Chinese source fallback text.'
     }
+    if ($crowdinConfiguration -notmatch '(?m)^\s+export_only_approved:\s*true\s*$') {
+        throw 'Crowdin must export only approved translations.'
+    }
 
     & (Join-Path $repositoryRoot 'scripts\Export-CrowdinSource.ps1') `
         -RepositoryRoot $repositoryRoot `
