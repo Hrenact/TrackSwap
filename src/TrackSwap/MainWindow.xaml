@@ -887,12 +887,31 @@
                                         <TextBlock i18n:Localize.Key="language.issues.title" FontSize="15" FontWeight="Medium" />
                                         <TextBlock i18n:Localize.Key="language.issues.description" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
                                         <TextBlock x:Name="LanguageIssuesEmptyText" i18n:Localize.Key="language.issues.empty" Margin="0,14,0,0" Foreground="{StaticResource SuccessBrush}" />
-                                        <ItemsControl x:Name="LanguageIssuesItemsControl" Margin="0,12,0,0">
+                                        <Grid x:Name="LanguageIssuesHeader" Margin="0,12,0,0" Height="30" Background="{StaticResource SurfaceRaisedBrush}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock i18n:Localize.Key="language.issues.column.status"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource MutedTextBrush}"
+                                                       FontSize="10" />
+                                            <Border Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                                                <TextBlock i18n:Localize.Key="language.issues.column.key"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource MutedTextBrush}"
+                                                           FontSize="10" />
+                                            </Border>
+                                        </Grid>
+                                        <ItemsControl x:Name="LanguageIssuesItemsControl">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <Button Tag="{Binding Key}"
-                                                            Margin="0,0,0,7"
-                                                            Padding="12,9"
+                                                            Margin="0,1,0,0"
+                                                            Padding="0"
+                                                            MinHeight="34"
                                                             HorizontalContentAlignment="Stretch"
                                                             Click="LanguageIssueButton_Click"
                                                             ToolTip="{Binding CopyHint}">
@@ -901,11 +920,21 @@
                                                                 <ColumnDefinition Width="90" />
                                                                 <ColumnDefinition Width="*" />
                                                             </Grid.ColumnDefinitions>
-                                                            <TextBlock Text="{Binding KindLabel}" Foreground="{Binding KindBrush}" FontSize="10" />
-                                                            <StackPanel Grid.Column="1">
-                                                                <TextBlock Text="{Binding Key}" FontFamily="Consolas" Foreground="{StaticResource WarningBrush}" />
-                                                                <TextBlock Text="{Binding Detail}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
-                                                            </StackPanel>
+                                                            <TextBlock Text="{Binding KindLabel}"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"
+                                                                       Foreground="{Binding KindBrush}"
+                                                                       FontSize="10" />
+                                                            <Border Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                                                                <TextBlock Text="{Binding Key}"
+                                                                           Margin="12,7"
+                                                                           HorizontalAlignment="Center"
+                                                                           VerticalAlignment="Center"
+                                                                           FontFamily="Consolas"
+                                                                           Foreground="{StaticResource TextBrush}"
+                                                                           TextAlignment="Center"
+                                                                           TextWrapping="Wrap" />
+                                                            </Border>
                                                         </Grid>
                                                     </Button>
                                                 </DataTemplate>

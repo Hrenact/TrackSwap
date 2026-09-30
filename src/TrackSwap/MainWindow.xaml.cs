@@ -2011,14 +2011,14 @@ namespace TrackSwap
                     .Select(issue => new LanguageIssueListItem(
                         issue.Key,
                         GetLocalizationIssueLabel(issue.Kind),
-                        GetLocalizationIssueDetail(issue),
                         GetLocalizationIssueBrush(issue.Kind),
                         _localizationService.Translate("language.copy_hint")))
                     .ToList();
                 LanguageIssuesItemsControl.ItemsSource = issueItems;
-                LanguageIssuesEmptyText.Visibility = issueItems.Count == 0
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
+                bool hasIssues = issueItems.Count != 0;
+                LanguageIssuesEmptyText.Visibility = hasIssues ? Visibility.Collapsed : Visibility.Visible;
+                LanguageIssuesHeader.Visibility = hasIssues ? Visibility.Visible : Visibility.Collapsed;
+                LanguageIssuesItemsControl.Visibility = hasIssues ? Visibility.Visible : Visibility.Collapsed;
 
                 if (_localizationService.IsOfficialLanguage)
                 {
@@ -2031,14 +2031,14 @@ namespace TrackSwap
                 {
                     int missing = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Missing);
                     int invalid = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Invalid);
-                    int stale = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Stale);
+                    int unknown = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Stale);
                     LanguagePackStatusText.Text = string.Format(
                         CultureInfo.CurrentCulture,
                         _localizationService.Translate("language.status.external"),
                         _localizationService.CurrentLocale,
                         missing,
                         invalid,
-                        stale);
+                        unknown);
                 }
             }
             finally
@@ -2160,30 +2160,13 @@ namespace TrackSwap
                 case LocalizationIssueKind.Invalid:
                     return _localizationService.Translate("language.issue.invalid");
                 default:
-                    return _localizationService.Translate("language.issue.stale");
+                    return _localizationService.Translate("language.issue.unknown");
             }
         }
 
         private Brush GetLocalizationIssueBrush(LocalizationIssueKind kind)
         {
             return FindBrush(kind == LocalizationIssueKind.Invalid ? "DestructiveBrush" : "WarningBrush");
-        }
-
-        private string GetLocalizationIssueDetail(LocalizationIssue issue)
-        {
-            if (issue.Key.StartsWith("file:", StringComparison.Ordinal))
-            {
-                return _localizationService.Translate("language.issue.detail.file");
-            }
-            switch (issue.Kind)
-            {
-                case LocalizationIssueKind.Missing:
-                    return _localizationService.Translate("language.issue.detail.missing");
-                case LocalizationIssueKind.Invalid:
-                    return _localizationService.Translate("language.issue.detail.invalid");
-                default:
-                    return _localizationService.Translate("language.issue.detail.stale");
-            }
         }
 
         private void RefreshFilesAndBackupsView()
@@ -7167,18 +7150,16 @@ namespace TrackSwap
 
         private sealed class LanguageIssueListItem
         {
-            public LanguageIssueListItem(string key, string kindLabel, string detail, Brush kindBrush, string copyHint)
+            public LanguageIssueListItem(string key, string kindLabel, Brush kindBrush, string copyHint)
             {
                 Key = key;
                 KindLabel = kindLabel;
-                Detail = detail;
                 KindBrush = kindBrush;
                 CopyHint = copyHint;
             }
 
             public string Key { get; }
             public string KindLabel { get; }
-            public string Detail { get; }
             public Brush KindBrush { get; }
             public string CopyHint { get; }
         }
