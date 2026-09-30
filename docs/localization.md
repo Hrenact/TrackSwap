@@ -69,3 +69,17 @@ Crowdin 导出的翻译 CSV 位于 `localization/crowdin/translations/%locale%.c
 ```
 
 转换器只读取独立的 `translation` 列，并会拒绝过期键、重复键以及 `{0}` 等占位符不一致的译文；未翻译键会被省略并发出警告。即使译文恰好与中文源文完全相同，只要 Crowdin 将它写入译文列，转换器也会保留。生成的 JSON 默认位于 `localization/packs`。
+
+## 面向开发者和自动化代理的硬约束
+
+- 内嵌的 `zh-CN.json` 是唯一官方源文目录。新增界面文案时，先添加稳定的语义键，再在 XAML 或代码中引用；不要在界面层重新维护一份中文常量。
+- 社区语言包只能是活动数据目录 `i18n` 下的纯 JSON。不得从语言包加载代码、XAML、程序集或脚本。
+- 缺失、空白或格式错误的译文必须显示 `⟦key⟧`；未知键报告为已失效。不要静默回退为中文。界面上出现的回退键应便于单击复制。
+- 运行日志和底层诊断统一使用英文，不进入本地化目录。
+- 文件只有一个扁平 `strings` 对象，值直接是译文字符串；不得嵌套分组，也不得使用 `{ "source", "translation" }` 包装。键名使用稳定、小写、点分的 `feature.area.purpose` 语义结构；禁止哈希、`ui.auto.*` 和不透明数字尾缀。按序数排序键，并在顶级功能前缀之间留一个空行。
+- 翻译必须完整保留 `{0}`、`{1}` 等复合格式占位符。
+- `localization/crowdin/source.csv` 只能通过 `scripts/Export-CrowdinSource.ps1` 生成，不得手工编辑，也不得让 Crowdin 回写官方中文目录。
+- Crowdin CSV 必须把源文与译文分别放在 `source_phrase` 和 `translation` 列，禁止 `source_or_translation`。
+- `crowdin.yml` 的文件组和 Crowdin 项目级导出设置都必须启用 `skip_untranslated_strings` 与 `export_only_approved`，避免中文源文或未批准译文进入语言包。
+- Crowdin 返回的 CSV 必须通过 `scripts/Import-CrowdinTranslation.ps1` 转换并校验后才能成为运行时 JSON。
+- Crowdin 项目 ID、访问令牌及其他凭据不得进入版本库；CLI 凭据使用环境变量，GitHub 集成凭据由 Crowdin/GitHub 保存。

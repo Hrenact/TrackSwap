@@ -1,282 +1,93 @@
-# TrackSwap Repository Guide
+# TrackSwap 仓库指南
 
-This file records the current product baseline and the engineering constraints for future work in this repository. It applies to the entire repository unless a more specific `AGENTS.md` is added below a subdirectory.
+本文件适用于整个仓库，除非更深层目录提供了更具体的 `AGENTS.md`。它只保留跨模块基线和文档路由；实施细节按职责拆在 `docs/agent-guides/` 中。
 
-## Product Baseline and Direction
+## 开始工作前
 
-TrackSwap has three deliberately separate workflows:
+先判断改动涉及哪些领域，并完整阅读对应文档。一次改动跨越多个领域时，相关文档都必须读。
 
-1. **Legacy static mapping**
-   - The v001-compatible WPF workflow edits SteamVR `TrackingOverrides`.
-   - It substitutes a pose source while leaving the target device's input handling intact.
-   - Static `TrackingOverrides` do not provide a general position or rotation transform. Never describe them as supporting offsets.
+| 工作范围 | 必读文档 |
+| --- | --- |
+| Runtime、路由、代理设备、位姿数学、虚拟 HMD、原生驱动、`TrackingOverrides` | [`docs/agent-guides/runtime-routing.md`](docs/agent-guides/runtime-routing.md) |
+| WPF 界面、设置页、弹窗、3D 预览、设备选择器、图标与视觉样式 | [`docs/agent-guides/ui-guidelines.md`](docs/agent-guides/ui-guidelines.md) |
+| OSC、XInput、虚拟控制器、触觉反馈、骨骼 | [`docs/agent-guides/controller-input.md`](docs/agent-guides/controller-input.md) |
+| 本地化、语言 JSON、翻译键、Crowdin | [`docs/localization.md`](docs/localization.md) |
+| 安装、卸载、Steam depot、SteamVR 配置文件、发布 | [`docs/agent-guides/distribution.md`](docs/agent-guides/distribution.md)；发布时另读 [`docs/steam-release-checklist.md`](docs/steam-release-checklist.md) |
+| 构建、自动化测试、硬件验证、验收基线 | [`docs/agent-guides/verification.md`](docs/agent-guides/verification.md) |
 
-2. **Runtime pose routing**
-   - v002 introduced the independent Runtime, native OpenVR driver, live source switching, local rigid offsets, automatic calibration, telemetry, and a real-time 3D preview.
-   - v003 added named route management and up to eight stable virtual proxies.
-   - v004 hardened source reconnection and cross-route validation, migrated runtime targets away from ambiguous SteamVR roles, and refined device-model preview behavior.
-   - v005 introduced the Dark Utility interface, device history and live selector refresh, application/runtime lifecycle controls, custom device/app icons, dark dialogs, and the Windows installer/uninstaller.
-   - v006 added direct virtual-tracker output, virtual left/right controllers, fixed-address OSC input, live input monitors, route-mode-specific proxy rendering, and the `无` control-input option.
-   - v007 added XInput, Oculus Touch-compatible controller input and synthesized skeletons, auto-applied route editing, centimetre-based direct pose manipulation, sixteen logical slots, and separate direct-tracker and replacement-proxy identities.
-   - The current UI uses a configuration sidebar; each selected route owns its source, proxy slot, target, offset editor, status, and always-visible 3D preview.
+专题文档是规范，不是背景材料。修改对应模块时不得只读本文件。
 
-3. **Direct virtual-tracker output**
-   - v006 routes support a direct mode that publishes the transformed source pose as the stable TrackSwap virtual tracker without a `TrackingOverrides` target.
-   - Newly created routes begin with no selected mode and show `请选择`; the user must explicitly choose a mode. Existing configurations without an explicit mode retain target-replacement behavior for compatibility.
-   - Target replacement remains available when the user needs the target device to keep its original controller input.
+## 产品基线
 
-4. **OSC virtual-controller output**
-   - v006 routes may output one fixed virtual left controller and one fixed virtual right controller.
-   - Physical devices provide pose while Runtime maps explicitly configured OSC addresses to basic controller inputs.
-   - The virtual controllers use TrackSwap-owned identities and an Oculus Touch-compatible input profile; they must not impersonate Meta/Oculus serial numbers.
+TrackSwap 保留彼此明确分离的工作流：
 
-5. **Virtual-HMD output**
-   - At most one route may publish the TrackSwap-owned `TRKSWAP-HMD` device. It reuses the normal source, split-source, local-offset, hiding, telemetry, and preview pipeline.
-   - The HMD exposes fixed baseline `IVRDisplayComponent` parameters without a physical scanout target and pairs it with one `TrackedDeviceClass_DisplayRedirect` implementing `IVRVirtualDisplay`. The redirect must publish the compositor GPU's `Prop_GraphicsAdapterLuid_Uint64`, honor the shared-texture keyed mutex, and provide stable display-frequency timing; omitting the adapter LUID can leave the redirect recognized but never presented to. Do not fall back to a desktop debug-display window: moving it off-screen triggers SteamVR compositor error 202, while advertising a non-desktop display without an active redirect can make SteamVR take over the user's real monitors. Runtime drives HMD pose after the UI closes.
-   - HMD registration is bootstrapped by the `driver_trackswap.enableVirtualHmd` SteamVR setting. Enabling, disabling, or deleting it therefore requires SteamVR to be fully stopped and restarted. Runtime owns reconciliation of that flag and must never edit it while SteamVR is running.
-   - Break SteamVR's no-HMD device-discovery deadlock with the explicit `手动位姿` source. Manual pose is a general source option for every route mode, persists an absolute standing-space pose, defaults to the origin, and remains operational after the UI closes. It must not carry a physical source path, use split-source mode, or request physical-source hiding. A source-free device route is incomplete and must never be persisted or submitted as an implicit bootstrap pose. Switching between manual and device sources preserves their independent manual pose and local offset values.
-- Some SteamVR releases may show a direct-display recommendation even when the HMD correctly reports a virtual, non-desktop display. Treat this as a SteamVR notification quirk; do not implement `IVRDriverDirectModeComponent` merely to suppress it.
-- Keep the virtual HMD on its stable TrackSwap universe, but never publish a hard-coded `Prop_DriverProvidedChaperoneJson_String`. SteamVR Room Setup must own and persist the standing/seated origin and play-area data; a driver-provided default silently replaces the committed working copy after Room Setup exits.
-   - Ship the VR picture viewer as a separate optional process. The driver publishes only the latest completed compositor frame through versioned GPU shared textures; a slow, minimized, disconnected, or crashed viewer must cause frame drops rather than back-pressure on SteamVR. Closing the viewer or the main UI must never disable the virtual HMD. Keep first-party viewing GPU-local, expose both-eye/left-eye/right-eye presentation, capture-friendly fixed output sizes, windowed/borderless-fullscreen and always-on-top modes, lightweight health counters, and user-selected screenshot paths.
+1. **旧版静态映射**
+   - v001 兼容的 WPF 流程编辑 SteamVR `TrackingOverrides`。
+   - 它只替换目标设备的位姿来源，并保留目标设备原有输入。
+   - 静态 `TrackingOverrides` 不支持通用位置或旋转偏移，任何界面和文档都不得暗示它支持。
 
-The default runtime data path is:
+2. **Runtime 位姿路由**
+   - 独立 Runtime 与原生 OpenVR 驱动负责实时来源切换、局部刚体偏移、遥测、自动重连、隐藏与一致性处理。
+   - 当前界面使用配置侧栏；每条路由拥有自己的来源、逻辑槽位、目标、偏移、状态和常驻 3D 预览。
 
-`physical source -> native driver transform -> TrackSwap virtual tracker`
+3. **直接虚拟设备输出**
+   - 路由可以输出稳定的 TrackSwap 虚拟追踪器，不创建 `TrackingOverrides`。
+   - 路由也可以输出固定左右虚拟控制器，使用明确的 `无`、OSC 或 XInput 控制输入。
+   - 至多一条路由可以输出 `TRKSWAP-HMD`。虚拟 HMD、显示重定向及 VR 视图的硬约束见 Runtime 专题文档。
 
-The optional target-replacement path is:
+4. **目标替换**
+   - 需要保留目标控制器输入时，使用单独的内部代理设备作为静态 `TrackingOverrides` 来源。
+   - 物理来源和偏移是实时 Runtime 状态；不得因热更新而反复改写 `steamvr.vrsettings`。
 
-`physical source -> native driver transform -> TrackSwap virtual proxy -> SteamVR target override`
+## 组件职责
 
-The virtual-proxy-to-target relationship is a static bootstrap mapping. Changing a route's physical source or offset is a live Runtime operation and must not repeatedly rewrite `steamvr.vrsettings`.
+### TrackSwap UI
 
-## Branch and Release Policy
+- Windows WPF 控制面，目标为 .NET Framework 4.8。
+- 只负责编辑、调整、检查、测试、提交配置和显示降采样遥测。
+- 不得拥有路由、输入、映射协调或设备输出所需的后台服务，也不得进入逐帧追踪路径。
+- 除非提前向用户明确披露不可避免的例外，所有已配置功能在 UI 关闭后仍必须由 Runtime 正常运行。
+- 在 Settings 中保留旧版静态设置流程，但与 Runtime 路由清晰隔离。
 
-- `v001`, `v002`, `v003`, `v004`, `v005`, `v006`, `v007`, `v008`, and `v009` are published, immutable release tags. Never move or rewrite them.
-- `main` currently remains the stable v001 line. Do not merge, retarget, or rewrite it without an explicit maintainer decision.
-- Current post-v009 work remains on `v002-runtime` until the maintainer chooses the integration branch for the next release.
-- The next release identifier is `v010`. Releases use one increasing sequence: `v001`, `v002`, `v003`, and so on. Do not introduce semantic-version labels or prerelease suffixes unless the maintainer changes this policy.
-- Do not commit experimental driver/runtime work directly to `main`.
-- Keep commits focused. Do not rewrite published history.
-- The project is MIT licensed under the name Hrenact. Record added third-party code or binary dependencies in `THIRD-PARTY-NOTICES.md` and preserve their required notices.
-- For TrackSwap development and verification, the maintainer explicitly authorizes the agent to close, start, or restart SteamVR whenever required by the current task. Still verify the exact SteamVR processes before acting, avoid disturbing unrelated applications, and state the lifecycle action in progress updates.
+### TrackSwap Runtime
 
-## Installer and Uninstaller
+- 是独立的配置与控制进程，拥有持久配置、IPC、验证、来源发现、协调、重试和遥测分发。
+- 拥有停止 SteamVR 后的 `TrackingOverrides` 协调、待删除完成、孤立代理清理、OSC/XInput 服务与触觉转发；这些行为不得依赖 UI 存活。
+- 对所有虚拟槽位发送带版本号的原子快照，并能在 UI 断开或重连时稳定恢复。
+- 支持“跟随 TrackSwap”和“跟随 SteamVR”两种生命周期；存在待协调工作时不得提前退出。
 
-- The primary Windows distribution is an unsigned Inno Setup installer until a maintainer adds code signing. Keep the complete ZIP as the portable/manual fallback.
-- Install per user by default under `%LOCALAPPDATA%\Programs\TrackSwap`; do not require elevation for the normal path.
-- Installation and uninstallation must refuse to mutate SteamVR integration while `vrserver`, `vrmonitor`, or `vrcompositor` is running.
-- Installer upgrades must preserve user configuration, replace an existing TrackSwap driver registration safely, and update the registered TrackSwap application-manifest path without enabling UI auto-launch by default.
-- Store TrackSwap-owned mutable data under the package root in `UserData`. Steam depot manifests and release packages must never include files inside this runtime-created directory, so Steam update, verification, and ordinary uninstall leave user configuration untouched. If the package root is not writable, fall back explicitly to `%LOCALAPPDATA%\TrackSwap` and expose that path and reason in the UI.
-- When `UserData` is empty and recognized pre-v010 data exists under `%LOCALAPPDATA%\TrackSwap`, continue using the legacy directory until the user explicitly migrates it. Migration must copy to a same-volume staging directory, validate configuration before switching, preserve any displaced destination data, and restart UI/Runtime onto the new path. Offer legacy cleanup only after the new path is active; delete only recognized TrackSwap files and preserve unknown files.
-- An ordinary Steam uninstall must remove the TrackSwap OpenVR driver registration, application-manifest and auto-launch records, and TrackSwap proxy `TrackingOverrides`, while leaving runtime-created `UserData` files in the remaining TrackSwap folder for reinstall. A separately labeled full-data removal action may also delete `UserData`, legacy `%LOCALAPPDATA%\TrackSwap`, TrackSwap-created SteamVR settings backups, shortcuts, uninstall registration, and the now-empty installation directory. Never delete shared SteamVR logs, Windows caches, unknown files, or unrelated OpenVR configuration.
-- Steam distribution uses unpacked depot content, not the Inno installer. Keep a generated, preview-first SteamPipe build path with explicit AppID/DepotID inputs, mark `installscript.vdf` as the depot install script, exclude `UserData` and PDB files, and use one package-relative integration entry point for install and uninstall. Registration failure after partially installing integration must attempt rollback; uninstall cleanup must attempt both application and driver removal even if one fails.
-- Keep installer registration and cleanup logic covered by an isolated fixture test. Shared JSON configuration must be changed atomically and unrelated applications, mappings, and settings must survive byte-semantics-equivalent rewrites.
+### TrackSwap OpenVR Driver
 
-## Component Responsibilities
+- 是最小化原生 SteamVR Server Driver，暴露稳定虚拟追踪器、内部代理、固定左右控制器和可选虚拟 HMD。
+- 读取物理设备原始位姿、应用变换并提交虚拟位姿；Runtime/UI 断开时保留最后一个有效配置。
+- 逐帧路径必须本地、确定、少分配且非阻塞。禁止逐帧同步 IPC、网络操作或进程启动。
+- 驱动初始化可在逐帧路径之外请求一次包内可信 Runtime；Runtime 缺失不得使驱动初始化失败。
 
-Keep the components in this repository separate:
+## 分支与发布
 
-1. **TrackSwap UI**
-   - Windows WPF control surface targeting .NET Framework 4.8.
-   - Exists to edit, adjust, inspect, and test configuration. It may submit configuration and display status or downsampled telemetry, but it must not own an operational service or perform background work required for routing, input, reconciliation, or device output. The current UI no longer exposes automatic calibration.
-   - Every configured feature must continue working from TrackSwap Runtime after the UI closes. If an exceptional feature truly cannot work without the UI, disclose that dependency prominently and precisely to the user before they enable or rely on it; never leave an implicit UI dependency.
-   - Retains the legacy static settings workflow under Settings.
-   - Must not participate in the per-frame tracking path.
+- `v001` 至 `v010` 是已发布且不可变的标签，禁止移动或重写。
+- `main` 仍是稳定 v001 线；没有维护者明确决定时，不得合并、重定向或重写。
+- 当前 v010 之后的开发继续位于 `v002-runtime`，直到维护者决定下一条集成分支。
+- 下一发布编号为 `v011`。发布只使用递增的 `v001`、`v002`……序列；除非维护者改变策略，不引入语义版本或预发布后缀。
+- 不得把实验性驱动或 Runtime 工作直接提交到 `main`。提交保持聚焦，不重写已发布历史。
+- 项目使用 Hrenact 名义下的 MIT 许可证。新增第三方代码或二进制依赖必须记录到 `THIRD-PARTY-NOTICES.md` 并保留其许可声明。
 
-2. **TrackSwap Runtime**
-   - Independent configuration and control process.
-   - Owns persistent runtime configuration, IPC, validation, source discovery, calibration profiles, and telemetry fan-out.
-   - Owns all operational behavior derived from that configuration, including stopped-SteamVR `TrackingOverrides` reconciliation, pending deletion completion, orphaned proxy cleanup, and retry state. None of these operations may depend on an open UI process.
-   - Sends versioned, atomic snapshots for every virtual slot.
-   - Must recover cleanly if the UI closes or reconnects.
-   - Supports two explicit lifecycle policies selected under Advanced Settings: follow the TrackSwap UI process, or follow the SteamVR session. SteamVR-follow mode must still accept a live UI process as a temporary owner so offline configuration remains available while SteamVR is stopped.
-   - Owns OSC UDP reception, address mapping, normalization, controller-input snapshot delivery, and OSC haptic-feedback transmission. OSC networking must never run inside the driver frame loop.
+## 全局工程约束
 
-3. **TrackSwap OpenVR Driver**
-   - Minimal native SteamVR server driver exposing stable virtual GenericTrackers, the fixed `TRKSWAP-CONTROLLER-L` / `TRKSWAP-CONTROLLER-R` controller pair, and the optional `TRKSWAP-HMD`.
-   - Reads raw poses from selected physical sources, applies transforms, and submits virtual poses.
-   - Keeps the last valid configuration if Runtime or UI disconnects.
-   - Keeps the per-frame path local, deterministic, allocation-light, and non-blocking. Never require a synchronous IPC round trip for every pose update.
-   - May request the packaged Runtime once during driver initialization so SteamVR-follow mode works without the UI. Process launch and path discovery must remain outside the per-frame path, use only package-relative trusted executables, and tolerate a missing Runtime without failing driver initialization.
+- 配置修订和设备快照必须原子化；旧修订不得覆盖新修订，不同快照族不得互相清除仍有效的所有权状态。
+- 所有 IPC 边界都要验证标识符、槽位、消息长度、变换和值；无效或断开的来源不得以健康的陈旧位姿继续输出。
+- 不得在 SteamVR 运行时写入 `steamvr.vrsettings` 或修改需要重启的虚拟 HMD 注册设置。
+- 使用 OpenVR 返回的真实完整设备路径；不得根据序列号猜测 `/devices/lighthouse/` 等前缀。
+- 防止自映射、角色自引用、循环、重复槽位、重复手别和冲突目标。测试用来源复用开关不得放宽其他验证。
+- 目标设备输入和位姿来源必须分离。TrackSwap 替换位姿时，不得意外接管或丢失目标输入。
+- 优先使用官方 OpenVR 头文件、文档和示例。引入或固定依赖时记录准确修订。
+- 状态转换和可操作错误写入英文日志；默认不记录高频位姿，也不把底层日志纳入本地化。
+- 生成物、机器路径、测试截图、用户配置、Crowdin 密钥与访问令牌不得进入 Git。
+- 修改应按风险成比例验证：构建受影响项目、运行相关自动化测试，并明确说明仍需维护者完成的 SteamVR 或硬件检查。
+- 编译成功不等于追踪正确，XAML 构建成功也不等于实际主题可读。
 
-## Route and Proxy Model
+## 进程与测试授权
 
-- Support at most sixteen routes in the configuration list, using stable logical slots `00` through `15`.
-- Direct virtual-tracker routes publish user-facing devices identified as `TRKSWAP-TRACKER-00` through `TRKSWAP-TRACKER-15`. Target-replacement routes use the separate internal proxy identities `TRKSWAP-PROXY-00` through `TRKSWAP-PROXY-15`. Do not use a direct tracker as a static `TrackingOverrides` source, and do not present a replacement proxy as the direct-output identity.
-- Register direct `TRKSWAP-TRACKER-XX` outputs as `TrackedDeviceClass_GenericTracker`. Register internal `TRKSWAP-PROXY-XX` replacement carriers as `TrackedDeviceClass_TrackingReference`, with the empty proxy render model, so games do not expose them as extra wearable trackers. A proxy must retain a valid pose for `TrackingOverrides`; never hide it by moving or invalidating its submitted pose.
-- Additionally support at most one virtual left controller and one virtual right controller. Reject duplicate hand assignments across routes.
-- Additionally support at most one virtual HMD. Never expose more than one TrackSwap HMD route, even when routes are disabled.
-- The headless virtual HMD has no physical wear sensor. Publish its `/proximity` input as continuously active while the device is running so SteamVR does not throttle the compositor into an unworn-headset idle cadence; keep this input independent from route source validity.
-- Register a proxy on demand when an enabled route first uses its slot. Do not expose unused slots merely because capacity exists.
-- A route's user-facing name is independent from its route id and proxy slot. Names must be unique case-insensitively and remain renameable.
-- New routes use the lowest available slot and a default name such as `新配置`, `新配置 (1)`, and so on.
-- Disabled or missing routes must submit invalid/disconnected tracking rather than a stale healthy pose.
-- Every route explicitly selects direct virtual-tracker output, target replacement, or virtual-controller output. Direct routes require a source but no target and must not create a `TrackingOverrides` entry.
-- Virtual-controller routes require a source pose, an explicit left/right hand, and an explicit control-input source. They do not create a `TrackingOverrides` entry.
-- Virtual-controller control input may explicitly be `无`, `OSC`, or `XInput`. `无` keeps the controller pose active while holding every button and analog component at its neutral value; each input service must only update hands that explicitly select it and must not neutralize or otherwise clobber a hand owned by another input source.
-- New routes use the UI-only incomplete `Unspecified` mode until the user explicitly chooses a mode; never persist or submit that value to Runtime. Configurations written before the mode field existed must deserialize as target-replacement routes.
-- Configuration revisions are atomic across all slots. An older snapshot must never replace a newer accepted revision.
-- Reject duplicate slots, conflicting targets, cycles, and other ambiguous routing rules.
-- Reject duplicate physical pose sources by default. Advanced Settings may explicitly allow source reuse for testing or for driving both virtual controller hands from one device; this exception must not relax duplicate hand, slot, target, cycle, or role-dependency validation.
-- A route may explicitly split its pose across one position source and one rotation source. Enabling split mode must leave the rotation source unselected until the user chooses it, and the two sources must be distinct. Sample both sources from the same OpenVR pose batch, use position and linear velocity from the position source, use orientation and angular velocity from the rotation source, then apply the route's one local rigid offset to that hybrid base pose. If either source is disconnected or invalid, submit an invalid output without falling back to the other source. Apply duplicate-source, role-dependency, cycle, physical-source-hiding, telemetry, and preview behavior to both paths.
-- Reject role self-reference such as a physical right-hand controller routed through a proxy back to `/user/hand/right`. SteamVR can feed the overridden target pose back as the source and freeze the route on a previous frame.
-- Hide SteamVR's generic head, left-hand, and right-hand role targets from runtime target selectors by default. They are an explicitly opt-in advanced UI option only; enabling visibility must not bypass self-reference, cycle, conflict, or migration validation.
-- A proxy's first target binding, target change, disable cleanup, or deletion cleanup may require editing `TrackingOverrides`; perform that edit only while SteamVR is fully stopped.
-- Treat the saved Runtime route configuration as the desired static-mapping state. When a new route or target change is applied while SteamVR is running, persist it as pending work and automatically reconcile `TrackingOverrides` after SteamVR fully stops; never require a second click on Apply for the same change. Pending deletion has priority over pending mapping: finish or resolve every deletion before reconciling mappings, and remove orphaned TrackSwap proxy mappings that no longer correspond to an enabled route.
-- Deleting a route while SteamVR runs must persist a pending-deletion state and keep the proxy output active only when that proxy actually has a static `TrackingOverrides` entry to clean up. A route with no existing static mapping is removed immediately regardless of mode or SteamVR state. After SteamVR stops, remove any existing static mapping first and only then remove the Runtime route. Preserve the pending state on failure and allow cancellation.
-- Hot source and offset changes for an already bootstrapped proxy must work without restarting SteamVR.
-
-## UI Behavior
-
-- Use the sidebar as the primary route navigation and management surface.
-- Let sidebar route items communicate enabled, disabled, and pending lifecycle state. The selected-route header must instead show the concise configuration synchronization state (`配置已同步`, `待应用`, pending mapping/removal, or pending deletion); do not repeat that status inside the route card.
-- Route editing is auto-apply: complete mode/source/target/controller selections submit immediately, while numeric offset typing uses a short debounce. Incomplete numeric input remains local and shows a concise header state without a modal interruption. A complete candidate rejected by configuration validation must show one Chinese shared `AppDialog` warning for that edit and wait for the next user modification before trying again. Do not restore route-level `重新读取`, `应用更改`, or `应用配置` buttons. Gizmo release and offset reset submit immediately.
-- Local-pose text fields accept only ASCII digits, one decimal point, and an optional leading minus sign; reject every other typed or pasted character before it reaches the field.
-- Keep Settings organized behind a compact internal category rail. Group environment/runtime status, SteamVR maintenance tools, and device-history management by responsibility instead of appending unrelated cards to one long page.
-- Keep a dedicated `文件管理` Settings category. Show the active TrackSwap data root, every known TrackSwap-owned file, and each external SteamVR/OpenVR file that TrackSwap registers with or edits; label paths as inside or outside the installation directory and provide direct Explorer location actions. Describe shared SteamVR files as modified or referenced, never as wholly owned by TrackSwap.
-- Keep `重置数据` and `预卸载准备` as two separate clearly dark-red cards at the bottom of `文件管理`. `重置数据` removes TrackSwap-owned mutable data plus TrackSwap-created SteamVR mappings while preserving the registered driver and application integration, so reopening starts from a clean configuration. `预卸载准备` is the final card and additionally unregisters the TrackSwap driver and application integration for a later manual uninstall. Neither action launches an uninstaller, deletes program/depot files, or silently restores integration on the next launch; both require SteamVR to be fully stopped, use one Chinese `AppDialog` warning with a Windows system sound, stop Runtime, finish cleanup, and then exit the UI. While either cleanup runs, cover the entire client area with one non-dismissible black in-window overlay, prevent further interaction and window closing, suspend lifecycle status polling, Runtime restart, and SteamVR-follow auto-close decisions, and identify the active operation there instead of mutating either card's button label as shared progress state. Resume normal lifecycle handling only if cleanup fails and the overlay is removed. Preserve unknown files and unrelated SteamVR/OpenVR state.
-- Export configuration backups only to a user-selected path. A backup contains the complete Runtime configuration and UI preferences, but not device history, logs, diagnostics, SteamVR shared configuration, or previous backups. Validate the entire backup before import, warn that device paths may be sensitive, create an automatic rollback backup, require one Chinese `AppDialog` confirmation with a Windows system sound, and restore the previous Runtime/UI state if any import step fails. Import the desired TrackSwap configuration through Runtime; never replace `steamvr.vrsettings` from a backup.
-- Keep runtime status and support diagnostics together under `运行与诊断`. Diagnostic exports must be deliberately privacy-preserving: include versions, health, route-count summaries, configuration validation results, and only TrackSwap-filtered recent log excerpts; never include raw runtime configuration, device history, complete SteamVR logs, physical device paths, usernames, or device serial numbers.
-- Keep OSC transport, receiver health, send health, and the fixed left/right control and haptic-address reference in a dedicated Settings category. Loopback is the default address because OSC has no authentication or encryption. Present separate receive and send ports.
-- Show compact live OSC monitors beside mapping fields: boolean inputs use an on/off center bar, one-sided scalar inputs use a left-to-right fill bar, and each joystick shares one square two-axis crosshair for its X/Y addresses. Size the square to span from the top of the X field to the bottom of the Y field, give every bar the same width as that square, and refresh at approximately 30 Hz only while the OSC Settings page is visible. Keep this observational polling outside the driver frame path.
-- Treat the built-in OSC parameter addresses as read-only reference text: users may select and copy them, but do not edit them in place. Do not expose a separate OSC enable switch: derive receiver activation from enabled virtual-controller routes that select OSC, and stop it when no enabled route uses OSC. Apply the address and receive port automatically; debounce free-form address edits instead of requiring an Apply button or restarting the listener on every keystroke.
-- Keep `Runtime 启停行为` under Advanced Settings as a compact selector with exactly `跟随 TrackSwap` and `跟随 SteamVR`. SteamVR-follow mode must still let an open TrackSwap UI temporarily own Runtime so offline configuration remains available when both Runtime and SteamVR were initially closed. Runtime itself performs stopped-SteamVR reconciliation and must remain alive while such work is pending, regardless of the selected lifecycle policy.
-- Keep TrackSwap's SteamVR-follow UI behavior as a separate, default-off Advanced Settings checkbox. While enabled, register the OpenVR dashboard application manifest, identify the UI process, and enable auto-launch; while disabled, disable auto-launch and remove that manifest registration so SteamVR cannot terminate a manually opened TrackSwap process when the session ends. Retain the driver/Runtime launch fallback for the first enabled session, avoid duplicate UI processes, and close the UI as soon as SteamVR is fully stopped and Runtime reports that pending deletion or mapping reconciliation has completed. A reconciliation failure may be displayed by the UI when it is open, but retry and unresolved-state preservation belong to Runtime and continue without the UI.
-- With no routes, hide route controls and show the centered empty state `暂无配置，请新建。`.
-- Keep a thin full-width bottom status bar for SteamVR, Runtime, OSC, XInput, and physical-source hiding health. Leave the route-count limit beside the sidebar Add action rather than moving it into the status bar. Use gray for inactive or unavailable services, orange for enabled services waiting for a connection or signal, green for healthy active services, and red for a failed hiding hook; expose concise details through dark-themed tooltips.
-- Physical-source hiding is an opt-in advanced Runtime feature. The global switch reveals one per-route `隐藏物理位姿来源设备` option; disabling the global switch clears every route request, changing a route source clears that route request, and hiding TrackSwap-owned virtual devices is forbidden. Runtime owns the persisted requests and the native driver performs the OpenVR pose hook after the UI closes. The hook must fail open: on injection conflict or partial failure, leave every physical device at its original pose. TrackSwap route output must always subtract its own hiding displacement and continue using the source's pre-hidden pose. Warn separately before hiding an HMD.
-- When one driver behavior can be owned by more than one snapshot family (for example ordinary tracker/proxy snapshots and virtual-controller snapshots requesting physical-source hiding), retain each family's request and slot ownership independently, then derive the effective state under one lock before `RunFrame` consumes it. An empty, disabled, or periodic synchronization snapshot from one family must never clear another family's still-valid request. Do not implement active-to-active transitions as sequential clear-then-set IPC operations that expose a transient inactive frame, and do not infer previous control-plane ownership solely from frame-applied device state. Preserve this invariant when adding route modes or reordering synchronization, with regression coverage for interleaved snapshot delivery where practical.
-- Keep the established **Dark Utility** visual language: neutral charcoal/graphite surfaces, low-contrast layers, compact 4/8 px spacing, restrained sans-serif hierarchy, subtle 1 px separators, 2–6 px radii, compact rectangular controls, and one clear blue accent. Avoid blue-tinted backgrounds, gradients, glass effects, decorative shadows, giant rounded cards, pill buttons, oversized headings, and marketing-style empty space.
-- Keep every standard `ComboBox` on the shared application template, with a fixed `30 px` arrow column. Do not restore the old `38 px` reservation or introduce page-specific arrow widths; preserve enough selection-text width for compact controls such as `默认接触` without covering or clipping the final glyph.
-- Preserve the established natural height of compact controls. When one control becomes taller because its parent row is sized by a larger sibling, fix the local stretching or alignment (for example, center the `ComboBox` vertically) instead of assigning a new fixed height to every peer. A regional or global size override can make the outlier match only by enlarging controls that were already correct; use explicit shared heights only when the design intentionally changes the baseline for the whole control family.
-- Treat `src/TrackSwap/Assets/TrackSwap.svg` as the application icon master. Preserve its single centered triangular tracker, flat charcoal/blue/mint palette, uniform geometry, and legibility at 16 px; regenerate derived PNG and ICO assets with `scripts/generate-icon.ps1` after changing the master.
-- Treat `src/TrackSwap.Driver/assets/trackswap_controller.png` as the original 1024 px RGBA **right-hand** virtual-controller status-icon master. Preserve its exact TrackSwap triangular head, white diagonal control mark, offset handle, transparency, and proportions; do not trace or reinterpret it. Use the master unchanged for right-hand assets and mirror it only for left-hand assets. Recolor only the blue outline and green status indicator, using the same blue/green/orange/red/gray state palette as the tracker family. Regenerate all 32 px SteamVR tracker and controller status assets with `scripts/generate-driver-icons.ps1`; never point virtual controllers back at the tracker glyph or SteamVR's generic fallback icon.
-- Request a dark native Windows title bar for every app-owned window and dialog, with caption, border, and text colors aligned to the neutral application palette. Treat unsupported DWM attributes as a harmless platform fallback.
-- Keep the dark theme explicit across every detached or system-hosted surface. Tooltips, context menus, popups, ComboBox drop-downs, and dialogs must define compatible foreground, background, border, and selection states instead of inheriting Windows theme defaults.
-- Use the shared `AppDialog` for application messages and confirmations. Do not add new calls to the system `System.Windows.MessageBox`; new dialogs must preserve the Dark Utility palette, compact geometry, application icon, semantic status color and Windows system sound, keyboard defaults, and dark native title bar.
-- Remember that the implicit `TextBlock` style can make text light even inside a system-default white popup. After adding or changing any popup-like UI, inspect the actual rendered state and reject white-on-white, black-on-black, or otherwise low-contrast combinations.
-- Visual UI verification must cover normal, hover, selected, disabled, validation, and popup/tooltip states where applicable. A successful XAML build is not sufficient evidence that themed UI is readable.
-- Initialize observational OpenVR clients used for device discovery or render-model loading as utility applications. Reuse one process-wide Utility session for the TrackSwap UI lifetime and release it when SteamVR stops or the UI closes; repeated Init/Shutdown cycles make SteamVR reload application input bindings and can overwhelm its controller/settings web UI. Do not reconnect these clients as background applications.
-- Poll the process-wide Utility session for `VREvent_Quit` at UI cadence and call `VR_ShutdownInternal` before SteamVR finishes shutting down. SteamVR forcibly terminates clients that remain attached, which would otherwise close a manually opened TrackSwap window even when UI follow mode is disabled. Suppress reconnection until the stopped SteamVR session has been observed.
-- Keep the selected route's 3D preview visible; do not make it collapsible.
-- Keep numeric local-pose controls and the 3D preview side by side: the left card is the precise editor and the right preview is the direct-manipulation editor. Do not restore a separate automatic-calibration card.
-- Express `PoseOffset` translations, UI fields, and persisted Runtime configuration in centimetres. Convert centimetres to metres only at the OpenVR driver-control boundary; raw OpenVR poses, driver transform math, and telemetry remain in metres. Do not add migration or dual-unit interpretation for older offset values.
-- Present the 3D manipulation control as `调整工具`, using one compact segmented selector ordered `隐藏`, `移动`, `旋转`; keep `隐藏` as the default. Hiding the tool must not clear or disable the configured offset. Dragging updates the numeric fields and local preview continuously, then persists the route through the normal apply path when the drag ends; holding Shift provides finer adjustment.
-- Anchor the Gizmo exclusively to the configured virtual output transform and use the virtual device's local axes. Its pose, visibility, and framing must not depend on whether the proxy model is rendered, and it must never move onto the physical source or final target when the proxy model is hidden.
-- Prefer the device render model registered with OpenVR, but always retain built-in HMD, controller, tracker, and generic fallbacks. Loading or rendering a model must remain UI-only and observational.
-- In the preview, render the physical pose source and final target; do not render the virtual proxy as a third user-facing object. The proxy is a compatibility and routing layer.
-- The preview is observational. Closing, freezing, or overloading it must not affect submitted tracking poses.
-- Show physical source, stable virtual proxy, target, connection health, active offset, and pending/applied state distinctly.
-- Device selectors use connection state only: represent every connected physical device with a green status dot and every remembered but disconnected physical device with an orange status dot, including the device currently referenced by a route. Do not render `当前`, `历史`, `在线`, or `离线` as textual device-state prefixes. Persist discovered physical-device metadata in a small local JSON record, exclude TrackSwap virtual proxies, deduplicate by exact OpenVR device path, and provide a Settings action to clear unreferenced records while preserving route selections.
-- Never implicitly choose the first available mode or device for a new route, or the first choice in a newly revealed mode-specific selector. Show `请选择` until the user makes an explicit choice. When changing route modes, clear selections that belong to the newly selected mode instead of carrying over or guessing a device; apply the same rule to future modes and mode-specific fields.
-- Refresh physical-device selectors automatically at a low frequency while the UI is open. Only rebuild selector contents when the device catalog actually changes, defer updates while a related drop-down is open, and retain the last successful catalog across transient OpenVR enumeration failures to avoid flicker or accidental selection changes.
-- Keep dangerous operations reversible and explain required SteamVR restarts or stopped-state writes before the user acts.
-- Preserve target input from the original device; TrackSwap replaces pose, not controller input.
-- Keep the legacy v001 settings workflow clearly separated from runtime route management.
-- In the legacy v001 editor, new static rules must use explicit concrete `/devices/...` targets. Show `/user/...` role targets only when an existing rule already references them, label them as legacy maintenance entries, and do not allow them to be written as new rules.
-
-## Pose Math Requirements
-
-- Represent a configurable rigid offset as `T_output = T_source * T_offset`.
-- Offset translation is expressed in the source device's local coordinate frame and stored in centimetres. Convert it to metres before applying it to OpenVR poses.
-- Store quaternion components in `x / y / z / w` order and normalize validated input.
-- Transform orientation and position together; do not implement translation as an unrelated world-space addition.
-- When velocities are submitted, account for the offset lever arm. At minimum:
-  `v_output = v_source + omega x (R_source * t_offset)`.
-- Preserve valid/connected/tracking-result state deliberately. Never report a stale pose as healthy tracking.
-- Calibration from simultaneously observed source and target poses uses:
-  `T_offset = inverse(T_source) * T_target`.
-- Capture calibration data before enabling an override that would hide the target's original pose.
-- Reject unstable, insufficient, disconnected, or non-simultaneous calibration samples.
-
-## OSC Controller Input
-
-- Expose an Oculus Touch-compatible control surface while retaining the TrackSwap-owned identity: left face buttons are `/input/x` and `/input/y`, right face buttons are `/input/a` and `/input/b`, both hands use `/input/joystick`, `/input/trigger`, `/input/grip`, and the standard Touch skeletal paths. Trigger and grip expose `value` and `touch`, never a synthetic `click`. Expose `/input/system` only on the left controller; merge the left and right configured menu-button states into that component with logical OR so releasing either source cannot cancel the other source while it remains pressed. Do not reintroduce Knuckles-only trackpad, force-sensor, or per-finger scalar inputs.
-- Expose `/pose/openxr_aim` and `/pose/openxr_grip` as real driver pose components for both virtual-controller hands. Keep their static local offsets aligned with the SteamVR Oculus Quest 2 controller render models, including mirrored handed X translation; declaring the paths in the input profile without creating and updating the corresponding driver components is incomplete.
-- Keep the TrackSwap-owned controller profile complete enough for SteamVR's binding and controller-test UI: declare handed binding images and a `binding_image_point` for every exposed input/pose source. It may reference SteamVR's installed Oculus Touch artwork, legacy binding, and render models while retaining the `trackswap_controller` identity and only advertising implemented capabilities.
-- Keep the controller type localized as `TrackSwap Controller` / `TrackSwap 控制器`. Declare `oculus_touch` through `compatibility_mode_controller_type` so applications select their native Touch bindings; do not simultaneously attach the Oculus remapping file, because SteamVR ignores compatibility mode in that combination and may instead choose a physical Pico binding as the remapping source. Do not ship app-specific defaults, and never replace the TrackSwap-owned controller identity or serials with Oculus identities.
-- Virtual controllers default `Prop_ControllerHandSelectionPriority_Int32` to `0`. Expose the shared signed 32-bit value under Advanced Settings with a restore-default action; do not silently raise it to compete with physical-controller drivers. Disabled TrackSwap controllers submit disconnected poses so physical controllers can regain the roles.
-- Accept numeric OSC values only for TrackSwap's built-in fixed addresses. Do not persist per-control addresses in `runtime-config.json`; legacy address fields are ignored when older configurations are loaded. Clamp joystick axes to `[-1, 1]`, trigger/grip values to `[0, 1]`, and interpret button values above `0.5` as pressed.
-- Provide fixed per-hand OSC touch-assist inputs at `/trackswap/{left|right}/touch/thumb` and `/trackswap/{left|right}/touch/index`. Each numeric value above `0.5` temporarily inverts that finger's configured `默认接触` / `默认抬起` state. Match XInput touch synthesis: face/menu/joystick activity and nonzero trigger/grip values own their corresponding real touch state and take priority over assistance. Runtime must initialize and periodically refresh the complete explicit touch snapshot so defaults work before any OSC packet arrives and after the UI closes.
-- Keep OSC input state independent for the left and right controller. A valid message refreshes only the hand whose mapping matched it.
-- Treat repeated OSC values as valid receiver activity without forwarding redundant driver IPC. Apply every value in one UDP packet first, then send at most one final snapshot per changed hand; an unchanged keepalive packet must update receiver health but produce no immediate controller snapshot.
-- Report a local OSC receive-port bind conflict explicitly through Runtime status and render the bottom OSC indicator red with a concise tooltip. The configured send port is the remote destination for haptic feedback, not a locally bound port, so never describe it as “occupied”; report genuine send failures separately and combine simultaneous receive/send failures in one tooltip.
-- Retain each hand's last valid OSC input state indefinitely while its OSC route remains enabled, so a sender may intentionally hold a fixed pose or control state without retransmitting it. Reset immediately only when OSC is disabled, routing or relevant configuration changes, a controller route is disabled, or Runtime exits.
-- Send virtual-controller haptic feedback for OSC-owned hands to `/trackswap/left/haptic` and `/trackswap/right/haptic`. Each message uses the OSC type tag `,fff` and carries duration in seconds, frequency in hertz, then normalized amplitude. Keep a three-second right-to-left haptic timeline above each hand's input mapping card: amplitude controls height, duration controls horizontal span, and frequency controls bounded/log-scaled stripe density so high frequencies do not alias into noise. A newer event for the same hand replaces the active envelope, so truncate the preceding preview segment at the new event instead of drawing overlapping events. Retain a short Runtime-owned event history so UI polling cannot lose brief pulses. Keep the approximately 30 Hz Runtime IPC polling separate from animation: scroll the cached timeline at the WPF composition/render cadence only while the OSC page is visible, and detach that rendering callback after leaving the page or closing the window. Put the read-only address below the preview. A per-hand `测试` action requests Runtime to play a short fixed recognition pattern that varies duration, frequency, and amplitude, then ends with a double tap; it must work before an OSC route exists. Runtime owns asynchronous scheduling, a repeated request for the same hand cancels and restarts that hand's previous pattern, and the UI must neither send UDP nor block for the full pattern.
-- Keep the phone haptic diagnostic under `tools/` and outside release packaging. It must listen to the real OSC/UDP send port before relaying an event to a token-protected local WebSocket page, so a successful phone test proves the Runtime packet reached an independent receiver instead of bypassing the OSC path. It may approximate frequency and amplitude through browser vibration patterns, but must label that approximation and keep UDP receipt, browser receipt, and vibration-API acceptance as separate results. Do not make Runtime operation depend on this diagnostic bridge.
-- Poll the driver's destructive haptic-event queue exactly once in Runtime, then fan each batch out to the XInput and OSC sinks. Never let multiple input services poll that queue independently, because one consumer would steal events from the other.
-- OSC reception and driver IPC may run asynchronously, but the driver applies pending input components only from its normal frame loop. Never perform UDP or synchronous pipe work in `RunFrame`.
-
-## XInput Controller Input
-
-- Poll XInput in Runtime, never in the driver frame loop. Use the lowest-index connected XInput controller and immediately neutralize only the XInput-owned hand or hands when it disconnects, the route changes source, or Runtime exits.
-- Keep XInput sampling, observational status reads, and driver delivery independent. Update the in-memory state at polling cadence, let UI status reads take only the short state lock, and coalesce pending driver snapshots so slow synchronous driver IPC cannot block sampling or the 30 Hz Settings monitor.
-- Default to the symmetric Xbox mapping: left/right sticks and clicks feed the corresponding virtual sticks; left/right shoulders feed the corresponding virtual trigger values; left/right analog triggers feed the corresponding virtual grip values; View and Menu are merged into the left controller's system button; `X/Y` feed left `X/Y`, while `A/B` feed right `A/B`. Internal thresholded states may support animation and remapping decisions, but the driver must not publish trigger or grip click components.
-- Keep editable XInput mappings and their analog press threshold in the Runtime configuration. Present them in a dedicated Settings category immediately below OSC, with left-hand and right-hand columns and live monitors refreshed at approximately 30 Hz only while the page is visible. Apply changes automatically and provide one restore-default action.
-- Apply the standard XInput stick deadzones and clamp normalized axes to `[-1, 1]`. A digital source mapped to a scalar control produces exactly `0` or `1`; an analog trigger mapped to a boolean control uses one user threshold, defaulting to `50%`, and changes state directly at that threshold without release hysteresis.
-- Expose configurable thumb and index touch-assistance inputs independently for the left and right virtual controllers. Each helper has a selectable physical XInput source and a selectable `默认接触` / `默认抬起` idle state; holding the helper source temporarily inverts that state.
-- Actual controller mappings take precedence over touch assistance globally. If a physical XInput source is assigned to any real virtual-controller input, ignore that source as a touch-assistance toggle on both hands and retain the helper's configured idle state.
-- Expose `震动映射` directly below the analog threshold card with exactly `保留手别`, `保留手别（镜像）`, and `统一震动`. Preserve handedness maps left/right virtual haptics to the XInput low/high-frequency motors respectively; mirrored swaps them; unified sends the stronger active hand amplitude to both motors.
-- Create one `/output/haptic` component per virtual controller. Drain SteamVR haptic events into a fixed allocation-free driver queue during `RunFrame`, transfer them to Runtime through versioned driver IPC, and call `XInputSetState` only from Runtime. Apply feedback only for hands currently owned by XInput, use the lowest-index connected controller, honor duration and amplitude, and immediately stop both motors on disconnect, route/input-source change, Runtime exit, or controller-index change.
-
-## Synthesized Controller Skeletons
-
-- Virtual controllers expose the standard 31-bone left/right SteamVR skeletal components. Generate both `WithController` and `WithoutController` streams in the driver frame path without IPC or allocation; do not expose Knuckles-only per-finger scalar inputs as public controller capabilities.
-- Follow Oculus Touch hand semantics: infer distinct thumb landing poses from the handed face buttons, system/menu button, joystick, and thumb-rest activity; drive the index finger from trigger touch/value and the middle/ring/pinky group from grip touch/value. For OSC and XInput sources without capacitive channels, synthesize Touch-style contact from button presses and analog activity. Vary finger splay continuously so extended fingers are slightly spread and curled fingers converge, and smooth transitions over a short bounded response interval.
-- Drive trigger and grip animation from their analog values and explicit or synthesized touch states. Do not restore private or public trigger/grip click fields as animation fallbacks.
-- The skeletal simulator is built from the official OpenVR `handskeletonsimulation` sample pinned by `TRACKSWAP_OPENVR_REVISION`. Preserve Valve's license notice and keep the exact revision recorded in `THIRD-PARTY-NOTICES.md`.
-
-## SteamVR Configuration Safety
-
-Preserve these behaviors unless a task explicitly replaces them with a safer equivalent:
-
-- Do not write `steamvr.vrsettings` while SteamVR is running.
-- Back up the settings file before applying, removing, or restoring mappings.
-- Restore only `TrackingOverrides`; preserve unrelated SteamVR settings.
-- Use exact OpenVR registered device paths, including the actual prefix returned by OpenVR. Never synthesize `/devices/lighthouse/` or another prefix from a serial number.
-- Prevent self-maps, role self-reference, cycles, duplicate proxy slots, and conflicting target rules.
-- Keep target input separate from the selected pose source.
-- Treat concrete-device overrides as experimental because behavior can depend on the device driver and SteamVR version.
-- Installation and removal of the SteamVR driver must be explicit commands or user actions. An ordinary build must never register a driver silently.
-
-## Current Acceptance Baseline
-
-The following capabilities have been implemented and must not regress:
-
-- UI, Runtime/shared protocol, and native driver have separate project boundaries.
-- The solution and native driver build reproducibly for Windows x64.
-- Runtime, driver, and UI can restart independently without corrupting the saved configuration or crashing SteamVR.
-- Stable virtual proxies mirror connected sources, preserve health state, and recover from source reconnection.
-- Live source and offset updates work through versioned IPC.
-- The current route editor uses numeric offset editing and the virtual-output adjustment tool instead of exposing calibration-profile controls. Legacy offset and calibration files receive no unit migration; their stored translation numbers are interpreted as centimetres.
-- Downsampled per-route telemetry drives the source-and-final-target 3D preview outside the tracking-critical path; the virtual output remains available to telemetry but is not rendered as a third user-facing device.
-- The preview loads static device meshes and textures through `IVRRenderModels_006`, supports component-based controller models, and falls back to built-in device-class geometry without affecting tracking.
-- Virtual proxies use the visible driver-owned `trackswap_proxy_tracker` render model in direct-output mode and switch to the empty `trackswap_hidden_proxy` render model in target-replacement mode. The empty model prevents SteamVR from drawing a misleading GenericTracker fallback while preserving tracking, routing, and telemetry; the hidden-model behavior has been hardware-verified.
-- Virtual proxies publish driver-owned named 32 px status icons for every OpenVR device state. Do not allow SteamVR to fall back to the GenericTracker hexagon-and-`T` icon; keep these transparent status assets visually consistent with the TrackSwap tracker mark.
-- Multiple proxy slots can be registered in one SteamVR session and receive independent route snapshots.
-- Deleting a route while SteamVR is stopped removes its static proxy mapping without disturbing other routes.
-- Deleting a route with an existing static mapping while SteamVR is running marks it pending, preserves live tracking, and automatically removes its static mapping and Runtime route after SteamVR stops. Routes without a static mapping delete immediately.
-- Hardware testing has confirmed Tracker-to-hand pose replacement while the original hand controller keeps its input.
-
-Before the next release, repeat and document hardening for install, upgrade, disable, uninstall, SteamVR start/stop, standby, source power cycling, runtime/UI crashes, malformed configuration, device reconnection, multiple simultaneous physical sources, and configuration migration.
-
-## Development Practices
-
-- Keep official UI source strings in the embedded Simplified Chinese localization catalog. Community packs are pure JSON files under the active data root's `i18n` directory; never load executable code, XAML, assemblies, or scripts from a language pack. Missing, blank, or malformed translations must display the raw key as `⟦key⟧` rather than falling back to Chinese; unknown keys are reported as stale, and displayed fallback keys must remain easy to copy. Keep operational logs and low-level diagnostic output in English and outside localization resources.
-- Language packs use standard JSON, not JSONC, with one locale per file and exactly one flat `strings` object whose values are translation strings. Do not add nested groups or `{ "source", "translation" }` wrappers. Keys use stable, lowercase, dotted semantic names organized as `feature.area.purpose`; never generate hashes, `ui.auto.*`, or opaque numeric suffixes. Add a semantic catalog key before referencing new UI text. Sort keys ordinally and leave one blank line between top-level feature prefixes so files remain easy to scan without changing their flat schema. Preserve composite-format placeholders such as `{0}` exactly in every translation. Translator guidance belongs in Crowdin context or a separate tooling manifest, not in runtime string values or non-standard JSON comments.
-- Treat the embedded `zh-CN.json` catalog as the only source-text authority. Regenerate `localization/crowdin/source.csv` with `scripts/Export-CrowdinSource.ps1`; never hand-edit the generated CSV or allow Crowdin to overwrite the official Chinese catalog. Keep Crowdin CSV source text and translations in separate `source_phrase` and `translation` columns; never use `source_or_translation`. Set both `skip_untranslated_strings: true` and `export_only_approved: true` for the Crowdin file group so untranslated or unapproved content cannot enter delivered language packs or be filled with Chinese source fallback text. Crowdin translations return as locale CSV files and must pass `scripts/Import-CrowdinTranslation.ps1` before becoming runtime JSON packs. Keep Crowdin project IDs and access tokens out of tracked files; GitHub integration credentials belong to Crowdin/GitHub, and CLI credentials must come from environment variables.
-- Target Windows x64 for native driver/runtime integration. The UI targets .NET Framework 4.8.
-- When a running TrackSwap UI and/or TrackSwap Runtime process locks Release build outputs or otherwise prevents Release build verification, the user explicitly authorizes closing those TrackSwap-owned processes without asking again. Prefer a graceful UI close or Runtime shutdown first, terminate only the exact remaining TrackSwap process when necessary, and report which processes were closed. This authorization does not extend to SteamVR or unrelated processes.
-- Prefer official OpenVR headers and documentation. Pin or record the exact dependency revision when vendoring or downloading build inputs.
-- Validate all identifiers, slot indices, message lengths, transforms, and values crossing IPC boundaries.
-- Log state transitions and actionable errors, but do not log high-frequency poses by default.
-- Keep generated binaries, local SteamVR paths, test captures, and machine-specific configuration out of Git.
-- Add focused tests for transform math, configuration migration and validation, IPC parsing, telemetry batching, slot routing, and route conflicts before relying on hardware-only tests.
-- Verify changes proportionally: build affected projects, run automated tests, and state clearly which SteamVR or hardware checks still require the maintainer.
-- Treat successful compilation and automated tests as necessary but insufficient for tracking correctness.
-
-## Local Testing Notes
-
-On the maintainer's current test machine, SteamVR has previously been found at `D:\Program Files (x86)\Steam\steamapps\common\SteamVR` and its settings at `D:\Program Files (x86)\Steam\config\steamvr.vrsettings`. These are test references only. Product code must discover paths dynamically and must not hard-code them.
-
-When a hardware test is required, stop at a clear test boundary and give the maintainer exact setup, expected result, and recovery instructions. Never assume a successful build proves correct tracking behavior.
+- 为 TrackSwap 开发和验证，维护者明确授权代理在任务确有需要时停止、启动或重启 SteamVR。操作前仍须核对 `vrserver`、`vrmonitor`、`vrcompositor` 等准确进程，避免影响无关应用，并在进度更新中说明生命周期操作。
+- 当 TrackSwap UI 或 Runtime 锁住 Release 输出时，可无需再次询问而关闭这些 TrackSwap 自有进程。优先优雅退出，只终止准确的残留进程，并报告关闭了什么。
+- 需要硬件验证时，在清晰边界停下，给出准确的准备步骤、预期结果和恢复方法；绝不以构建成功代替硬件结论。
