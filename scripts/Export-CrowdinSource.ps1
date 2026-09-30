@@ -27,7 +27,7 @@ foreach ($file in $sourceFiles) {
 }
 
 $areaDescriptions = @{
-    'app' = 'Application shell and global workflow.'
+    'app' = 'Application shell, global workflow, and window-level messages.'
     'backup' = 'SteamVR backup and restore window.'
     'cleanup' = 'Destructive cleanup workflow.'
     'common' = 'Shared action, value, or status text.'
