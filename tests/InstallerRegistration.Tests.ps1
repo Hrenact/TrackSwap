@@ -13,6 +13,25 @@ $manifestPath = Join-Path $fixture 'TrackSwap.vrmanifest'
 $jsonLibrary = Join-Path $repositoryRoot 'src\TrackSwap\bin\Release\net48\Newtonsoft.Json.dll'
 $originalLocalAppData = $env:LOCALAPPDATA
 
+function Test-PathCollectionContains(
+    [object[]]$Paths,
+    [string]$ExpectedPath) {
+    $resolvedExpected = [System.IO.Path]::GetFullPath($ExpectedPath)
+    foreach ($path in @($Paths)) {
+        if ([string]::IsNullOrWhiteSpace([string]$path)) {
+            continue
+        }
+        $resolvedCandidate = [System.IO.Path]::GetFullPath([string]$path)
+        if ([string]::Equals(
+            $resolvedCandidate,
+            $resolvedExpected,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 try {
     New-Item -ItemType Directory -Path `
         $openVrDirectory, `
@@ -71,12 +90,28 @@ try {
     $installedVrApp = Get-Content `
         -LiteralPath (Join-Path $configDirectory 'vrappconfig\com.hrenact.trackswap.vrappconfig') `
         -Raw | ConvertFrom-Json
-    if (@($installedApp.manifest_paths).Count -ne 2 -or
-        $installedApp.manifest_paths -notcontains $manifestPath -or
-        $installedVrApp.autolaunch -ne $false) {
+    $installedManifestPaths = @($installedApp.manifest_paths | ForEach-Object {
+        [string]$_
+    })
+    $installedManifestCountIsCorrect = $installedManifestPaths.Count -eq 2
+    $trackSwapManifestIsRegistered = Test-PathCollectionContains `
+        -Paths $installedManifestPaths `
+        -ExpectedPath $manifestPath
+    $autoLaunchProperty = $installedVrApp.PSObject.Properties['autolaunch']
+    $autoLaunchIsDisabled = $null -ne $autoLaunchProperty -and
+        $autoLaunchProperty.Value -is [bool] -and
+        -not [bool]$autoLaunchProperty.Value
+    if (-not $installedManifestCountIsCorrect -or
+        -not $trackSwapManifestIsRegistered -or
+        -not $autoLaunchIsDisabled) {
         throw ('Install registration assertions failed: app=' +
             ($installedApp | ConvertTo-Json -Depth 8 -Compress) +
-            '; vrapp=' + ($installedVrApp | ConvertTo-Json -Depth 8 -Compress))
+            '; vrapp=' + ($installedVrApp | ConvertTo-Json -Depth 8 -Compress) +
+            '; checks=' + (@{
+                manifestCount = $installedManifestCountIsCorrect
+                manifestRegistered = $trackSwapManifestIsRegistered
+                autoLaunchDisabled = $autoLaunchIsDisabled
+            } | ConvertTo-Json -Compress))
     }
 
     & (Join-Path $repositoryRoot 'scripts\Manage-SteamVrRegistration.ps1') `
