@@ -125,11 +125,25 @@ try {
     $resetSettings = Get-Content `
         -LiteralPath (Join-Path $configDirectory 'steamvr.vrsettings') `
         -Raw | ConvertFrom-Json
-    if (@($resetApp.manifest_paths).Count -ne 2 -or
-        $resetApp.manifest_paths -notcontains $manifestPath -or
-        -not (Test-Path -LiteralPath (
-            Join-Path $configDirectory 'vrappconfig\com.hrenact.trackswap.vrappconfig'))) {
-        throw 'Data reset unexpectedly removed TrackSwap integration registration.'
+    $resetManifestPaths = @($resetApp.manifest_paths | ForEach-Object {
+        [string]$_
+    })
+    $resetManifestCountIsCorrect = $resetManifestPaths.Count -eq 2
+    $resetManifestIsRegistered = Test-PathCollectionContains `
+        -Paths $resetManifestPaths `
+        -ExpectedPath $manifestPath
+    $resetVrAppConfigExists = Test-Path -LiteralPath (
+        Join-Path $configDirectory 'vrappconfig\com.hrenact.trackswap.vrappconfig')
+    if (-not $resetManifestCountIsCorrect -or
+        -not $resetManifestIsRegistered -or
+        -not $resetVrAppConfigExists) {
+        throw ('Data reset unexpectedly removed TrackSwap integration registration: app=' +
+            ($resetApp | ConvertTo-Json -Depth 8 -Compress) +
+            '; checks=' + (@{
+                manifestCount = $resetManifestCountIsCorrect
+                manifestRegistered = $resetManifestIsRegistered
+                vrAppConfigExists = $resetVrAppConfigExists
+            } | ConvertTo-Json -Compress))
     }
     if ($resetSettings.TrackingOverrides.PSObject.Properties.Name -contains
             '/devices/trackswap/TRKSWAP-PROXY-00' -or
@@ -156,9 +170,21 @@ try {
     $uninstalledSettings = Get-Content `
         -LiteralPath (Join-Path $configDirectory 'steamvr.vrsettings') `
         -Raw | ConvertFrom-Json
-    if (@($uninstalledApp.manifest_paths).Count -ne 1 -or
-        $uninstalledApp.manifest_paths[0] -ne 'X:\Other\Other.vrmanifest') {
-        throw 'Application manifest cleanup assertions failed.'
+    $uninstalledManifestPaths = @($uninstalledApp.manifest_paths | ForEach-Object {
+        [string]$_
+    })
+    $uninstalledManifestCountIsCorrect = $uninstalledManifestPaths.Count -eq 1
+    $unrelatedManifestWasPreserved = Test-PathCollectionContains `
+        -Paths $uninstalledManifestPaths `
+        -ExpectedPath 'X:\Other\Other.vrmanifest'
+    if (-not $uninstalledManifestCountIsCorrect -or
+        -not $unrelatedManifestWasPreserved) {
+        throw ('Application manifest cleanup assertions failed: app=' +
+            ($uninstalledApp | ConvertTo-Json -Depth 8 -Compress) +
+            '; checks=' + (@{
+                manifestCount = $uninstalledManifestCountIsCorrect
+                unrelatedManifestPreserved = $unrelatedManifestWasPreserved
+            } | ConvertTo-Json -Compress))
     }
     if ($uninstalledSettings.TrackingOverrides.PSObject.Properties.Name -contains
             '/devices/trackswap/TRKSWAP-PROXY-00' -or
