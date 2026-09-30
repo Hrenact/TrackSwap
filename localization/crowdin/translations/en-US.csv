@@ -489,7 +489,7 @@
 "settings.category.runtime","运行与诊断","运行与诊断","TrackSwap settings. Used in: src/TrackSwap/MainWindow.xaml"
 "settings.category.steamvr","SteamVR","SteamVR","TrackSwap settings. Used in: src/TrackSwap/MainWindow.xaml"
 "settings.category.xinput","XInput","XInput","TrackSwap settings. Used in: src/TrackSwap/MainWindow.xaml"
-"settings.description","管理运行环境、SteamVR 工具与本机设备记录。","管理运行环境、SteamVR 工具与本机设备记录。","TrackSwap settings. Used in: src/TrackSwap/MainWindow.xaml"
+"settings.description","管理运行环境、SteamVR 工具与本机设备记录。","再次的再次测试 Manage running environments, SteamVR tools and native device records.","TrackSwap settings. Used in: src/TrackSwap/MainWindow.xaml"
 "settings.devices.clear_device_history_button_click.cannot_clear_device_history","无法清空设备记录","无法清空设备记录","TrackSwap settings. Used in: src/TrackSwap/MainWindow.xaml.cs"
 "settings.devices.clear_history","清空设备记录","清空设备记录","TrackSwap settings. Used in: src/TrackSwap/MainWindow.xaml, src/TrackSwap/MainWindow.xaml.cs"
 "settings.devices.clear_history.confirmation","确定清空设备记录？
