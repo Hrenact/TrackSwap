@@ -1,0 +1,8 @@
+preserve_hierarchy: true
+
+files:
+  - source: /localization/crowdin/source.csv
+    translation: /localization/crowdin/translations/%locale%.csv
+    first_line_contains_header: true
+    scheme: identifier,source_or_translation,context
+    update_option: update_as_unapproved

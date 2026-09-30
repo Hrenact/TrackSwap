@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -40,17 +41,17 @@ namespace TrackSwap.Services
             return new DiagnosticsReport
             {
                 UiVersion = GetUiVersion(),
-                RuntimeProgram = File.Exists(runtimeExecutable) ? "已找到" : "未找到",
+                RuntimeProgram = File.Exists(runtimeExecutable) ? Tr.Get("common.status.found") : Tr.Get("service.diagnostics.inspect.not_found"),
                 RuntimeProgramPath = runtimeExecutable,
                 SteamVr = string.IsNullOrWhiteSpace(steamVrPath)
-                    ? "未检测到安装路径"
-                    : _statusService.IsRunning() ? "运行中" : "已安装 · 未运行",
+                    ? Tr.Get("service.diagnostics.inspect.path")
+                    : _statusService.IsRunning() ? Tr.Get("common.status.running") : Tr.Get("service.diagnostics.inspect.not_running"),
                 SteamVrPath = steamVrPath,
-                DriverRegistration = string.IsNullOrWhiteSpace(driverPath) ? "未注册" : "已注册",
+                DriverRegistration = string.IsNullOrWhiteSpace(driverPath) ? Tr.Get("service.diagnostics.inspect.register") : Tr.Get("common.status.registered"),
                 DriverPath = driverPath,
                 Configuration = runtimeStatus?.Configuration == null
-                    ? "尚未从 Runtime 读取"
-                    : configurationErrors.Count == 0 ? "通过" : configurationErrors.Count + " 个问题",
+                    ? Tr.Get("service.diagnostics.inspect.runtime_read")
+                    : configurationErrors.Count == 0 ? Tr.Get("common.status.passed") : configurationErrors.Count + Tr.Get("common.count.issue_suffix"),
                 ConfigurationErrors = configurationErrors
             };
         }
@@ -145,41 +146,41 @@ namespace TrackSwap.Services
             RuntimeConfiguration configuration = status?.Configuration;
             IReadOnlyList<RouteConfiguration> routes = configuration?.Routes ?? new List<RouteConfiguration>();
             var builder = new StringBuilder();
-            builder.AppendLine("TrackSwap 诊断摘要");
-            builder.AppendLine("生成时间: " + DateTimeOffset.Now.ToString("O"));
-            builder.AppendLine("UI 版本: " + report.UiVersion);
-            builder.AppendLine("操作系统: " + GetOperatingSystemDescription());
-            builder.AppendLine("Runtime: " + (status == null ? "未连接" : "在线"));
-            builder.AppendLine("Runtime 程序: " + report.RuntimeProgram + " · " + (report.RuntimeProgramPath ?? "—"));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.trackswap"));
+            builder.AppendLine(Tr.Get("diagnostics.generated_at_prefix") + DateTimeOffset.Now.ToString("O"));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.ui_version") + report.UiVersion);
+            builder.AppendLine(Tr.Get("diagnostics.operating_system_prefix") + GetOperatingSystemDescription());
+            builder.AppendLine("Runtime: " + (status == null ? Tr.Get("common.status.disconnected") : Tr.Get("common.status.online")));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.runtime") + report.RuntimeProgram + " · " + (report.RuntimeProgramPath ?? "—"));
             builder.AppendLine("SteamVR: " + report.SteamVr + " · " + (report.SteamVrPath ?? "—"));
-            builder.AppendLine("TrackSwap 驱动: " + report.DriverRegistration + " · " + (report.DriverPath ?? "—"));
-            builder.AppendLine("驱动连接: " + (status?.DriverConnected == true ? "是" : "否"));
-            builder.AppendLine("配置 revision: " + (status == null ? "—" : status.ConfigurationRevision.ToString()));
-            builder.AppendLine("驱动 applied revision: " + (status == null ? "—" : status.DriverAppliedRevision.ToString()));
-            builder.AppendLine("静态映射整理: " + (status == null
-                ? "未知"
-                : status.StaticMappingPending ? "待处理" : "已完成"));
-            builder.AppendLine("设备隐藏: " + (status?.PhysicalSourceHiding == null
-                ? "未知"
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.trackswap_driver") + report.DriverRegistration + " · " + (report.DriverPath ?? "—"));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.driver_connect") + (status?.DriverConnected == true ? Tr.Get("dialog.yes") : Tr.Get("dialog.no")));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.config_revision") + (status == null ? "—" : status.ConfigurationRevision.ToString()));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.driver_applied_revision") + (status == null ? "—" : status.DriverAppliedRevision.ToString()));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.static_mapping") + (status == null
+                ? Tr.Get("common.status.unknown")
+                : status.StaticMappingPending ? Tr.Get("common.status.pending") : Tr.Get("service.diagnostics.build_summary.complete")));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.device_hide") + (status?.PhysicalSourceHiding == null
+                ? Tr.Get("common.status.unknown")
                 : status.PhysicalSourceHiding.State + " · " +
                   status.PhysicalSourceHiding.ActiveDeviceCount + " / " +
                   status.PhysicalSourceHiding.RequestedDeviceCount));
-            builder.AppendLine("配置校验: " + report.Configuration);
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.config") + report.Configuration);
             builder.AppendLine();
-            builder.AppendLine("路由统计（不含名称、设备路径与序列号）");
-            builder.AppendLine("总数: " + routes.Count);
-            builder.AppendLine("启用: " + routes.Count(route => route.Enabled));
-            builder.AppendLine("待删除: " + routes.Count(route => route.PendingDeletion));
-            builder.AppendLine("虚拟追踪器: " + routes.Count(route => route.Mode == RouteMode.DirectProxy));
-            builder.AppendLine("虚拟控制器: " + routes.Count(route => route.Mode == RouteMode.VirtualController));
-            builder.AppendLine("虚拟头显: " + routes.Count(route => route.Mode == RouteMode.VirtualHmd));
-            builder.AppendLine("替换设备位姿: " + routes.Count(route => route.Mode == RouteMode.ReplaceTarget));
-            builder.AppendLine("OSC 输入: " + routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.Osc));
-            builder.AppendLine("XInput 输入: " + routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.XInput));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.name_device_path"));
+            builder.AppendLine(Tr.Get("diagnostics.total_prefix") + routes.Count);
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.enable") + routes.Count(route => route.Enabled));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.delete") + routes.Count(route => route.PendingDeletion));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.virtual_tracker") + routes.Count(route => route.Mode == RouteMode.DirectProxy));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.virtual_controller") + routes.Count(route => route.Mode == RouteMode.VirtualController));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.virtual_hmd") + routes.Count(route => route.Mode == RouteMode.VirtualHmd));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.replace_device_pose") + routes.Count(route => route.Mode == RouteMode.ReplaceTarget));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.osc_input") + routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.Osc));
+            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.xinput_input") + routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.XInput));
             if (report.ConfigurationErrors.Count > 0)
             {
                 builder.AppendLine();
-                builder.AppendLine("配置问题");
+                builder.AppendLine(Tr.Get("service.diagnostics.build_summary.config_issue"));
                 foreach (string error in report.ConfigurationErrors)
                 {
                     builder.AppendLine("- " + error);
@@ -188,13 +189,13 @@ namespace TrackSwap.Services
             if (!string.IsNullOrWhiteSpace(status?.LastError))
             {
                 builder.AppendLine();
-                builder.AppendLine("Runtime 最近错误");
+                builder.AppendLine(Tr.Get("service.diagnostics.build_summary.runtime_last_error"));
                 builder.AppendLine(status.LastError);
             }
             if (!string.IsNullOrWhiteSpace(status?.StaticMappingLastError))
             {
                 builder.AppendLine();
-                builder.AppendLine("静态映射最近错误");
+                builder.AppendLine(Tr.Get("service.diagnostics.build_summary.static_mapping_last_error"));
                 builder.AppendLine(status.StaticMappingLastError);
             }
             return builder.ToString();
@@ -364,7 +365,7 @@ namespace TrackSwap.Services
             Assembly assembly = Assembly.GetExecutingAssembly();
             return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
                 ?? assembly.GetName().Version?.ToString()
-                ?? "未知";
+                ?? Tr.Get("common.status.unknown");
         }
 
         private static string GetOperatingSystemDescription()

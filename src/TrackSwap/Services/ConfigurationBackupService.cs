@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -27,7 +28,7 @@ namespace TrackSwap.Services
         {
             if (configuration == null)
             {
-                throw new InvalidDataException("尚未从 Runtime 读取配置。");
+                throw new InvalidDataException(Tr.Get("service.configuration_backup.export.runtime_read_config"));
             }
 
             EnsureValid(configuration);
@@ -47,11 +48,11 @@ namespace TrackSwap.Services
             var fileInfo = new FileInfo(sourcePath);
             if (!fileInfo.Exists)
             {
-                throw new FileNotFoundException("找不到配置备份文件。", sourcePath);
+                throw new FileNotFoundException(Tr.Get("service.configuration_backup.read.config_backup_file"), sourcePath);
             }
             if (fileInfo.Length <= 0 || fileInfo.Length > 4 * 1024 * 1024)
             {
-                throw new InvalidDataException("配置备份文件为空或超过 4 MB 限制。");
+                throw new InvalidDataException(Tr.Get("service.configuration_backup.read.config_backup_file_4_mb"));
             }
 
             ConfigurationBackupFile backup;
@@ -63,16 +64,16 @@ namespace TrackSwap.Services
             }
             catch (JsonException exception)
             {
-                throw new InvalidDataException("配置备份文件格式无效。", exception);
+                throw new InvalidDataException(Tr.Get("service.configuration_backup.read.config_backup_file_invalid"), exception);
             }
 
             if (backup == null || backup.SchemaVersion != CurrentBackupSchemaVersion)
             {
-                throw new InvalidDataException("不支持此配置备份版本。");
+                throw new InvalidDataException(Tr.Get("service.configuration_backup.read.config_backup_version"));
             }
             if (backup.RuntimeConfiguration == null)
             {
-                throw new InvalidDataException("配置备份中没有 Runtime 配置。");
+                throw new InvalidDataException(Tr.Get("service.configuration_backup.read.config_backup_runtime_config"));
             }
 
             backup.UiPreferences = backup.UiPreferences ?? new UiPreferences();
@@ -81,7 +82,7 @@ namespace TrackSwap.Services
                     typeof(RuntimeLifecycleMode),
                     backup.UiPreferences.RuntimeLifecycleMode))
             {
-                throw new InvalidDataException("配置备份包含无效的 Runtime 启停行为。");
+                throw new InvalidDataException(Tr.Get("service.configuration_backup.read.config_backup_invalid_runtime_lifecycle_mode"));
             }
             return backup;
         }
@@ -118,7 +119,7 @@ namespace TrackSwap.Services
         {
             string fullPath = Path.GetFullPath(destinationPath);
             string directory = Path.GetDirectoryName(fullPath)
-                ?? throw new InvalidDataException("备份路径没有上级目录。");
+                ?? throw new InvalidDataException(Tr.Get("service.configuration_backup.write_atomic.backup_path_up_directory"));
             Directory.CreateDirectory(directory);
             string temporaryPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
@@ -146,7 +147,7 @@ namespace TrackSwap.Services
         {
             Assembly assembly = typeof(ConfigurationBackupService).Assembly;
             return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-                .InformationalVersion ?? assembly.GetName().Version?.ToString() ?? "未知";
+                .InformationalVersion ?? assembly.GetName().Version?.ToString() ?? Tr.Get("common.status.unknown");
         }
     }
 

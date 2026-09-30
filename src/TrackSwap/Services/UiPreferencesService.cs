@@ -66,6 +66,8 @@ namespace TrackSwap.Services
 
     public sealed class UiPreferences
     {
+        public string LanguageLocale { get; set; } = "zh-CN";
+
         public bool ShowSteamVrRoleTargets { get; set; }
 
         public bool AllowDuplicatePoseSources { get; set; }

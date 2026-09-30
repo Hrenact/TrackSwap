@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using TrackSwap.Localization;
 using TrackSwap.Protocol;
 
 namespace TrackSwap.Models
@@ -58,7 +60,13 @@ namespace TrackSwap.Models
         public static string BaseDisplayName(string displayName)
         {
             string value = displayName ?? string.Empty;
-            string[] prefixes = { "当前 · ", "在线 · ", "离线 · ", "历史 · ", "在线设备 · ", "已保存设备 · " };
+            var prefixes = new List<string>
+            {
+                Tr.Get("device.status.online_prefix"),
+                Tr.Get("device.status.offline_prefix"),
+                Tr.Get("device.status.saved_prefix"),
+                "当前 · ", "在线 · ", "离线 · ", "历史 · ", "在线设备 · ", "已保存设备 · "
+            };
             foreach (string prefix in prefixes)
             {
                 if (value.StartsWith(prefix, StringComparison.Ordinal))

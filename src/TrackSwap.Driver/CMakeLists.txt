@@ -113,7 +113,7 @@ target_include_directories(trackswap_vr_viewer PRIVATE "${CMAKE_CURRENT_SOURCE_D
 target_compile_definitions(trackswap_vr_viewer PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 target_compile_options(trackswap_vr_viewer PRIVATE /W4 /WX /permissive- /EHsc /utf-8)
 target_link_libraries(trackswap_vr_viewer PRIVATE
-    d3d11 d3dcompiler dxgi dwmapi windowscodecs ole32 shell32 uuid)
+    crypt32 d3d11 d3dcompiler dxgi dwmapi windowscodecs ole32 shell32 uuid)
 set_target_properties(trackswap_vr_viewer PROPERTIES OUTPUT_NAME "TrackSwap.Viewer")
 
 install(TARGETS driver_trackswap RUNTIME DESTINATION bin/win64)

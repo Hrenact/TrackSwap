@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Collections.Generic;
 using System.IO;
 using System.Windows;
@@ -35,7 +36,7 @@ namespace TrackSwap
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             RuntimeWarningText.Text = _statusService.IsRunning()
-                ? "请先退出 SteamVR 后再恢复"
+                ? Tr.Get("steamvr.restore.stop_first")
                 : string.Empty;
         }
 
@@ -43,8 +44,8 @@ namespace TrackSwap
         {
             if (_statusService.IsRunning())
             {
-                AppDialog.Show(this, "请先完全退出 SteamVR，避免退出时覆盖恢复结果。", "SteamVR 正在运行", MessageBoxButton.OK, MessageBoxImage.Warning);
-                RuntimeWarningText.Text = "请先退出 SteamVR 后再恢复";
+                AppDialog.Show(this, Tr.Get("backup.restore.restore_button_click.exit_steamvr_exit_restore"), Tr.Get("steamvr.status.running"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                RuntimeWarningText.Text = Tr.Get("steamvr.restore.stop_first");
                 return;
             }
 
@@ -56,10 +57,10 @@ namespace TrackSwap
 
             MessageBoxResult result = AppDialog.Show(
                 this,
-                "恢复 " + backup.DisplayTime + " 的位姿配置？\n\n"
+                Tr.Get("backup.restore.restore_button_click.restore") + backup.DisplayTime + Tr.Get("backup.restore.restore_button_click.pose_config")
                     + backup.Summary + "\n\n"
-                    + "只会替换 TrackingOverrides；当前配置会先自动备份。",
-                "确认恢复",
+                    + Tr.Get("backup.restore.restore_button_click.replace_tracking_overrides_current_config_automatic_backup"),
+                Tr.Get("backup.restore.restore_button_click.confirm_restore"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Warning);
 
@@ -73,15 +74,15 @@ namespace TrackSwap
                 string safetyBackup = _settingsService.RestoreTrackingOverrides(_settingsPath, backup.FilePath);
                 AppDialog.Show(
                     this,
-                    "位姿配置已恢复。\n\n恢复前快照：" + Path.GetFileName(safetyBackup),
-                    "恢复完成",
+                    Tr.Get("backup.restore.restore_button_click.pose_config_restore_restore") + Path.GetFileName(safetyBackup),
+                    Tr.Get("backup.restore.restore_button_click.restore_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
                 DialogResult = true;
             }
             catch (Exception exception)
             {
-                AppDialog.Show(this, exception.Message, "恢复失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("backup.restore.restore_button_click.restore_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

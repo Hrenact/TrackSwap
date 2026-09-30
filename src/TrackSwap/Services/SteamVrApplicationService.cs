@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -13,11 +14,11 @@ namespace TrackSwap.Services
         {
             if (string.IsNullOrWhiteSpace(runtimePath))
             {
-                throw new InvalidOperationException("未找到 SteamVR Runtime 路径。");
+                throw new InvalidOperationException(Tr.Get("steamvr.error.runtime_path_not_found"));
             }
             if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
             {
-                throw new FileNotFoundException("未找到 TrackSwap 的 SteamVR 应用清单。", manifestPath);
+                throw new FileNotFoundException(Tr.Get("service.steam_vr_application.set_auto_launch.not_found_trackswap_steamvr_app_manifest"), manifestPath);
             }
 
             lock (OpenVrInterop.SyncRoot)
@@ -38,7 +39,7 @@ namespace TrackSwap.Services
                     if (disableError != EVRApplicationError.None &&
                         disableError != EVRApplicationError.UnknownApplication)
                     {
-                        throw new InvalidOperationException("SteamVR 自动启动设置失败，错误码：" + (int)disableError);
+                        throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.steamvr_auto_start_settings_failed_error_code") + (int)disableError);
                     }
 
                     // SteamVR may terminate any process whose executable belongs to a
@@ -50,7 +51,7 @@ namespace TrackSwap.Services
                     if (removeError != EVRApplicationError.None &&
                         removeError != EVRApplicationError.UnknownApplication)
                     {
-                        throw new InvalidOperationException("SteamVR 应用清单注销失败，错误码：" + (int)removeError);
+                        throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.steamvr_app_manifest_unregister_failed_error_code") + (int)removeError);
                     }
                     return disableError == EVRApplicationError.None;
                 }
@@ -59,7 +60,7 @@ namespace TrackSwap.Services
                 if (addError != EVRApplicationError.None &&
                     addError != EVRApplicationError.AppKeyAlreadyExists)
                 {
-                    throw new InvalidOperationException("SteamVR 应用清单注册失败，错误码：" + (int)addError);
+                    throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.steamvr_app_manifest_register_failed_error_code") + (int)addError);
                 }
 
                 identifyApplication(
@@ -74,7 +75,7 @@ namespace TrackSwap.Services
                 }
                 if (launchError != EVRApplicationError.None)
                 {
-                    throw new InvalidOperationException("SteamVR 自动启动设置失败，错误码：" + (int)launchError);
+                    throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.steamvr_auto_start_settings_failed_error_code") + (int)launchError);
                 }
                 return true;
             }
@@ -85,7 +86,7 @@ namespace TrackSwap.Services
             IntPtr address = Marshal.ReadIntPtr(table, index * IntPtr.Size);
             if (address == IntPtr.Zero)
             {
-                throw new InvalidOperationException("OpenVR Applications 函数表不完整。");
+                throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.openvr_applications_complete"));
             }
             return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
         }

@@ -1,4 +1,6 @@
 using System;
+using System.Globalization;
+using TrackSwap.Localization;
 
 namespace TrackSwap.Models
 {
@@ -42,6 +44,8 @@ namespace TrackSwap.Models
             ? FileSize + " B"
             : (FileSize / 1024.0).ToString("0.0") + " KB";
 
-        public string RuleCountText => IsValid ? RuleCount + " 条规则" : "无法读取";
+        public string RuleCountText => IsValid
+            ? string.Format(CultureInfo.CurrentCulture, Tr.Get("backup.rule_count"), RuleCount)
+            : Tr.Get("backup.unreadable");
     }
 }

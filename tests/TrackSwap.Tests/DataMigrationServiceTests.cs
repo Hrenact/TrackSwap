@@ -25,6 +25,8 @@ public sealed class DataMigrationServiceTests : IDisposable
             Path.Combine(legacy, "runtime-config.json"),
             JsonConvert.SerializeObject(new RuntimeConfiguration { Revision = 7 }));
         File.WriteAllText(Path.Combine(legacy, "ui-preferences.json"), "{}");
+        Directory.CreateDirectory(Path.Combine(legacy, "i18n"));
+        File.WriteAllText(Path.Combine(legacy, "i18n", "en-US.json"), "{}");
         File.WriteAllText(Path.Combine(preferred, "keep.txt"), "destination data");
         var service = CreateService(legacy, preferred, () => legacy);
 
@@ -32,6 +34,7 @@ public sealed class DataMigrationServiceTests : IDisposable
 
         Assert.Equal(preferred, result.TargetDirectory);
         Assert.True(File.Exists(Path.Combine(preferred, "runtime-config.json")));
+        Assert.True(File.Exists(Path.Combine(preferred, "i18n", "en-US.json")));
         string preserved = Directory.GetDirectories(
             Path.Combine(preferred, "Backups"),
             "PreMigrationFiles-*",
@@ -53,15 +56,19 @@ public sealed class DataMigrationServiceTests : IDisposable
             Path.Combine(steamVrBackups, "steamvr.vrsettings.trackswap-1.backup"),
             "owned");
         File.WriteAllText(Path.Combine(steamVrBackups, "unknown.bin"), "keep");
+        Directory.CreateDirectory(Path.Combine(legacy, "i18n"));
+        File.WriteAllText(Path.Combine(legacy, "i18n", "en-US.json"), "{}");
+        File.WriteAllText(Path.Combine(legacy, "i18n", "notes.txt"), "keep");
         var service = CreateService(legacy, preferred, () => preferred);
 
         LegacyCleanupResult result = service.CleanLegacyData();
 
-        Assert.Equal(2, result.RemovedFileCount);
+        Assert.Equal(3, result.RemovedFileCount);
         Assert.False(result.DirectoryRemoved);
         Assert.False(File.Exists(Path.Combine(legacy, "runtime-config.json")));
         Assert.True(File.Exists(Path.Combine(legacy, "unknown.txt")));
         Assert.True(File.Exists(Path.Combine(steamVrBackups, "unknown.bin")));
+        Assert.True(File.Exists(Path.Combine(legacy, "i18n", "notes.txt")));
     }
 
     [Fact]

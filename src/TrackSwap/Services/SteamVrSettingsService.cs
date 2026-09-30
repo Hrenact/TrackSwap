@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -74,7 +75,7 @@ namespace TrackSwap.Services
                 .Where(path => !string.IsNullOrWhiteSpace(path) && path.StartsWith("/devices/", StringComparison.Ordinal))
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-                .Select(path => new TargetOption("已保存设备 · " + BuildFriendlyName(path), path))
+                .Select(path => new TargetOption(Tr.Get("device.status.saved_prefix") + BuildFriendlyName(path), path))
                 .ToList();
         }
 
@@ -93,7 +94,7 @@ namespace TrackSwap.Services
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .Select(path => new TargetOption(
-                    "旧角色目标 · " + BuildTargetFriendlyName(path) + "（仅维护）",
+                    Tr.Get("service.steam_vr_settings.read_known_role_targets.role_target") + BuildTargetFriendlyName(path) + Tr.Get("common.qualifier.maintenance_only"),
                     path))
                 .ToList();
         }
@@ -153,9 +154,9 @@ namespace TrackSwap.Services
                             .ToList();
                     int count = overrides?.Properties().Count() ?? 0;
                     string summary = summaries.Count == 0
-                        ? "备份中没有位姿覆盖规则"
+                        ? Tr.Get("service.steam_vr_settings.read_backups.backup_pose")
                         : string.Join(Environment.NewLine, summaries)
-                            + (count > summaries.Count ? Environment.NewLine + "另有 " + (count - summaries.Count) + " 条…" : string.Empty);
+                            + (count > summaries.Count ? Environment.NewLine + Tr.Get("common.count.additional_prefix") + (count - summaries.Count) + Tr.Get("service.steam_vr_settings.read_backups.item") : string.Empty);
 
                     backups.Add(new BackupOption(
                         backupPath,
@@ -173,7 +174,7 @@ namespace TrackSwap.Services
                         file.LastWriteTime,
                         file.Length,
                         0,
-                        "备份文件损坏或不是有效的 SteamVR 配置",
+                        Tr.Get("service.steam_vr_settings.read_backups.backup_file_steamvr_config"),
                         false,
                         exception.Message));
                 }
@@ -226,7 +227,7 @@ namespace TrackSwap.Services
                     !File.ReadAllBytes(sourcePath).SequenceEqual(File.ReadAllBytes(destinationPath)))
                 {
                     File.Delete(destinationPath);
-                    throw new IOException("SteamVR 配置备份复制校验失败：" + Path.GetFileName(sourcePath));
+                    throw new IOException(Tr.Get("service.steam_vr_settings.migrate_legacy_backups.steamvr_config_backup_copy_failed") + Path.GetFileName(sourcePath));
                 }
                 File.Delete(sourcePath);
                 migrated++;
@@ -249,7 +250,7 @@ namespace TrackSwap.Services
                 || !backupFileName.StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase)
                 || !backupFileName.EndsWith(".backup", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("只能恢复当前配置目录中由 TrackSwap 创建的备份。");
+                throw new InvalidOperationException(Tr.Get("settings.steamvr.backup.restore_scope_error"));
             }
 
             JObject currentRoot = ReadRoot(fullSettingsPath);
@@ -266,7 +267,7 @@ namespace TrackSwap.Services
             }
             else
             {
-                throw new InvalidOperationException("备份中的 TrackingOverrides 格式无效。");
+                throw new InvalidOperationException(Tr.Get("service.steam_vr_settings.restore_tracking_overrides.backup_tracking_overrides_invalid"));
             }
 
             return WriteWithBackup(fullSettingsPath, currentRoot);
@@ -318,7 +319,7 @@ namespace TrackSwap.Services
 
             if (match == null)
             {
-                throw new InvalidOperationException("这条映射已不存在，请重新载入配置。");
+                throw new InvalidOperationException(Tr.Get("service.steam_vr_settings.remove_override.item_mapping_missing_load_config"));
             }
 
             match.Remove();
@@ -329,7 +330,7 @@ namespace TrackSwap.Services
         {
             if (string.Equals(sourcePath, targetPath, StringComparison.Ordinal))
             {
-                return "追踪来源和替换目标不能是同一个设备。";
+                return Tr.Get("service.steam_vr_settings.validate_override.source_replacement_target_cannot_count_device");
             }
 
             JObject overrides = root["TrackingOverrides"] as JObject;
@@ -356,7 +357,7 @@ namespace TrackSwap.Services
             {
                 if (!visited.Add(current))
                 {
-                    return "该映射会形成循环覆盖，请选择其他来源或目标。";
+                    return Tr.Get("service.steam_vr_settings.validate_override.mapping_select_source_target");
                 }
 
                 current = next;
@@ -416,7 +417,7 @@ namespace TrackSwap.Services
         {
             if (string.IsNullOrWhiteSpace(settingsPath) || !File.Exists(settingsPath))
             {
-                throw new FileNotFoundException("找不到 steamvr.vrsettings。", settingsPath);
+                throw new FileNotFoundException(Tr.Get("service.steam_vr_settings.read_root.steamvr_vrsettings"), settingsPath);
             }
 
             return JObject.Parse(File.ReadAllText(settingsPath));
@@ -443,11 +444,11 @@ namespace TrackSwap.Services
             switch (path)
             {
                 case "/user/hand/right":
-                    return "右手";
+                    return Tr.Get("common.hand.right");
                 case "/user/hand/left":
-                    return "左手";
+                    return Tr.Get("common.hand.left");
                 case "/user/head":
-                    return "头显";
+                    return Tr.Get("common.device.hmd");
                 default:
                     return BuildFriendlyName(path);
             }

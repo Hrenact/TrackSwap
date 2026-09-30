@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -67,7 +68,7 @@ namespace TrackSwap.Services
                     if (modelError != EVRRenderModelError.None || nativeModelPointer == IntPtr.Zero)
                     {
                         throw new InvalidDataException(
-                            "SteamVR 无法加载渲染模型 “" + renderModelName + "”，错误码：" + (int)modelError);
+                            Tr.Get("service.open_vr_render_model.load_core.steamvr_cannot_model") + renderModelName + Tr.Get("service.open_vr_interop.get_interface.error_code") + (int)modelError);
                     }
                 }
 
@@ -200,7 +201,7 @@ namespace TrackSwap.Services
                 model.VertexCount == 0 || model.VertexCount > MaximumVertices ||
                 model.TriangleCount == 0 || model.TriangleCount > MaximumTriangles)
             {
-                throw new InvalidDataException("SteamVR 渲染模型网格无效或过大。");
+                throw new InvalidDataException(Tr.Get("service.open_vr_render_model.validate_model.steamvr_model_invalid"));
             }
         }
 
@@ -210,7 +211,7 @@ namespace TrackSwap.Services
                 Marshal.SizeOf<RenderModelNative>() != 32 ||
                 Marshal.SizeOf<RenderModelTextureMapNative>() != 24)
             {
-                throw new PlatformNotSupportedException("当前平台的 OpenVR 渲染模型结构布局不受支持。");
+                throw new PlatformNotSupportedException(Tr.Get("service.open_vr_render_model.validate_interop_layout.current_openvr_model"));
             }
         }
 
@@ -219,7 +220,7 @@ namespace TrackSwap.Services
             if (texture.TextureData == IntPtr.Zero || texture.Width == 0 || texture.Height == 0 ||
                 texture.Width > MaximumTextureDimension || texture.Height > MaximumTextureDimension)
             {
-                throw new InvalidDataException("SteamVR 渲染模型纹理无效或过大。");
+                throw new InvalidDataException(Tr.Get("service.open_vr_render_model.validate_texture.steamvr_model_invalid"));
             }
         }
 
@@ -236,7 +237,7 @@ namespace TrackSwap.Services
                     !IsFinite(vertex.Normal.Y) || !IsFinite(vertex.Normal.Z) ||
                     !IsFinite(vertex.TextureU) || !IsFinite(vertex.TextureV))
                 {
-                    throw new InvalidDataException("SteamVR 渲染模型包含无效顶点数据。");
+                    throw new InvalidDataException(Tr.Get("service.open_vr_render_model.copy_vertices.steamvr_model_invalid"));
                 }
                 result[index] = new OpenVrRenderVertex
                 {
@@ -263,7 +264,7 @@ namespace TrackSwap.Services
                     checked(index * sizeof(ushort))));
                 if (vertexIndex >= model.VertexCount)
                 {
-                    throw new InvalidDataException("SteamVR 渲染模型包含越界索引。");
+                    throw new InvalidDataException(Tr.Get("service.open_vr_render_model.copy_indices.steamvr_model"));
                 }
                 result[index] = vertexIndex;
             }
@@ -280,7 +281,7 @@ namespace TrackSwap.Services
             IntPtr address = Marshal.ReadIntPtr(table, index * IntPtr.Size);
             if (address == IntPtr.Zero)
             {
-                throw new InvalidOperationException("OpenVR RenderModels 函数表不完整。");
+                throw new InvalidOperationException(Tr.Get("service.open_vr_render_model.is_finite.openvr_render_models_complete"));
             }
             return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
         }

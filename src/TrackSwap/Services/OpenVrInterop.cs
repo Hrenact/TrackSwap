@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -27,7 +28,7 @@ namespace TrackSwap.Services
             {
                 if (_sessionEnding)
                 {
-                    throw new InvalidOperationException("SteamVR 正在退出。");
+                    throw new InvalidOperationException(Tr.Get("service.open_vr_interop.get_interface.steamvr_in_progress_exit"));
                 }
                 EnsureInitialized(runtimePath);
                 EVRInitError error = EVRInitError.None;
@@ -35,7 +36,7 @@ namespace TrackSwap.Services
                 if (table == IntPtr.Zero || error != EVRInitError.None)
                 {
                     throw new InvalidOperationException(
-                        "无法获取 OpenVR 接口 “" + interfaceVersion + "”，错误码：" + (int)error);
+                        Tr.Get("service.open_vr_interop.get_interface.cannot_openvr") + interfaceVersion + Tr.Get("service.open_vr_interop.get_interface.error_code") + (int)error);
                 }
                 return table;
             }
@@ -145,14 +146,14 @@ namespace TrackSwap.Services
         {
             if (string.IsNullOrWhiteSpace(runtimePath))
             {
-                throw new InvalidOperationException("未找到 SteamVR Runtime 路径。");
+                throw new InvalidOperationException(Tr.Get("steamvr.error.runtime_path_not_found"));
             }
 
             string libraryPath = Path.GetFullPath(
                 Path.Combine(runtimePath, "bin", "win64", "openvr_api.dll"));
             if (!File.Exists(libraryPath))
             {
-                throw new FileNotFoundException("未找到 OpenVR 运行库。", libraryPath);
+                throw new FileNotFoundException(Tr.Get("service.open_vr_interop.ensure_initialized.not_found_openvr"), libraryPath);
             }
 
             if (_initialized &&
@@ -169,7 +170,7 @@ namespace TrackSwap.Services
             _module = LoadLibrary(libraryPath);
             if (_module == IntPtr.Zero)
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "无法载入 OpenVR 运行库。");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), Tr.Get("service.open_vr_interop.ensure_initialized.cannot_load_openvr"));
             }
 
             try
@@ -183,7 +184,7 @@ namespace TrackSwap.Services
                 if (error != EVRInitError.None)
                 {
                     throw new InvalidOperationException(
-                        "OpenVR 初始化失败，错误码：" + (int)error);
+                        Tr.Get("service.open_vr_interop.ensure_initialized.openvr_failed_error_code") + (int)error);
                 }
 
                 _libraryPath = libraryPath;

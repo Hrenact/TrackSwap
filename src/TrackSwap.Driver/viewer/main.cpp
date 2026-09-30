@@ -8,12 +8,15 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dwmapi.h>
 #include <dxgi1_2.h>
+#include <shellapi.h>
 #include <shobjidl.h>
+#include <wincrypt.h>
 #include <wincodec.h>
 #include <windows.h>
 #include <windowsx.h>
@@ -26,7 +29,6 @@ using Microsoft::WRL::ComPtr;
 namespace
 {
 constexpr wchar_t WindowClassName[] = L"TrackSwapVrViewerWindow";
-constexpr wchar_t WindowTitle[] = L"TrackSwap VR 视图";
 constexpr int TrackSwapIconResource = 101;
 constexpr int LogicalToolbarHeight = 42;
 constexpr int LogicalStatusHeight = 26;
@@ -35,6 +37,63 @@ enum class EyeMode { Both, Left, Right };
 enum class OutputSize { Follow, Hd, FullHd, QuadHd, Source };
 
 struct Vertex { float x, y, u, v; };
+
+struct ViewerStrings
+{
+    std::wstring title = L"TrackSwap VR 视图";
+    std::wstring both = L"双眼";
+    std::wstring left = L"左眼";
+    std::wstring right = L"右眼";
+    std::wstring topmost = L"置顶";
+    std::wstring screenshot = L"截图";
+    std::wstring fullscreen = L"全屏";
+    std::wstring waitingDisplay = L"等待 SteamVR 虚拟显示…";
+    std::wstring waitingFrame = L"虚拟头显已连接，等待首帧…";
+    std::wstring status = L"● {0} FPS   {1}x{2}   跳过 {3} 帧";
+    std::wstring sizeHd = L"尺寸 1280×720";
+    std::wstring sizeFullHd = L"尺寸 1920×1080";
+    std::wstring sizeQuadHd = L"尺寸 2560×1440";
+    std::wstring sizeSource = L"尺寸 原始";
+    std::wstring sizeFollow = L"尺寸 跟随窗口";
+    std::wstring pngFilter = L"PNG 图像";
+};
+
+std::wstring DecodeBase64Utf8(const wchar_t* encoded)
+{
+    DWORD byteCount = 0;
+    if (encoded == nullptr || !CryptStringToBinaryW(
+        encoded, 0, CRYPT_STRING_BASE64, nullptr, &byteCount, nullptr, nullptr) || byteCount == 0)
+    {
+        return {};
+    }
+    std::string bytes(byteCount, '\0');
+    if (!CryptStringToBinaryW(encoded, 0, CRYPT_STRING_BASE64,
+        reinterpret_cast<BYTE*>(bytes.data()), &byteCount, nullptr, nullptr))
+    {
+        return {};
+    }
+    bytes.resize(byteCount);
+    const int characterCount = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(), static_cast<int>(bytes.size()), nullptr, 0);
+    if (characterCount <= 0)
+    {
+        return {};
+    }
+    std::wstring result(static_cast<std::size_t>(characterCount), L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(),
+        static_cast<int>(bytes.size()), result.data(), characterCount);
+    return result;
+}
+
+void ReplaceAll(std::wstring& value, const std::wstring& token, const std::wstring& replacement)
+{
+    std::size_t position = 0;
+    while ((position = value.find(token, position)) != std::wstring::npos)
+    {
+        value.replace(position, token.size(), replacement);
+        position += replacement.size();
+    }
+}
 
 class ViewerApp
 {
@@ -67,6 +126,7 @@ private:
     std::array<RECT, 7> ButtonRectangles() const;
     void InvalidateToolbar();
     void InvalidateStatus();
+    void LoadLocalizationArguments();
     std::wstring StatusText() const;
     const wchar_t* OutputSizeText() const;
 
@@ -109,11 +169,13 @@ private:
     bool nonClientDragOwnsPump_ = false;
     WINDOWPLACEMENT savedPlacement_{sizeof(WINDOWPLACEMENT)};
     DWORD savedStyle_ = 0;
+    ViewerStrings strings_;
 };
 
 int ViewerApp::Run(HINSTANCE instance)
 {
     instance_ = instance;
+    LoadLocalizationArguments();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     WNDCLASSEXW renderClass{sizeof(WNDCLASSEXW)};
@@ -134,7 +196,7 @@ int ViewerApp::Run(HINSTANCE instance)
     RegisterClassExW(&windowClass);
 
     const UINT initialDpi = GetDpiForSystem();
-    window_ = CreateWindowExW(0, WindowClassName, WindowTitle,
+    window_ = CreateWindowExW(0, WindowClassName, strings_.title.c_str(),
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
         MulDiv(1100, initialDpi, 96), MulDiv(690, initialDpi, 96),
         nullptr, nullptr, instance, this);
@@ -581,6 +643,57 @@ void ViewerApp::RenderLatestFrame()
     if (seconds >= 1.0) { viewerFps_ = displayedFrames_ / seconds; displayedFrames_ = 0; fpsStart_ = now; }
 }
 
+void ViewerApp::LoadLocalizationArguments()
+{
+    int argumentCount = 0;
+    LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &argumentCount);
+    if (arguments == nullptr)
+    {
+        return;
+    }
+    const auto assign = [](const std::wstring& option, const wchar_t* expected,
+        const wchar_t* encoded, std::wstring& destination)
+    {
+        if (option != expected)
+        {
+            return false;
+        }
+        std::wstring decoded = DecodeBase64Utf8(encoded);
+        if (!decoded.empty())
+        {
+            destination = std::move(decoded);
+        }
+        return true;
+    };
+    for (int index = 1; index + 1 < argumentCount; ++index)
+    {
+        const std::wstring option = arguments[index];
+        const wchar_t* encoded = arguments[index + 1];
+        bool recognized =
+            assign(option, L"--loc-title", encoded, strings_.title) ||
+            assign(option, L"--loc-both", encoded, strings_.both) ||
+            assign(option, L"--loc-left", encoded, strings_.left) ||
+            assign(option, L"--loc-right", encoded, strings_.right) ||
+            assign(option, L"--loc-topmost", encoded, strings_.topmost) ||
+            assign(option, L"--loc-screenshot", encoded, strings_.screenshot) ||
+            assign(option, L"--loc-fullscreen", encoded, strings_.fullscreen) ||
+            assign(option, L"--loc-waiting-display", encoded, strings_.waitingDisplay) ||
+            assign(option, L"--loc-waiting-frame", encoded, strings_.waitingFrame) ||
+            assign(option, L"--loc-status", encoded, strings_.status) ||
+            assign(option, L"--loc-size-hd", encoded, strings_.sizeHd) ||
+            assign(option, L"--loc-size-full-hd", encoded, strings_.sizeFullHd) ||
+            assign(option, L"--loc-size-quad-hd", encoded, strings_.sizeQuadHd) ||
+            assign(option, L"--loc-size-source", encoded, strings_.sizeSource) ||
+            assign(option, L"--loc-size-follow", encoded, strings_.sizeFollow) ||
+            assign(option, L"--loc-png-filter", encoded, strings_.pngFilter);
+        if (recognized)
+        {
+            ++index;
+        }
+    }
+    LocalFree(arguments);
+}
+
 void ViewerApp::PaintChrome()
 {
     std::lock_guard<std::mutex> lock(renderMutex_);
@@ -599,7 +712,8 @@ void ViewerApp::PaintChrome()
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
         DEFAULT_PITCH, L"Segoe UI");
     auto oldFont = SelectObject(dc, font);
-    const wchar_t* labels[]{L"双眼",L"左眼",L"右眼",OutputSizeText(),L"置顶",L"截图",L"全屏"};
+    const wchar_t* labels[]{strings_.both.c_str(), strings_.left.c_str(), strings_.right.c_str(),
+        OutputSizeText(), strings_.topmost.c_str(), strings_.screenshot.c_str(), strings_.fullscreen.c_str()};
     const auto boxes = ButtonRectangles();
     for (int index = 0; index < 7; ++index)
     {
@@ -626,24 +740,33 @@ void ViewerApp::PaintChrome()
 
 std::wstring ViewerApp::StatusText() const
 {
-    if (state_ == nullptr) return L"等待 SteamVR 虚拟显示…";
-    if (state_->width == 0 || openedGeneration_ < 0) return L"虚拟头显已连接，等待首帧…";
-    wchar_t buffer[256]{};
-    swprintf_s(buffer, L"● %.0f FPS   %ux%u   跳过 %llu 帧",
-        viewerFps_, state_->width, state_->height,
-        static_cast<unsigned long long>(skippedFrames_));
-    return buffer;
+    if (state_ == nullptr) return strings_.waitingDisplay;
+    if (state_->width == 0 || openedGeneration_ < 0) return strings_.waitingFrame;
+    wchar_t fps[32]{};
+    wchar_t width[32]{};
+    wchar_t height[32]{};
+    wchar_t skipped[32]{};
+    swprintf_s(fps, L"%.0f", viewerFps_);
+    swprintf_s(width, L"%u", state_->width);
+    swprintf_s(height, L"%u", state_->height);
+    swprintf_s(skipped, L"%llu", static_cast<unsigned long long>(skippedFrames_));
+    std::wstring result = strings_.status;
+    ReplaceAll(result, L"{0}", fps);
+    ReplaceAll(result, L"{1}", width);
+    ReplaceAll(result, L"{2}", height);
+    ReplaceAll(result, L"{3}", skipped);
+    return result;
 }
 
 const wchar_t* ViewerApp::OutputSizeText() const
 {
     switch (outputSize_)
     {
-    case OutputSize::Hd: return L"尺寸 1280×720";
-    case OutputSize::FullHd: return L"尺寸 1920×1080";
-    case OutputSize::QuadHd: return L"尺寸 2560×1440";
-    case OutputSize::Source: return L"尺寸 原始";
-    default: return L"尺寸 跟随窗口";
+    case OutputSize::Hd: return strings_.sizeHd.c_str();
+    case OutputSize::FullHd: return strings_.sizeFullHd.c_str();
+    case OutputSize::QuadHd: return strings_.sizeQuadHd.c_str();
+    case OutputSize::Source: return strings_.sizeSource.c_str();
+    default: return strings_.sizeFollow.c_str();
     }
 }
 
@@ -672,8 +795,8 @@ int ViewerApp::Scale(int logicalPixels) const
 std::array<RECT, 7> ViewerApp::ButtonRectangles() const
 {
     const RECT logical[]{
-        {12,8,68,34},{72,8,128,34},{132,8,188,34},{202,8,346,34},
-        {350,8,406,34},{410,8,466,34},{470,8,526,34}};
+        {12,8,94,34},{98,8,180,34},{184,8,266,34},{280,8,444,34},
+        {448,8,534,34},{538,8,638,34},{642,8,742,34}};
     std::array<RECT, 7> scaled{};
     for (std::size_t index = 0; index < scaled.size(); ++index)
         scaled[index] = {Scale(logical[index].left), Scale(logical[index].top),
@@ -765,7 +888,7 @@ bool ViewerApp::SaveScreenshot()
     bool success = false;
     if (SUCCEEDED(CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
     {
-        const COMDLG_FILTERSPEC filters[]{{L"PNG 图像", L"*.png"}};
+        const COMDLG_FILTERSPEC filters[]{{strings_.pngFilter.c_str(), L"*.png"}};
         dialog->SetFileTypes(1, filters); dialog->SetDefaultExtension(L"png");
         dialog->SetFileName(L"TrackSwap-VR.png");
         if (SUCCEEDED(dialog->Show(window_)) && SUCCEEDED(dialog->GetResult(&item)))

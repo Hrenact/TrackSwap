@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,6 +17,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Newtonsoft.Json;
+using TrackSwap.Localization;
 using TrackSwap.Models;
 using TrackSwap.Protocol;
 using TrackSwap.Services;
@@ -57,6 +59,7 @@ namespace TrackSwap
         private readonly SteamVrApplicationService _steamVrApplicationService = new SteamVrApplicationService();
         private readonly DeviceHistoryService _deviceHistoryService = new DeviceHistoryService();
         private readonly UiPreferencesService _uiPreferencesService = new UiPreferencesService();
+        private readonly LocalizationService _localizationService = LocalizationManager.Current;
         private readonly RuntimeControlService _runtimeControlService = new RuntimeControlService();
         private readonly ConfigurationBackupService _configurationBackupService = new ConfigurationBackupService();
         private readonly DataMigrationService _dataMigrationService = new DataMigrationService();
@@ -149,6 +152,8 @@ namespace TrackSwap
         private XInputConfiguration _workingXInput = XInputConfiguration.CreateDefault();
         private RouteConfiguration _selectedRoute;
         private bool _showingSettings;
+        private bool _loadingLanguageSelection;
+        private string _languageLocale = LocalizationService.OfficialLocale;
         private SettingsSection _settingsSection = SettingsSection.Runtime;
         private bool _showSteamVrRoleTargets;
         private bool _allowDuplicatePoseSources;
@@ -176,6 +181,7 @@ namespace TrackSwap
             _diagnosticsService = new DiagnosticsService(_pathService, _statusService, _runtimeControlService);
 
             UiPreferences preferences = _uiPreferencesService.Load();
+            _languageLocale = _localizationService.CurrentLocale;
             _showSteamVrRoleTargets = preferences.ShowSteamVrRoleTargets;
             _allowDuplicatePoseSources = preferences.AllowDuplicatePoseSources;
             _controllerHandSelectionPriority = preferences.ControllerHandSelectionPriority;
@@ -192,24 +198,8 @@ namespace TrackSwap
             HideTargetInPreviewCheckBox.IsChecked = _hideTargetInPreview;
             ShowProxyInPreviewCheckBox.IsChecked = _showProxyInPreview;
             FollowSteamVrWithTrackSwapCheckBox.IsChecked = _followSteamVrWithTrackSwap;
-            RuntimeModeComboBox.ItemsSource = new[]
-            {
-                new RouteModeOption(RouteMode.DirectProxy, "输出为虚拟追踪器"),
-                new RouteModeOption(RouteMode.VirtualController, "输出为虚拟控制器"),
-                new RouteModeOption(RouteMode.VirtualHmd, "输出为虚拟头显"),
-                new RouteModeOption(RouteMode.ReplaceTarget, "替换现有设备位姿（实验性）")
-            };
-            RuntimeControllerHandComboBox.ItemsSource = new[]
-            {
-                new ControllerHandOption(ControllerHand.Left, "左手"),
-                new ControllerHandOption(ControllerHand.Right, "右手")
-            };
-            RuntimeControlInputComboBox.ItemsSource = new[]
-            {
-                new ControlInputOption(ControlInputSource.None, "无"),
-                new ControlInputOption(ControlInputSource.Osc, "OSC"),
-                new ControlInputOption(ControlInputSource.XInput, "XInput")
-            };
+            RefreshLanguageSettingsView();
+            InitializeLocalizedFixedOptions();
             _xInputHoverPreviewTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(33)
@@ -261,15 +251,10 @@ namespace TrackSwap
             OscListenAddressTextBox.TextChanged += (_, __) => ScheduleOscSettingsApply(immediate: false);
             OscPortTextBox.TextChanged += (_, __) => ScheduleOscSettingsApply(immediate: false);
             OscSendPortTextBox.TextChanged += (_, __) => ScheduleOscSettingsApply(immediate: false);
-            RuntimeLifecycleComboBox.ItemsSource = new[]
-            {
-                new RuntimeLifecycleOption(RuntimeLifecycleMode.FollowTrackSwap, "跟随 TrackSwap"),
-                new RuntimeLifecycleOption(RuntimeLifecycleMode.FollowSteamVr, "跟随 SteamVR")
-            };
-            RuntimeLifecycleComboBox.SelectedItem =
-                ((IEnumerable<RuntimeLifecycleOption>)RuntimeLifecycleComboBox.ItemsSource)
-                    .First(option => option.Mode == _runtimeLifecycleMode);
+            InitializeLocalizedLifecycleOptions();
             _runtimeLifecycleSelectionReady = true;
+
+            _localizationService.LanguageChanged += LocalizationService_LanguageChanged;
 
             RouteListBox.ItemsSource = _routeItems;
 
@@ -345,6 +330,7 @@ namespace TrackSwap
             Closing += MainWindow_Closing;
             Closed += (_, __) =>
             {
+                _localizationService.LanguageChanged -= LocalizationService_LanguageChanged;
                 _isClosing = true;
                 _previewModelRequestVersion++;
                 _statusTimer.Stop();
@@ -358,6 +344,69 @@ namespace TrackSwap
                 DetachHapticTimelineRendering();
                 OpenVrInterop.Reset();
             };
+        }
+
+        private void InitializeLocalizedFixedOptions()
+        {
+            RuntimeModeComboBox.ItemsSource = new[]
+            {
+                new RouteModeOption(RouteMode.DirectProxy, Tr.Get("app.initialize_localized_fixed_options.output_virtual_tracker")),
+                new RouteModeOption(RouteMode.VirtualController, Tr.Get("app.initialize_localized_fixed_options.output_virtual_controller")),
+                new RouteModeOption(RouteMode.VirtualHmd, Tr.Get("app.initialize_localized_fixed_options.output_virtual_hmd")),
+                new RouteModeOption(RouteMode.ReplaceTarget, Tr.Get("app.initialize_localized_fixed_options.replace_device_pose"))
+            };
+            RuntimeControllerHandComboBox.ItemsSource = new[]
+            {
+                new ControllerHandOption(ControllerHand.Left, Tr.Get("common.hand.left")),
+                new ControllerHandOption(ControllerHand.Right, Tr.Get("common.hand.right"))
+            };
+            RuntimeControlInputComboBox.ItemsSource = new[]
+            {
+                new ControlInputOption(ControlInputSource.None, Tr.Get("common.value.none")),
+                new ControlInputOption(ControlInputSource.Osc, "OSC"),
+                new ControlInputOption(ControlInputSource.XInput, "XInput")
+            };
+        }
+
+        private void InitializeLocalizedLifecycleOptions()
+        {
+            RuntimeLifecycleComboBox.ItemsSource = new[]
+            {
+                new RuntimeLifecycleOption(RuntimeLifecycleMode.FollowTrackSwap, Tr.Get("settings.advanced.initialize_localized_lifecycle_options.trackswap")),
+                new RuntimeLifecycleOption(RuntimeLifecycleMode.FollowSteamVr, Tr.Get("settings.advanced.initialize_localized_lifecycle_options.steamvr"))
+            };
+            RuntimeLifecycleComboBox.SelectedItem =
+                ((IEnumerable<RuntimeLifecycleOption>)RuntimeLifecycleComboBox.ItemsSource)
+                    .First(option => option.Mode == _runtimeLifecycleMode);
+        }
+
+        private void LocalizationService_LanguageChanged(object sender, EventArgs e)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_isClosing)
+                {
+                    return;
+                }
+                bool previousLoading = _isLoading;
+                _isLoading = true;
+                _runtimeLifecycleSelectionReady = false;
+                try
+                {
+                    InitializeLocalizedFixedOptions();
+                    InitializeLocalizedLifecycleOptions();
+                    InitializeXInputMappingOptions(registerPreviews: false);
+                    LoadXInputFields(_workingXInput);
+                    LoadOscFields(_workingOsc);
+                    RefreshAll();
+                    RefreshLanguageSettingsView();
+                }
+                finally
+                {
+                    _runtimeLifecycleSelectionReady = true;
+                    _isLoading = previousLoading;
+                }
+            }), DispatcherPriority.DataBind);
         }
 
         private async Task RefreshOscMonitorAsync()
@@ -445,7 +494,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法发送测试震动",
+                    Tr.Get("settings.osc.test_osc_haptic_async.cannot_haptic"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
@@ -569,7 +618,7 @@ namespace TrackSwap
                     (RuntimeRotationSourceComboBox.SelectedItem as DeviceOption)?.DevicePath;
                 string previousRuntimeTargetPath = (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath;
                 _settingsPath = _pathService.FindSettingsPath();
-                SettingsPathText.Text = _settingsPath ?? "未找到 steamvr.vrsettings";
+                SettingsPathText.Text = _settingsPath ?? Tr.Get("app.refresh_all.not_found_steamvr_vrsettings");
                 DeviceHistoryPathText.Text = _deviceHistoryService.FilePath;
                 ViewRawButton.IsEnabled = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath);
                 RestoreBackupButton.IsEnabled = ViewRawButton.IsEnabled;
@@ -612,7 +661,7 @@ namespace TrackSwap
                     .OrderByDescending(device => device.IsOnline)
                     .ThenBy(device => device.DisplayName, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
-                DeviceHistoryCountText.Text = historyItems.Count + " 台设备";
+                DeviceHistoryCountText.Text = historyItems.Count + Tr.Get("app.refresh_all.device");
                 DeviceHistoryItemsControl.ItemsSource = historyItems;
                 EmptyDeviceHistoryText.Visibility = historyItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
                 _knownPhysicalDevices = MergeDeviceCatalog(
@@ -664,17 +713,17 @@ namespace TrackSwap
 
                 if (!string.IsNullOrWhiteSpace(enumerationWarning))
                 {
-                    RefreshButton.ToolTip = "在线设备读取失败，已回退到配置记录：" + enumerationWarning;
+                    RefreshButton.ToolTip = Tr.Get("app.refresh_all.online_device_read_failed_config") + enumerationWarning;
                 }
                 else
                 {
-                    RefreshButton.ToolTip = "重新扫描设备并读取配置";
+                    RefreshButton.ToolTip = Tr.Get("app.refresh_all.scan_device_read_config");
                 }
                 _lastDeviceRefreshSteamVrRunning = steamVrRunning;
             }
             catch (Exception exception)
             {
-                AppDialog.Show(this, exception.Message, "重新载入失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("app.refresh_all.load_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -712,7 +761,7 @@ namespace TrackSwap
                     catch (Exception exception)
                     {
                         RefreshButton.ToolTip =
-                            "实时设备扫描失败，已保留上次结果：" + exception.Message;
+                            Tr.Get("app.refresh_devices_async.device_scan_failed_preserve_up") + exception.Message;
                         return;
                     }
                 }
@@ -809,9 +858,9 @@ namespace TrackSwap
             var targets = new List<TargetOption>();
             if (includeRoleTargets)
             {
-                targets.Add(new TargetOption("SteamVR 角色 · 右手", "/user/hand/right"));
-                targets.Add(new TargetOption("SteamVR 角色 · 左手", "/user/hand/left"));
-                targets.Add(new TargetOption("SteamVR 角色 · 头显", "/user/head"));
+                targets.Add(new TargetOption(Tr.Get("route.build_targets.steamvr_role_right"), "/user/hand/right"));
+                targets.Add(new TargetOption(Tr.Get("route.build_targets.steamvr_role_left"), "/user/hand/left"));
+                targets.Add(new TargetOption(Tr.Get("route.build_targets.steamvr_role_hmd"), "/user/head"));
             }
 
             if (!includeConcreteDevices)
@@ -835,7 +884,7 @@ namespace TrackSwap
                             : DeviceNameFromPath(currentTargetPath);
                 string currentPrefix = currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
                     ? string.Empty
-                    : currentDevice?.IsOnline == true ? "在线 · " : "离线 · ";
+                    : currentDevice?.IsOnline == true ? Tr.Get("device.status.online_prefix") : Tr.Get("device.status.offline_prefix");
                 targets.Add(new TargetOption(
                     currentPrefix + currentName,
                     currentTargetPath,
@@ -849,7 +898,7 @@ namespace TrackSwap
                 if (knownPaths.Add(device.DevicePath))
                 {
                     targets.Add(new TargetOption(
-                        "在线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
+                        Tr.Get("device.status.online_prefix") + DeviceOption.BaseDisplayName(device.DisplayName),
                         device.DevicePath,
                         true));
                 }
@@ -860,7 +909,7 @@ namespace TrackSwap
                 if (knownPaths.Add(device.DevicePath))
                 {
                     targets.Add(new TargetOption(
-                        "离线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
+                        Tr.Get("device.status.offline_prefix") + DeviceOption.BaseDisplayName(device.DisplayName),
                         device.DevicePath,
                         false));
                 }
@@ -870,7 +919,7 @@ namespace TrackSwap
             {
                 targets.Add(new TargetOption(
                     target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal)
-                        ? "离线 · " + DeviceOption.BaseDisplayName(target.DisplayName)
+                        ? Tr.Get("device.status.offline_prefix") + DeviceOption.BaseDisplayName(target.DisplayName)
                         : target.DisplayName,
                     target.TargetPath,
                     target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal)
@@ -909,7 +958,7 @@ namespace TrackSwap
             if (includeManual)
             {
                 result.Add(new DeviceOption(
-                    "手动位姿",
+                    Tr.Get("route.source.manual_pose"),
                     string.Empty,
                     isOnline: true,
                     deviceKind: TrackedDeviceKind.Unknown,
@@ -921,7 +970,7 @@ namespace TrackSwap
             {
                 result.Add(CloneDeviceOption(
                     current,
-                    (current?.IsOnline == true ? "在线 · " : "离线 · ") + (current != null
+                    (current?.IsOnline == true ? Tr.Get("device.status.online_prefix") : Tr.Get("device.status.offline_prefix")) + (current != null
                         ? DeviceOption.BaseDisplayName(current.DisplayName)
                         : DeviceNameFromPath(currentDevicePath)),
                     currentDevicePath));
@@ -932,7 +981,7 @@ namespace TrackSwap
             {
                 result.Add(CloneDeviceOption(
                     device,
-                    "在线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
+                    Tr.Get("device.status.online_prefix") + DeviceOption.BaseDisplayName(device.DisplayName),
                     device.DevicePath));
             }
             foreach (DeviceOption device in knownDevices.Where(device =>
@@ -940,7 +989,7 @@ namespace TrackSwap
             {
                 result.Add(CloneDeviceOption(
                     device,
-                    "离线 · " + DeviceOption.BaseDisplayName(device.DisplayName),
+                    Tr.Get("device.status.offline_prefix") + DeviceOption.BaseDisplayName(device.DisplayName),
                     device.DevicePath));
             }
             return result;
@@ -975,7 +1024,7 @@ namespace TrackSwap
         {
             if (string.IsNullOrWhiteSpace(devicePath))
             {
-                return "未知设备";
+                return Tr.Get("app.device_name_from_path.device");
             }
             int separator = devicePath.LastIndexOf('/');
             return separator >= 0 && separator + 1 < devicePath.Length
@@ -986,8 +1035,8 @@ namespace TrackSwap
         private static string DescribePoseSource(PoseSourceKind sourceKind, string devicePath)
         {
             return sourceKind == PoseSourceKind.Manual
-                ? "手动位姿"
-                : string.IsNullOrWhiteSpace(devicePath) ? "未选择" : devicePath;
+                ? Tr.Get("route.source.manual_pose")
+                : string.IsNullOrWhiteSpace(devicePath) ? Tr.Get("route.preview.describe_pose_source.select") : devicePath;
         }
 
         private void UpdateSteamVrStatus()
@@ -1015,7 +1064,7 @@ namespace TrackSwap
             SteamVrStatusText.Foreground = FindBrush(running ? "SuccessBrush" : "MutedTextBrush");
             SteamVrDot.Fill = FindBrush(running ? "SuccessBrush" : "MutedTextBrush");
             SteamVrBadge.Background = Brushes.Transparent;
-            SteamVrBadge.ToolTip = running ? "SteamVR 正在运行" : "SteamVR 未运行";
+            SteamVrBadge.ToolTip = running ? Tr.Get("steamvr.status.running") : Tr.Get("steamvr.status.not_running");
 
             ApplyButton.IsEnabled = !running
                 && SourceComboBox.SelectedItem is DeviceOption
@@ -1081,24 +1130,24 @@ namespace TrackSwap
 
         private void ShowRuntimeOnline(RuntimeStatusSnapshot status)
         {
-            RuntimeLoadingStateText.Text = "正在读取 Runtime 中保存的配置，请稍候。";
+            RuntimeLoadingStateText.Text = Tr.Get("app.show_runtime_online.in_progress_read_runtime_save_config");
             RuntimeStatusText.Text = "Runtime";
             RuntimeStatusText.Foreground = FindBrush("SuccessBrush");
             RuntimeDot.Fill = FindBrush("SuccessBrush");
             RuntimeBadge.Background = Brushes.Transparent;
-            RuntimeBadge.ToolTip = "Runtime 已连接";
+            RuntimeBadge.ToolTip = Tr.Get("app.show_runtime_online.runtime_connect");
             UpdateInputStatusIndicators(status);
-            RuntimeHealthText.Text = "在线";
+            RuntimeHealthText.Text = Tr.Get("common.status.online");
             RuntimeHealthText.Foreground = FindBrush("SuccessBrush");
-            DriverHealthText.Text = status.DriverConnected ? "已连接" : "等待驱动";
+            DriverHealthText.Text = status.DriverConnected ? Tr.Get("app.show_runtime_online.connect") : Tr.Get("runtime.status.waiting_for_driver");
             DriverHealthText.Foreground = FindBrush(status.DriverConnected ? "SuccessBrush" : "WarningBrush");
             RuntimeRevisionText.Text = status.ConfigurationRevision.ToString(CultureInfo.InvariantCulture);
             bool applied = status.DriverConnected &&
                 status.ConfigurationRevision > 0 &&
                 status.DriverAppliedRevision == status.ConfigurationRevision;
             RuntimeAppliedStateText.Text = applied
-                ? "已应用"
-                : "待应用 · driver " + status.DriverAppliedRevision.ToString(CultureInfo.InvariantCulture);
+                ? Tr.Get("route.status.applied")
+                : Tr.Get("app.show_runtime_online.apply_driver") + status.DriverAppliedRevision.ToString(CultureInfo.InvariantCulture);
             RuntimeAppliedStateText.Foreground = FindBrush(applied ? "SuccessBrush" : "WarningBrush");
             string runtimeError = string.Join(
                 Environment.NewLine,
@@ -1129,14 +1178,14 @@ namespace TrackSwap
 
         private void ShowRuntimeOffline(string error)
         {
-            RuntimeLoadingStateText.Text = "暂时无法连接 Runtime，正在重试。你的配置仍保存在本地。";
+            RuntimeLoadingStateText.Text = Tr.Get("app.show_runtime_offline.cannot_connect_runtime_in_progress_config_save");
             RuntimeStatusText.Text = "Runtime";
             RuntimeStatusText.Foreground = FindBrush("MutedTextBrush");
             RuntimeDot.Fill = FindBrush("MutedTextBrush");
             RuntimeBadge.Background = Brushes.Transparent;
-            RuntimeBadge.ToolTip = "Runtime 未连接";
-            SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "MutedTextBrush", "Runtime 未连接，无法读取 OSC 状态");
-            SetStatusIndicator(XInputStatusDot, XInputStatusText, XInputStatusBadge, "MutedTextBrush", "Runtime 未连接，无法读取 XInput 状态");
+            RuntimeBadge.ToolTip = Tr.Get("app.show_runtime_offline.runtime_connect");
+            SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "MutedTextBrush", Tr.Get("app.show_runtime_offline.runtime_connect_cannot_read_osc_status"));
+            SetStatusIndicator(XInputStatusDot, XInputStatusText, XInputStatusBadge, "MutedTextBrush", Tr.Get("app.show_runtime_offline.runtime_connect_cannot_read_xinput_status"));
             SetStatusIndicator(
                 PhysicalSourceHidingStatusDot,
                 PhysicalSourceHidingStatusText,
@@ -1145,16 +1194,16 @@ namespace TrackSwap
                     ? "WarningBrush"
                     : "MutedTextBrush",
                 _physicalSourceHidingEnabled && _workingRoutes.Any(route => route.Enabled && route.HidePhysicalSource)
-                    ? "设备隐藏正在等待 Runtime 和驱动"
-                    : "设备隐藏未启用");
-            RuntimeHealthText.Text = "离线";
+                    ? Tr.Get("app.show_runtime_offline.device_hide_waiting_runtime_driver")
+                    : Tr.Get("settings.advanced.hiding.disabled"));
+            RuntimeHealthText.Text = Tr.Get("common.status.offline");
             RuntimeHealthText.Foreground = FindBrush("MutedTextBrush");
-            DriverHealthText.Text = "未知";
+            DriverHealthText.Text = Tr.Get("common.status.unknown");
             DriverHealthText.Foreground = FindBrush("MutedTextBrush");
             RuntimeRevisionText.Text = "—";
-            RuntimeAppliedStateText.Text = "不可用";
+            RuntimeAppliedStateText.Text = Tr.Get("app.show_runtime_offline.available");
             RuntimeAppliedStateText.Foreground = FindBrush("MutedTextBrush");
-            RuntimeErrorText.Text = "无法连接 TrackSwap Runtime：" + error;
+            RuntimeErrorText.Text = Tr.Get("app.show_runtime_offline.cannot_connect_trackswap_runtime") + error;
             RuntimeErrorText.Visibility = Visibility.Visible;
             StartRuntimeButton.IsEnabled = true;
             UpdateDiagnosticConfigurationState(null);
@@ -1171,11 +1220,11 @@ namespace TrackSwap
         {
             if (status == null || !status.Enabled)
             {
-                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "MutedTextBrush", "OSC 未启用；选择 OSC 作为控制输入来源后会自动启用");
+                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "MutedTextBrush", Tr.Get("settings.osc.status.inactive"));
                 return;
             }
 
-            string endpoint = string.IsNullOrWhiteSpace(status.Endpoint) ? "当前端点" : status.Endpoint;
+            string endpoint = string.IsNullOrWhiteSpace(status.Endpoint) ? Tr.Get("settings.osc.update_osc_status_indicator.current") : status.Endpoint;
             bool hasReceiveError = !string.IsNullOrWhiteSpace(status.LastError);
             bool hasSendError = !string.IsNullOrWhiteSpace(status.LastSendError);
             if (hasReceiveError || hasSendError)
@@ -1184,15 +1233,15 @@ namespace TrackSwap
                 if (hasReceiveError)
                 {
                     issues.Add(status.ReceivePortInUse
-                        ? "OSC 接收端口已被占用（" + endpoint + "）。请关闭占用它的程序，或更换接收端口。"
-                        : "OSC 无法监听 " + endpoint + "：" + status.LastError);
+                        ? Tr.Get("settings.osc.update_osc_status_indicator.osc_receive_port") + endpoint + Tr.Get("settings.osc.update_osc_status_indicator.close_receive_port")
+                        : Tr.Get("settings.osc.receive.failed_prefix") + endpoint + "：" + status.LastError);
                 }
                 if (hasSendError)
                 {
                     string sendEndpoint = string.IsNullOrWhiteSpace(status.SendEndpoint)
-                        ? "当前目标端点"
+                        ? Tr.Get("settings.osc.update_osc_status_indicator.current_target")
                         : status.SendEndpoint;
-                    issues.Add("OSC 无法向 " + sendEndpoint + " 发送震动反馈：" + status.LastSendError);
+                    issues.Add(Tr.Get("settings.osc.update_osc_status_indicator.osc_cannot") + sendEndpoint + Tr.Get("settings.osc.update_osc_status_indicator.haptic_feedback") + status.LastSendError);
                 }
                 SetStatusIndicator(
                     OscStatusDot,
@@ -1204,7 +1253,7 @@ namespace TrackSwap
             }
             if (!status.Listening)
             {
-                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "WarningBrush", "OSC 正在准备监听 " + endpoint);
+                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "WarningBrush", Tr.Get("settings.osc.receive.preparing_prefix") + endpoint);
                 return;
             }
             bool hasRecentSignal = status.LastMessageAtUtc.HasValue;
@@ -1220,15 +1269,15 @@ namespace TrackSwap
                 OscStatusBadge,
                 hasRecentSignal ? "SuccessBrush" : "WarningBrush",
                 hasRecentSignal
-                    ? "OSC 正在接收 " + endpoint + " 的信号"
-                    : "OSC 正在监听 " + endpoint + "，等待信号");
+                    ? Tr.Get("settings.osc.update_osc_status_indicator.osc_in_progress") + endpoint + Tr.Get("settings.osc.signal_suffix")
+                    : Tr.Get("settings.osc.receive.listening_prefix") + endpoint + Tr.Get("settings.osc.update_osc_status_indicator.waiting"));
         }
 
         private void UpdateXInputStatusIndicator(XInputRuntimeStatus status)
         {
             if (status == null || !status.Enabled)
             {
-                SetStatusIndicator(XInputStatusDot, XInputStatusText, XInputStatusBadge, "MutedTextBrush", "XInput 未启用；选择 XInput 作为控制输入来源后会自动启用");
+                SetStatusIndicator(XInputStatusDot, XInputStatusText, XInputStatusBadge, "MutedTextBrush", Tr.Get("settings.xinput.status.inactive"));
                 return;
             }
 
@@ -1237,7 +1286,7 @@ namespace TrackSwap
                 XInputStatusText,
                 XInputStatusBadge,
                 status.Connected ? "SuccessBrush" : "WarningBrush",
-                status.Connected ? "XInput 控制器已连接" : "正在等待 XInput 控制器");
+                status.Connected ? Tr.Get("settings.xinput.update_xinput_status_indicator.xinput_controller_connect") : Tr.Get("settings.xinput.update_xinput_status_indicator.waiting_xinput_controller"));
         }
 
         private void UpdatePhysicalSourceHidingStatusIndicator(PhysicalSourceHidingStatus status)
@@ -1245,7 +1294,7 @@ namespace TrackSwap
             if (status == null || status.State == PhysicalSourceHidingState.Disabled)
             {
                 SetStatusIndicator(PhysicalSourceHidingStatusDot, PhysicalSourceHidingStatusText,
-                    PhysicalSourceHidingStatusBadge, "MutedTextBrush", "没有配置请求隐藏物理位姿来源设备");
+                    PhysicalSourceHidingStatusBadge, "MutedTextBrush", Tr.Get("settings.advanced.update_physical_source_hiding_status_indicator.config_hide_pose_source_device"));
                 return;
             }
             string count = status.ActiveDeviceCount.ToString(CultureInfo.InvariantCulture) + " / " +
@@ -1254,18 +1303,18 @@ namespace TrackSwap
             {
                 SetStatusIndicator(PhysicalSourceHidingStatusDot, PhysicalSourceHidingStatusText,
                     PhysicalSourceHidingStatusBadge, "DestructiveBrush",
-                    "设备隐藏注入失败；实体设备保持原位。" +
+                    Tr.Get("settings.advanced.physical_source_hiding.failed") +
                     (string.IsNullOrWhiteSpace(status.LastError) ? string.Empty : "\n" + status.LastError));
                 return;
             }
             if (status.State == PhysicalSourceHidingState.Waiting)
             {
                 SetStatusIndicator(PhysicalSourceHidingStatusDot, PhysicalSourceHidingStatusText,
-                    PhysicalSourceHidingStatusBadge, "WarningBrush", "设备隐藏正在等待驱动或来源设备（" + count + "）");
+                    PhysicalSourceHidingStatusBadge, "WarningBrush", Tr.Get("settings.advanced.physical_source_hiding.waiting_prefix") + count + "）");
                 return;
             }
             SetStatusIndicator(PhysicalSourceHidingStatusDot, PhysicalSourceHidingStatusText,
-                PhysicalSourceHidingStatusBadge, "SuccessBrush", "设备隐藏已生效（" + count + "）");
+                PhysicalSourceHidingStatusBadge, "SuccessBrush", Tr.Get("settings.advanced.update_physical_source_hiding_status_indicator.device_hide") + count + "）");
         }
 
         private void SetStatusIndicator(System.Windows.Shapes.Ellipse dot, TextBlock text, Border badge, string brushKey, string toolTip)
@@ -1285,7 +1334,7 @@ namespace TrackSwap
                     : _settingsService.ReadOverrides(_settingsPath);
 
             OverridesItemsControl.ItemsSource = overrides;
-            OverrideCountText.Text = overrides.Count + " 条规则";
+            OverrideCountText.Text = overrides.Count + Tr.Get("settings.steamvr.refresh_override_list.item");
             EmptyOverridesText.Visibility = overrides.Count == 0
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -1300,8 +1349,8 @@ namespace TrackSwap
         {
             DeviceOption source = SourceComboBox.SelectedItem as DeviceOption;
             TargetOption target = TargetComboBox.SelectedItem as TargetOption;
-            SourcePathText.Text = source?.DevicePath ?? "未选择来源";
-            TargetPathText.Text = target?.TargetPath ?? "未选择目标";
+            SourcePathText.Text = source?.DevicePath ?? Tr.Get("app.update_selection_details.select_source");
+            TargetPathText.Text = target?.TargetPath ?? Tr.Get("app.update_selection_details.select_target");
             bool legacyRoleTarget = target != null && !IsConcreteDeviceTarget(target);
             LegacyStaticTargetWarningText.Visibility = legacyRoleTarget
                 ? Visibility.Visible
@@ -1320,11 +1369,11 @@ namespace TrackSwap
             bool manualPose = _selectedRoute?.PoseSourceKind == PoseSourceKind.Manual;
             bool controllerReady = RuntimeControllerHandComboBox.SelectedItem is ControllerHandOption &&
                 RuntimeControlInputComboBox.SelectedItem is ControlInputOption;
-            RuntimeSourcePathText.Text = manualPose ? "固定在 SteamVR 站立空间中" :
-                source?.DevicePath ?? "未选择位置来源";
+            RuntimeSourcePathText.Text = manualPose ? Tr.Get("app.update_runtime_selection_details.fixed_steamvr") :
+                source?.DevicePath ?? Tr.Get("app.update_runtime_selection_details.select_position_source");
             RuntimeRotationSourcePathText.Text = _selectedRoute?.SplitPoseSource == true
-                ? rotationSource?.DevicePath ?? "未选择旋转来源"
-                : "与位置来源相同";
+                ? rotationSource?.DevicePath ?? Tr.Get("app.update_runtime_selection_details.select_rotation_source")
+                : Tr.Get("route.rotation_source.same_as_position");
             HidePhysicalSourceCheckBox.IsEnabled = _selectedRoute != null &&
                 !_selectedRoute.PendingDeletion &&
                 !manualPose &&
@@ -1332,12 +1381,12 @@ namespace TrackSwap
                 (!_selectedRoute.SplitPoseSource || rotationSource != null);
             SplitPoseSourceCheckBox.IsEnabled = _selectedRoute != null &&
                 !_selectedRoute.PendingDeletion && !manualPose;
-            PoseEditorTitleText.Text = manualPose ? "手动位姿" : "局部位姿偏移";
+            PoseEditorTitleText.Text = manualPose ? Tr.Get("route.source.manual_pose") : Tr.Get("route.pose_offset.title");
             RuntimeTargetPathText.Text = !modeSelected
-                ? "未选择运行模式"
+                ? Tr.Get("app.update_runtime_selection_details.select_mode")
                 : replacesTarget
-                ? target?.TargetPath ?? "未选择替换目标"
-                : virtualController ? "虚拟控制器模式不使用替换目标" : "直接输出模式不使用替换目标";
+                ? target?.TargetPath ?? Tr.Get("app.update_runtime_selection_details.select_replacement_target")
+                : virtualController ? Tr.Get("app.update_runtime_selection_details.virtual_controller_replacement_target") : Tr.Get("app.update_runtime_selection_details.output_replacement_target");
             RouteConfiguration activeRoute = _runtimeStatus?.Configuration?.Routes?.FirstOrDefault(candidate =>
                 _selectedRoute != null && string.Equals(candidate.RouteId, _selectedRoute.RouteId, StringComparison.Ordinal));
             bool sourceWillChange = activeRoute != null &&
@@ -1352,16 +1401,22 @@ namespace TrackSwap
             bool blockedRoleTarget = replacesTarget && target != null && IsSteamVrRoleTargetPath(target.TargetPath) &&
                 !_showSteamVrRoleTargets;
             RuntimeRouteChangeWarningText.Text = blockedRoleTarget
-                ? "当前目标来自旧角色配置。请选择一个明确的在线实体设备后再应用。"
+                ? Tr.Get("route.validation.legacy_role_target")
                 : hmdRegistrationWillChange
-                ? "虚拟头显的注册状态将在 SteamVR 完全退出后更新；需要重新启动 SteamVR 才会生效。"
+                ? Tr.Get("route.status.virtual_hmd_restart_required")
                 : modeWillChange
-                ? "运行模式将在应用后切换。若需要增删静态映射，TrackSwap 会在 SteamVR 完全退出后自动完成。"
+                ? Tr.Get("route.status.mode_change_pending")
                 : sourceWillChange
-                ? "注意：应用后位置来源将从 “" + DescribePoseSource(activeRoute.PoseSourceKind, activeRoute.SourceDevicePath) +
-                    "” 切换为 “" + DescribePoseSource(_selectedRoute.PoseSourceKind, source?.DevicePath) + "”。"
+                ? string.Format(
+                    CultureInfo.CurrentCulture,
+                    Tr.Get("route.warning.source_change"),
+                    DescribePoseSource(activeRoute.PoseSourceKind, activeRoute.SourceDevicePath),
+                    DescribePoseSource(_selectedRoute.PoseSourceKind, source?.DevicePath))
                 : rotationSourceWillChange
-                ? "注意：应用后旋转来源将切换为 “" + rotationSource.DevicePath + "”。"
+                ? string.Format(
+                    CultureInfo.CurrentCulture,
+                    Tr.Get("route.warning.rotation_source_change"),
+                    rotationSource.DevicePath)
                 : string.Empty;
             RuntimeRouteChangeWarningText.Visibility = blockedRoleTarget || modeWillChange ||
                 sourceWillChange || rotationSourceWillChange
@@ -1387,16 +1442,16 @@ namespace TrackSwap
                 bool steamVrRunning = _statusService.IsRunning();
                 bool synchronized = routeSaved && staticStateReady && (!steamVrRunning || applied);
                 SelectedRouteSyncText.Text = _selectedRoute.PendingDeletion
-                    ? "待删除"
-                    : synchronized ? "配置已同步" : !routeSaved
-                    ? "待应用"
+                    ? Tr.Get("route.status.pending_delete")
+                    : synchronized ? Tr.Get("route.status.synchronized") : !routeSaved
+                    ? Tr.Get("route.status.pending_apply")
                     : !staticStateReady
                     ? !hmdBootReady
-                        ? "等待重启 SteamVR"
+                        ? Tr.Get("app.update_runtime_selection_details.waiting_restart_steamvr")
                         : replacesTarget
-                        ? "待写入映射"
-                        : "待移除映射"
-                    : "配置待同步";
+                        ? Tr.Get("app.update_runtime_selection_details.write_mapping")
+                        : Tr.Get("app.update_runtime_selection_details.remove_mapping")
+                    : Tr.Get("app.update_runtime_selection_details.config");
                 SelectedRouteSyncText.Foreground = FindBrush(
                     _selectedRoute.PendingDeletion || !synchronized ? "WarningBrush" : "SuccessBrush");
                 if (!string.IsNullOrWhiteSpace(_routeAutoApplyIssueText))
@@ -1431,7 +1486,7 @@ namespace TrackSwap
                     RouteConfiguration copy = CloneRoute(route);
                     if (string.IsNullOrWhiteSpace(copy.Name))
                     {
-                        copy.Name = unnamedIndex == 0 ? "新配置" : "新配置 (" + unnamedIndex + ")";
+                        copy.Name = unnamedIndex == 0 ? Tr.Get("route.default_name") : Tr.Get("route.default_name_numbered_prefix") + unnamedIndex + ")";
                     }
                     unnamedIndex++;
                     _workingRoutes.Add(copy);
@@ -1522,11 +1577,11 @@ namespace TrackSwap
                     candidate.Enabled && candidate.Mode == RouteMode.VirtualHmd && IsRouteComplete(candidate));
                 bool hmdBootReady = _settingsService.ReadVirtualHmdEnabled(_settingsPath) == desiredVirtualHmd;
                 bool staticStateReady = (replacesTarget ? exactMapping : proxyMapping == null) && hmdBootReady;
-                string state = route.PendingDeletion ? "待删除" : !route.Enabled ? "已停用" : !routeSaved
-                    ? "待应用"
+                string state = route.PendingDeletion ? Tr.Get("route.status.pending_delete") : !route.Enabled ? Tr.Get("route.refresh_route_list.disable") : !routeSaved
+                    ? Tr.Get("route.status.pending_apply")
                     : !staticStateReady
-                    ? !hmdBootReady ? "待重启 SteamVR" : replacesTarget ? "待映射" : "待解除映射"
-                    : !steamVrRunning ? "已配置" : driverApplied ? "已应用" : "等待驱动";
+                    ? !hmdBootReady ? Tr.Get("route.refresh_route_list.restart_steamvr") : replacesTarget ? Tr.Get("route.status.pending_mapping") : Tr.Get("route.status.pending_unmapping")
+                    : !steamVrRunning ? Tr.Get("route.refresh_route_list.config") : driverApplied ? Tr.Get("route.status.applied") : Tr.Get("runtime.status.waiting_for_driver");
                 Brush brush = FindBrush(route.PendingDeletion ? "WarningBrush" : !route.Enabled ? "MutedTextBrush" : routeSaved && staticStateReady && (!steamVrRunning || driverApplied) ? "SuccessBrush" : "WarningBrush");
                 _routeItems.Add(new RouteListItem(route, state, brush));
             }
@@ -1594,20 +1649,20 @@ namespace TrackSwap
                     ? route.ManualPose ?? PoseOffset.DefaultManualPose()
                     : route.Offset ?? PoseOffset.Identity());
                 SelectedProxyText.Text = route.Mode == RouteMode.Unspecified
-                    ? "请选择运行模式"
+                    ? Tr.Get("route.show_selected_route.select_mode")
                     : route.Mode == RouteMode.VirtualController
                         ? ProtocolConstants.GetControllerSerial(route.ControllerHand)
                         : ProtocolConstants.GetOutputSerial(route.Mode, route.VirtualDeviceSlot);
                 RuntimeProxyText.Text = ProtocolConstants.GetOutputSerial(route.Mode, route.VirtualDeviceSlot);
                 RuntimeControllerOutputText.Text = string.IsNullOrWhiteSpace(ProtocolConstants.GetControllerSerial(route.ControllerHand))
-                    ? "请选择控制器侧别"
+                    ? Tr.Get("route.controller.select_hand")
                     : ProtocolConstants.GetControllerSerial(route.ControllerHand);
                 SelectedRouteNameText.Text = route.Name;
-                ToggleSelectedRouteButton.Content = route.Enabled ? "停用" : "启用";
+                ToggleSelectedRouteButton.Content = route.Enabled ? Tr.Get("common.action.disable") : Tr.Get("common.action.enable");
                 ToggleSelectedRouteButton.IsEnabled = !route.PendingDeletion;
                 RuntimeSourceComboBox.IsEnabled = !route.PendingDeletion;
                 RuntimeRotationSourceComboBox.IsEnabled = !route.PendingDeletion && route.SplitPoseSource;
-                RuntimeRotationSourceComboBox.Tag = route.SplitPoseSource ? "请选择" : "与位置来源相同";
+                RuntimeRotationSourceComboBox.Tag = route.SplitPoseSource ? Tr.Get("common.action.select") : Tr.Get("route.rotation_source.same_as_position");
                 RuntimeModeComboBox.IsEnabled = !route.PendingDeletion;
                 RuntimeTargetComboBox.IsEnabled = !route.PendingDeletion;
                 HidePhysicalSourceCheckBox.Visibility = _physicalSourceHidingEnabled
@@ -1719,17 +1774,17 @@ namespace TrackSwap
         {
             if (string.Equals(targetPath, ProtocolConstants.RightHandRolePath, StringComparison.Ordinal))
             {
-                return "旧角色目标 · 右手（请改选实体设备）";
+                return Tr.Get("route.build_configured_runtime_target_name.role_target_right_physical_device");
             }
             if (string.Equals(targetPath, ProtocolConstants.LeftHandRolePath, StringComparison.Ordinal))
             {
-                return "旧角色目标 · 左手（请改选实体设备）";
+                return Tr.Get("route.build_configured_runtime_target_name.role_target_left_physical_device");
             }
             if (string.Equals(targetPath, ProtocolConstants.HeadRolePath, StringComparison.Ordinal))
             {
-                return "旧角色目标 · 头显（请改选实体设备）";
+                return Tr.Get("route.build_configured_runtime_target_name.role_target_hmd_physical_device");
             }
-            return "已配置目标";
+            return Tr.Get("route.build_configured_runtime_target_name.config_target");
         }
 
         private void AddRouteButton_Click(object sender, RoutedEventArgs e)
@@ -1743,7 +1798,7 @@ namespace TrackSwap
             }
             if (_workingRoutes.Count >= ProtocolConstants.MaximumRoutes)
             {
-                AppDialog.Show(this, "最多支持 " + ProtocolConstants.MaximumRoutes + " 条路由。", "无法新增", MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(this, Tr.Get("route.limit.prefix") + ProtocolConstants.MaximumRoutes + Tr.Get("route.add_route_button_click.item"), Tr.Get("route.add_route_button_click.cannot"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -1766,13 +1821,13 @@ namespace TrackSwap
         private string GetNextRouteName()
         {
             var names = new HashSet<string>(_workingRoutes.Select(route => route.Name), StringComparer.OrdinalIgnoreCase);
-            if (!names.Contains("新配置"))
+            if (!names.Contains(Tr.Get("route.default_name")))
             {
-                return "新配置";
+                return Tr.Get("route.default_name");
             }
             for (int index = 1; ; index++)
             {
-                string candidate = "新配置 (" + index.ToString(CultureInfo.InvariantCulture) + ")";
+                string candidate = Tr.Get("route.default_name_numbered_prefix") + index.ToString(CultureInfo.InvariantCulture) + ")";
                 if (!names.Contains(candidate))
                 {
                     return candidate;
@@ -1885,6 +1940,10 @@ namespace TrackSwap
             {
                 ShowSettingsSection(SettingsSection.Files);
             }
+            else if (sender == SettingsLanguageCategoryButton)
+            {
+                ShowSettingsSection(SettingsSection.Language);
+            }
             else if (sender == SettingsOscCategoryButton)
             {
                 ShowSettingsSection(SettingsSection.Osc);
@@ -1910,6 +1969,7 @@ namespace TrackSwap
             SteamVrSettingsPanel.Visibility = section == SettingsSection.SteamVr ? Visibility.Visible : Visibility.Collapsed;
             DeviceSettingsPanel.Visibility = section == SettingsSection.Devices ? Visibility.Visible : Visibility.Collapsed;
             FilesSettingsPanel.Visibility = section == SettingsSection.Files ? Visibility.Visible : Visibility.Collapsed;
+            LanguageSettingsPanel.Visibility = section == SettingsSection.Language ? Visibility.Visible : Visibility.Collapsed;
             OscSettingsPanel.Visibility = section == SettingsSection.Osc ? Visibility.Visible : Visibility.Collapsed;
             XInputSettingsPanel.Visibility = section == SettingsSection.XInput ? Visibility.Visible : Visibility.Collapsed;
             AdvancedSettingsPanel.Visibility = section == SettingsSection.Advanced ? Visibility.Visible : Visibility.Collapsed;
@@ -1918,6 +1978,7 @@ namespace TrackSwap
             UpdateSettingsCategoryButton(SettingsSteamVrCategoryButton, section == SettingsSection.SteamVr);
             UpdateSettingsCategoryButton(SettingsDevicesCategoryButton, section == SettingsSection.Devices);
             UpdateSettingsCategoryButton(SettingsFilesCategoryButton, section == SettingsSection.Files);
+            UpdateSettingsCategoryButton(SettingsLanguageCategoryButton, section == SettingsSection.Language);
             UpdateSettingsCategoryButton(SettingsOscCategoryButton, section == SettingsSection.Osc);
             UpdateSettingsCategoryButton(SettingsXInputCategoryButton, section == SettingsSection.XInput);
             UpdateSettingsCategoryButton(SettingsAdvancedCategoryButton, section == SettingsSection.Advanced);
@@ -1929,7 +1990,200 @@ namespace TrackSwap
             {
                 RefreshFilesAndBackupsView();
             }
+            else if (section == SettingsSection.Language)
+            {
+                RefreshLanguageSettingsView();
+            }
             UpdateHapticTimelineRendering();
+        }
+
+        private void RefreshLanguageSettingsView()
+        {
+            _loadingLanguageSelection = true;
+            try
+            {
+                LanguageDirectoryText.Text = _localizationService.LanguageDirectory;
+                LanguageComboBox.ItemsSource = _localizationService.Languages.ToList();
+                LanguageComboBox.SelectedItem = _localizationService.Languages.FirstOrDefault(option =>
+                    string.Equals(option.Locale, _localizationService.CurrentLocale, StringComparison.OrdinalIgnoreCase));
+
+                var issueItems = _localizationService.Issues
+                    .Select(issue => new LanguageIssueListItem(
+                        issue.Key,
+                        GetLocalizationIssueLabel(issue.Kind),
+                        GetLocalizationIssueDetail(issue),
+                        GetLocalizationIssueBrush(issue.Kind),
+                        _localizationService.Translate("language.copy_hint")))
+                    .ToList();
+                LanguageIssuesItemsControl.ItemsSource = issueItems;
+                LanguageIssuesEmptyText.Visibility = issueItems.Count == 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+
+                if (_localizationService.IsOfficialLanguage)
+                {
+                    LanguagePackStatusText.Text = string.Format(
+                        CultureInfo.CurrentCulture,
+                        _localizationService.Translate("language.status.official"),
+                        _localizationService.CatalogCount);
+                }
+                else
+                {
+                    int missing = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Missing);
+                    int invalid = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Invalid);
+                    int stale = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Stale);
+                    LanguagePackStatusText.Text = string.Format(
+                        CultureInfo.CurrentCulture,
+                        _localizationService.Translate("language.status.external"),
+                        _localizationService.CurrentLocale,
+                        missing,
+                        invalid,
+                        stale);
+                }
+            }
+            finally
+            {
+                _loadingLanguageSelection = false;
+            }
+        }
+
+        private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingLanguageSelection || !(LanguageComboBox.SelectedItem is LanguageOption option))
+            {
+                return;
+            }
+            _localizationService.SetLanguage(option.Locale);
+            _languageLocale = _localizationService.CurrentLocale;
+            SaveUiPreferences();
+            RefreshLanguageSettingsView();
+        }
+
+        private void RefreshLanguagesButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                _localizationService.Reload(_languageLocale);
+                _languageLocale = _localizationService.CurrentLocale;
+                SaveUiPreferences();
+                LanguageCopyStatusText.Visibility = Visibility.Collapsed;
+                RefreshLanguageSettingsView();
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is UnauthorizedAccessException ||
+                exception is InvalidDataException ||
+                exception is JsonException)
+            {
+                AppDialog.Show(
+                    this,
+                    exception.Message,
+                    _localizationService.Translate("language.refresh.failure_title"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private void OpenLanguageFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            Directory.CreateDirectory(_localizationService.LanguageDirectory);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = "\"" + _localizationService.LanguageDirectory + "\"",
+                UseShellExecute = true
+            });
+        }
+
+        private void ExportLanguageTemplateButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new SaveFileDialog
+            {
+                Title = _localizationService.Translate("language.template.dialog_title"),
+                Filter = "JSON (*.json)|*.json|All files (*.*)|*.*",
+                FileName = "TrackSwap-i18n-template.json",
+                AddExtension = true,
+                DefaultExt = ".json"
+            };
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+            try
+            {
+                _localizationService.ExportTemplate(dialog.FileName);
+                AppDialog.Show(
+                    this,
+                    string.Format(
+                        CultureInfo.CurrentCulture,
+                        _localizationService.Translate("language.template.success"),
+                        dialog.FileName),
+                    _localizationService.Translate("language.template.success_title"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is UnauthorizedAccessException ||
+                exception is ArgumentException ||
+                exception is NotSupportedException)
+            {
+                AppDialog.Show(
+                    this,
+                    exception.Message,
+                    _localizationService.Translate("language.template.failure_title"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private void LanguageIssueButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button button) || !(button.Tag is string key) || string.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+            Clipboard.SetText(key);
+            LanguageCopyStatusText.Text = string.Format(
+                CultureInfo.CurrentCulture,
+                _localizationService.Translate("language.copied"),
+                key);
+            LanguageCopyStatusText.Visibility = Visibility.Visible;
+        }
+
+        private string GetLocalizationIssueLabel(LocalizationIssueKind kind)
+        {
+            switch (kind)
+            {
+                case LocalizationIssueKind.Missing:
+                    return _localizationService.Translate("language.issue.missing");
+                case LocalizationIssueKind.Invalid:
+                    return _localizationService.Translate("language.issue.invalid");
+                default:
+                    return _localizationService.Translate("language.issue.stale");
+            }
+        }
+
+        private Brush GetLocalizationIssueBrush(LocalizationIssueKind kind)
+        {
+            return FindBrush(kind == LocalizationIssueKind.Invalid ? "DestructiveBrush" : "WarningBrush");
+        }
+
+        private string GetLocalizationIssueDetail(LocalizationIssue issue)
+        {
+            if (issue.Key.StartsWith("file:", StringComparison.Ordinal))
+            {
+                return _localizationService.Translate("language.issue.detail.file");
+            }
+            switch (issue.Kind)
+            {
+                case LocalizationIssueKind.Missing:
+                    return _localizationService.Translate("language.issue.detail.missing");
+                case LocalizationIssueKind.Invalid:
+                    return _localizationService.Translate("language.issue.detail.invalid");
+                default:
+                    return _localizationService.Translate("language.issue.detail.stale");
+            }
         }
 
         private void RefreshFilesAndBackupsView()
@@ -1940,10 +2194,10 @@ namespace TrackSwap
             bool insideInstallation = IsPathInside(activeData, applicationRoot);
             bool preferredWritable = TrackSwapDataPaths.CanUsePreferredDataDirectory;
             CurrentDataLocationStateText.Text = insideInstallation
-                ? "当前数据保存在 TrackSwap 安装目录内。Steam 更新与验证不会管理运行后创建的 UserData 文件。"
+                ? Tr.Get("settings.files.data_root.install_directory_notice")
                 : preferredWritable
-                    ? "当前正在使用旧版数据目录。迁移成功后将改用安装目录中的 UserData。"
-                    : "TrackSwap 安装目录不可写，当前已明确回退到 %LOCALAPPDATA%\\TrackSwap。";
+                    ? Tr.Get("settings.files.migration.legacy_root_notice")
+                    : Tr.Get("settings.files.data_root.fallback_notice");
             CurrentDataLocationStateText.Foreground = FindBrush(
                 insideInstallation ? "SuccessBrush" : "WarningBrush");
 
@@ -1958,10 +2212,10 @@ namespace TrackSwap
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             LegacyMigrationDescriptionText.Text = _dataMigrationService.CanMigrate
-                ? "检测到旧版数据。迁移会先复制并校验全部已识别文件，然后重启 TrackSwap 切换数据位置。"
+                ? Tr.Get("settings.files.migration.available_notice")
                 : !preferredWritable && TrackSwapDataPaths.IsUsingLegacyData
-                    ? "安装目录当前不可写，因此不能迁移。TrackSwap 会继续安全使用此回退目录。"
-                    : "当前已经使用安装目录中的数据。确认运行正常后，可以选择清理旧版文件。";
+                    ? Tr.Get("settings.files.migration.destination_not_writable")
+                    : Tr.Get("settings.files.migration.cleanup_available");
 
             string openVrRegistry = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -1973,43 +2227,45 @@ namespace TrackSwap
             string steamLogDirectory = _pathService.FindLogPath();
             var items = new List<FileLocationListItem>
             {
-                CreateFileLocation("TrackSwap 安装目录", applicationRoot,
-                    "Steam 或安装器管理的程序文件。", applicationRoot),
-                CreateFileLocation("用户数据目录", activeData,
-                    "TrackSwap 创建的配置、偏好、日志和自动回滚备份。", applicationRoot),
-                CreateFileLocation("Runtime 配置", Path.Combine(activeData, "runtime-config.json"),
-                    "路由、OSC、XInput 与 Runtime 高级选项。", applicationRoot),
-                CreateFileLocation("界面设置", _uiPreferencesService.FilePath,
-                    "界面显示、生命周期与本机高级偏好。", applicationRoot),
-                CreateFileLocation("设备记录", _deviceHistoryService.FilePath,
-                    "曾经发现过的物理设备名称与路径。", applicationRoot),
-                CreateFileLocation("校准档案", Path.Combine(activeData, "calibration-profiles.json"),
-                    "仅在存在校准档案时创建。", applicationRoot),
-                CreateFileLocation("运行日志", Path.Combine(activeData, "runtime-ui-launch.log"),
-                    "记录 Runtime 尝试启动 TrackSwap UI 时的诊断信息。", applicationRoot),
-                CreateFileLocation("自动回滚备份", Path.Combine(activeData, "Backups", "Automatic"),
-                    "导入配置前自动保存的完整 TrackSwap 配置。", applicationRoot),
-                CreateFileLocation("SteamVR 配置备份", Path.Combine(activeData, "Backups", "SteamVR"),
-                    "TrackSwap 修改 SteamVR 位姿映射前保存的恢复副本。", applicationRoot),
-                CreateFileLocation("OpenVR 路径登记", openVrRegistry,
-                    "SteamVR 的共享文件；TrackSwap 仅登记自己的驱动路径。", applicationRoot)
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.trackswap_install_directory"), applicationRoot,
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.steam_file"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.data_directory"), activeData,
+                    Tr.Get("settings.files.location.user_data_description"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.runtime_config"), Path.Combine(activeData, "runtime-config.json"),
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.osc_xinput_runtime_advanced"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.ui_settings"), _uiPreferencesService.FilePath,
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.ui_show_lifecycle"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.language_pack"), _localizationService.LanguageDirectory,
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.json_file"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.category.devices"), _deviceHistoryService.FilePath,
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.device_name_path"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.calibration"), Path.Combine(activeData, "calibration-profiles.json"),
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.calibration_create"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.logs"), Path.Combine(activeData, "runtime-ui-launch.log"),
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.runtime_start_trackswap_ui"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.automatic_backup"), Path.Combine(activeData, "Backups", "Automatic"),
+                    Tr.Get("settings.files.backup.rollback_description"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.steamvr_config_backup"), Path.Combine(activeData, "Backups", "SteamVR"),
+                    Tr.Get("settings.steamvr.backup.description"), applicationRoot),
+                CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.openvr_path"), openVrRegistry,
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.steamvr_file_trackswap_driver_path"), applicationRoot)
             };
             if (!string.IsNullOrWhiteSpace(steamConfigDirectory))
             {
-                items.Add(CreateFileLocation("SteamVR 位姿设置", _settingsPath,
-                    "SteamVR 的共享文件；目标替换模式只维护 TrackSwap 自己的映射。", applicationRoot));
-                items.Add(CreateFileLocation("SteamVR 应用登记", Path.Combine(steamConfigDirectory, "appconfig.json"),
-                    "SteamVR 的共享文件；包含 TrackSwap manifest 登记。", applicationRoot));
-                items.Add(CreateFileLocation("SteamVR 自动启动设置", Path.Combine(
+                items.Add(CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.steamvr_pose_settings"), _settingsPath,
+                    Tr.Get("settings.files.location.steamvr_settings_description"), applicationRoot));
+                items.Add(CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.steamvr_apply"), Path.Combine(steamConfigDirectory, "appconfig.json"),
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.steamvr_file_trackswap_manifest"), applicationRoot));
+                items.Add(CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.steamvr_auto_start_settings"), Path.Combine(
                         steamConfigDirectory,
                         "vrappconfig",
                         "com.hrenact.trackswap.vrappconfig"),
-                    "SteamVR 为 TrackSwap 保存的自动启动状态。", applicationRoot));
+                    Tr.Get("settings.files.backup.refresh_files_and_backups_view.steamvr_trackswap_save_auto_start_status"), applicationRoot));
             }
             if (!string.IsNullOrWhiteSpace(steamLogDirectory))
             {
-                items.Add(CreateFileLocation("SteamVR 日志目录", steamLogDirectory,
-                    "由 SteamVR 创建；vrserver 日志中可能包含 TrackSwap 驱动消息。", applicationRoot));
+                items.Add(CreateFileLocation(Tr.Get("settings.files.backup.refresh_files_and_backups_view.steamvr_logs_directory"), steamLogDirectory,
+                    Tr.Get("settings.files.location.steamvr_log_description"), applicationRoot));
             }
             FileLocationsItemsControl.ItemsSource = items;
         }
@@ -2025,11 +2281,11 @@ namespace TrackSwap
             bool inside = !string.IsNullOrWhiteSpace(path) && IsPathInside(path, applicationRoot);
             return new FileLocationListItem(
                 name,
-                path ?? "尚未找到",
+                path ?? Tr.Get("settings.files.create_file_location.not_found"),
                 description,
-                inside ? "安装目录内" : "安装目录外",
+                inside ? Tr.Get("settings.files.create_file_location.install_directory") : Tr.Get("settings.files.outside_install_directory"),
                 inside ? FindBrush("SuccessBrush") : FindBrush("WarningBrush"),
-                exists ? "已存在" : "尚未创建");
+                exists ? Tr.Get("common.status.exists") : Tr.Get("settings.files.create_file_location.create"));
         }
 
         private static bool IsPathInside(string path, string directory)
@@ -2091,8 +2347,8 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    "迁移需要先停止 Runtime 并切换数据目录。请完全退出 SteamVR 后再继续。",
-                    "SteamVR 正在运行",
+                    Tr.Get("settings.files.migration.stop_runtime_first"),
+                    Tr.Get("steamvr.status.running"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;
@@ -2102,8 +2358,8 @@ namespace TrackSwap
                 TrackSwapDataPaths.PreferredDataDirectory);
             if (targetHasData && AppDialog.Show(
                     this,
-                    "安装目录已经存在 TrackSwap 数据。继续迁移会用旧版数据替换当前数据，并把当前文件保存在迁移前备份中。\n\n确定继续吗？",
-                    "确认迁移旧版数据",
+                    Tr.Get("settings.files.migration.replace_existing_confirmation"),
+                    Tr.Get("settings.files.migrate_legacy_data_button_click.confirm_migration"),
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
             {
@@ -2130,10 +2386,10 @@ namespace TrackSwap
                 MigrationResult result = _dataMigrationService.Migrate(targetHasData);
                 AppDialog.Show(
                     this,
-                    "已迁移 " + result.FileCount + " 个数据文件和 " + steamVrBackupCount +
-                    " 个 SteamVR 配置备份到：\n" + result.TargetDirectory +
-                    "\n\nTrackSwap 将重新启动并改用新的数据目录。确认运行正常后，可在此页面清理旧版文件。",
-                    "迁移完成",
+                    Tr.Get("settings.files.migrate_legacy_data_button_click.migration") + result.FileCount + Tr.Get("settings.files.migrate_legacy_data_button_click.count_file") + steamVrBackupCount +
+                    Tr.Get("settings.files.migrate_legacy_data_button_click.count_steamvr_config_backup") + result.TargetDirectory +
+                    Tr.Get("settings.files.migration.restart_notice"),
+                    Tr.Get("settings.files.migrate_legacy_data_button_click.migration_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
                 RestartApplicationAfterDataChange();
@@ -2146,8 +2402,8 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    "无法迁移旧版数据：" + exception.Message,
-                    "迁移失败",
+                    Tr.Get("settings.files.migrate_legacy_data_button_click.cannot_migration") + exception.Message,
+                    Tr.Get("settings.files.migrate_legacy_data_button_click.migration_failed"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
                 MigrateLegacyDataButton.IsEnabled = true;
@@ -2177,15 +2433,15 @@ namespace TrackSwap
                 }
                 await Task.Delay(100);
             }
-            throw new InvalidOperationException("Runtime 未能在 5 秒内退出，迁移已取消。请关闭 Runtime 后重试。");
+            throw new InvalidOperationException(Tr.Get("app.wait_for_runtime_exit_async.runtime_5_exit_migration_cancel_close_runtime"));
         }
 
         private void CleanupLegacyDataButton_Click(object sender, RoutedEventArgs e)
         {
             if (AppDialog.Show(
                     this,
-                    "将删除旧版 TrackSwap 已识别的数据文件。未知文件会保留，不会删除 SteamVR 配置。\n\n确定清理吗？",
-                    "确认清理旧版文件",
+                    Tr.Get("settings.files.legacy_cleanup.confirmation"),
+                    Tr.Get("settings.files.cleanup_legacy_data_button_click.confirm_cleanup_file"),
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
             {
@@ -2197,9 +2453,9 @@ namespace TrackSwap
                 LegacyCleanupResult result = _dataMigrationService.CleanLegacyData();
                 AppDialog.Show(
                     this,
-                    "已删除 " + result.RemovedFileCount + " 个旧版文件。" +
-                    (result.DirectoryRemoved ? "旧版目录已清空并移除。" : "目录中仍有未知文件，因此已保留。"),
-                    "清理完成",
+                    Tr.Get("settings.files.cleanup_legacy_data_button_click.delete") + result.RemovedFileCount + Tr.Get("settings.files.cleanup_legacy_data_button_click.count_file") +
+                    (result.DirectoryRemoved ? Tr.Get("settings.files.cleanup_legacy_data_button_click.directory_clear_remove") : Tr.Get("settings.files.cleanup_legacy_data_button_click.directory_file_preserve")),
+                    Tr.Get("settings.files.cleanup_legacy_data_button_click.cleanup_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
                 RefreshFilesAndBackupsView();
@@ -2209,7 +2465,7 @@ namespace TrackSwap
                 exception is UnauthorizedAccessException ||
                 exception is InvalidOperationException)
             {
-                AppDialog.Show(this, exception.Message, "清理失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("common.error.cleanup_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2234,20 +2490,20 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    "清理 TrackSwap 位姿映射和 SteamVR 集成前，必须完全退出 SteamVR。请关闭 SteamVR 后重试。",
-                    "SteamVR 正在运行",
+                    Tr.Get("settings.files.cleanup.stop_steamvr_first"),
+                    Tr.Get("steamvr.status.running"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;
             }
 
             string actionDescription = removeSteamIntegration
-                ? "此操作将永久删除全部 TrackSwap 配置、界面偏好、设备记录、日志和自动备份，并移除 TrackSwap 驱动注册、应用清单、自动启动记录及 TrackSwap 创建的位姿覆盖。\n\n程序文件和卸载器会保留，也不会自动启动卸载。若之后继续使用，需要重新安装 SteamVR 集成。"
-                : "此操作将永久删除全部 TrackSwap 配置、界面偏好、设备记录、日志和自动备份，并移除 TrackSwap 创建的位姿覆盖。\n\nSteamVR 驱动和应用集成会保留。清理完成后 TrackSwap 将退出；重新打开即可从初始状态继续使用。";
+                ? Tr.Get("settings.files.pre_uninstall.confirmation")
+                : Tr.Get("settings.files.reset.confirmation");
             if (AppDialog.Show(
                     this,
-                    actionDescription + "\n\n此操作无法撤销，确定继续吗？",
-                    removeSteamIntegration ? "确认预卸载准备" : "确认重置 TrackSwap 数据",
+                    actionDescription + Tr.Get("app.reset_track_swap_async.cannot_ok"),
+                    removeSteamIntegration ? Tr.Get("app.reset_track_swap_async.confirm_pre_uninstall") : Tr.Get("app.reset_track_swap_async.confirm_reset_trackswap"),
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
             {
@@ -2294,8 +2550,8 @@ namespace TrackSwap
                 SetDestructiveCleanupOverlay(visible: false, removeSteamIntegration: removeSteamIntegration);
                 AppDialog.Show(
                     this,
-                    "清理没有完整完成，剩余项目已停止处理。请查看下方文件位置并重试。\n\n" + exception.Message,
-                    "清理失败",
+                    Tr.Get("app.reset_track_swap_async.cleanup_complete_complete_stop_down_file_location") + exception.Message,
+                    Tr.Get("common.error.cleanup_failed"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -2319,11 +2575,11 @@ namespace TrackSwap
             }
 
             DestructiveCleanupTitleText.Text = removeSteamIntegration
-                ? "正在准备卸载…"
-                : "正在重置数据…";
+                ? Tr.Get("settings.files.set_destructive_cleanup_overlay.in_progress")
+                : Tr.Get("settings.files.set_destructive_cleanup_overlay.in_progress_reset");
             DestructiveCleanupDescriptionText.Text = removeSteamIntegration
-                ? "正在删除 TrackSwap 数据并移除 SteamVR 集成，请勿关闭软件。"
-                : "正在删除 TrackSwap 数据并清理位姿映射，请勿关闭软件。";
+                ? Tr.Get("settings.files.pre_uninstall.progress")
+                : Tr.Get("settings.files.reset.progress");
             DestructiveCleanupOverlay.Focus();
         }
 
@@ -2339,14 +2595,14 @@ namespace TrackSwap
         {
             if (_runtimeStatus?.Configuration == null)
             {
-                AppDialog.Show(this, "尚未从 Runtime 读取配置。", "无法导出", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, Tr.Get("service.configuration_backup.export.runtime_read_config"), Tr.Get("settings.files.backup.export_configuration_button_click.cannot_export"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             var dialog = new SaveFileDialog
             {
-                Title = "导出 TrackSwap 配置",
-                Filter = "TrackSwap 配置备份 (*.trackswap-backup)|*.trackswap-backup",
+                Title = Tr.Get("settings.files.backup.export_configuration_button_click.export_trackswap_config"),
+                Filter = Tr.Get("settings.files.backup.save_file_filter"),
                 DefaultExt = ".trackswap-backup",
                 AddExtension = true,
                 FileName = "TrackSwap-backup-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".trackswap-backup"
@@ -2362,7 +2618,7 @@ namespace TrackSwap
                     dialog.FileName,
                     _runtimeStatus.Configuration,
                     CreateUiPreferencesSnapshot());
-                AppDialog.Show(this, "配置已导出：\n" + dialog.FileName, "导出完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(this, Tr.Get("settings.files.backup.export_configuration_button_click.config_export") + dialog.FileName, Tr.Get("common.status.export_complete"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception exception) when (
                 exception is IOException ||
@@ -2370,7 +2626,7 @@ namespace TrackSwap
                 exception is InvalidDataException ||
                 exception is NotSupportedException)
             {
-                AppDialog.Show(this, exception.Message, "导出失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("common.error.export_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2378,8 +2634,8 @@ namespace TrackSwap
         {
             var dialog = new OpenFileDialog
             {
-                Title = "导入 TrackSwap 配置",
-                Filter = "TrackSwap 配置备份 (*.trackswap-backup)|*.trackswap-backup|所有文件 (*.*)|*.*",
+                Title = Tr.Get("settings.files.backup.import_configuration_button_click.import_trackswap_config"),
+                Filter = Tr.Get("settings.files.backup.open_file_filter"),
                 CheckFileExists = true,
                 Multiselect = false
             };
@@ -2394,15 +2650,15 @@ namespace TrackSwap
                 ConfigurationBackupFile backup = _configurationBackupService.Read(dialog.FileName);
                 int routeCount = backup.RuntimeConfiguration.Routes?.Count ?? 0;
                 string riskText = backup.RuntimeConfiguration.PhysicalSourceHidingEnabled
-                    ? "\n\n此备份启用了物理位姿来源设备隐藏。导入后仍会保留该设置。"
+                    ? Tr.Get("settings.files.backup.import_hiding_notice")
                     : string.Empty;
                 if (AppDialog.Show(
                         this,
-                        "此备份包含 " + routeCount + " 条配置，创建于 " +
+                        Tr.Get("settings.files.backup.import_configuration_button_click.backup") + routeCount + Tr.Get("settings.files.backup.import_configuration_button_click.item_config_create") +
                         backup.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") +
-                        "。\n\n导入会覆盖当前全部路由、OSC、XInput、高级选项和界面设置。当前配置会先自动备份。" +
-                        riskText + "\n\n确定导入吗？",
-                        "确认导入配置",
+                        Tr.Get("settings.files.backup.import_overwrite_suffix") +
+                        riskText + Tr.Get("settings.files.backup.import_configuration_button_click.ok_import"),
+                        Tr.Get("settings.files.backup.import_configuration_button_click.confirm_import_config"),
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 {
@@ -2412,7 +2668,7 @@ namespace TrackSwap
                 RuntimeConfiguration previousConfiguration = _runtimeStatus?.Configuration;
                 if (previousConfiguration == null)
                 {
-                    throw new InvalidDataException("尚未从 Runtime 读取当前配置。");
+                    throw new InvalidDataException(Tr.Get("settings.files.backup.import_configuration_button_click.runtime_read_current_config"));
                 }
                 UiPreferences previousPreferences = CreateUiPreferencesSnapshot();
                 _configurationBackupService.CreateAutomaticRollback(
@@ -2446,8 +2702,8 @@ namespace TrackSwap
 
                 AppDialog.Show(
                     this,
-                    "配置已导入。TrackSwap 将重新启动，以完整载入新的界面设置和 Runtime 生命周期选项。",
-                    "导入完成",
+                    Tr.Get("settings.files.backup.import_restart_notice"),
+                    Tr.Get("settings.files.backup.import_configuration_button_click.import_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
                 try
@@ -2471,7 +2727,7 @@ namespace TrackSwap
                 exception is NotSupportedException ||
                 exception is JsonException)
             {
-                AppDialog.Show(this, exception.Message, "导入失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("settings.files.backup.import_configuration_button_click.import_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -2483,6 +2739,7 @@ namespace TrackSwap
         {
             return new UiPreferences
             {
+                LanguageLocale = _languageLocale,
                 ShowSteamVrRoleTargets = _showSteamVrRoleTargets,
                 AllowDuplicatePoseSources = _allowDuplicatePoseSources,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
@@ -2525,22 +2782,22 @@ namespace TrackSwap
             DiagnosticUiVersionText.Foreground = FindBrush("TextBrush");
 
             DiagnosticRuntimeProgramText.Text = report.RuntimeProgram;
-            DiagnosticRuntimeProgramText.ToolTip = report.RuntimeProgramPath ?? "未找到 TrackSwap.Runtime.exe";
+            DiagnosticRuntimeProgramText.ToolTip = report.RuntimeProgramPath ?? Tr.Get("settings.runtime.refresh_diagnostics_view.not_found_trackswap_runtime_exe");
             DiagnosticRuntimeProgramText.Foreground = FindBrush(
-                string.Equals(report.RuntimeProgram, "已找到", StringComparison.Ordinal)
+                string.Equals(report.RuntimeProgram, Tr.Get("common.status.found"), StringComparison.Ordinal)
                     ? "SuccessBrush"
                     : "WarningBrush");
 
             DiagnosticSteamVrText.Text = report.SteamVr;
-            DiagnosticSteamVrText.ToolTip = report.SteamVrPath ?? "未在 OpenVR 路径记录中找到 SteamVR";
+            DiagnosticSteamVrText.ToolTip = report.SteamVrPath ?? Tr.Get("settings.runtime.refresh_diagnostics_view.openvr_path_steamvr");
             DiagnosticSteamVrText.Foreground = FindBrush(
                 string.IsNullOrWhiteSpace(report.SteamVrPath) ? "WarningBrush" : "TextBrush");
 
-            DiagnosticDriverAndConfigText.Text = report.DriverRegistration + " · 配置" + report.Configuration;
-            DiagnosticDriverAndConfigText.ToolTip = report.DriverPath ?? "未在 OpenVR 外部驱动记录中找到 TrackSwap";
+            DiagnosticDriverAndConfigText.Text = report.DriverRegistration + Tr.Get("settings.runtime.refresh_diagnostics_view.config") + report.Configuration;
+            DiagnosticDriverAndConfigText.ToolTip = report.DriverPath ?? Tr.Get("settings.runtime.refresh_diagnostics_view.openvr_driver_trackswap");
             DiagnosticDriverAndConfigText.Foreground = FindBrush(
-                string.Equals(report.DriverRegistration, "已注册", StringComparison.Ordinal) &&
-                string.Equals(report.Configuration, "通过", StringComparison.Ordinal)
+                string.Equals(report.DriverRegistration, Tr.Get("common.status.registered"), StringComparison.Ordinal) &&
+                string.Equals(report.Configuration, Tr.Get("common.status.passed"), StringComparison.Ordinal)
                     ? "SuccessBrush"
                     : "WarningBrush");
         }
@@ -2556,13 +2813,13 @@ namespace TrackSwap
                 : ConfigurationValidator.Validate(status.Configuration);
             _diagnosticsReport.ConfigurationErrors = errors;
             _diagnosticsReport.Configuration = status?.Configuration == null
-                ? "尚未从 Runtime 读取"
-                : errors.Count == 0 ? "通过" : errors.Count + " 个问题";
+                ? Tr.Get("service.diagnostics.inspect.runtime_read")
+                : errors.Count == 0 ? Tr.Get("common.status.passed") : errors.Count + Tr.Get("common.count.issue_suffix");
             DiagnosticDriverAndConfigText.Text =
-                _diagnosticsReport.DriverRegistration + " · 配置" + _diagnosticsReport.Configuration;
+                _diagnosticsReport.DriverRegistration + Tr.Get("settings.runtime.refresh_diagnostics_view.config") + _diagnosticsReport.Configuration;
             DiagnosticDriverAndConfigText.Foreground = FindBrush(
-                string.Equals(_diagnosticsReport.DriverRegistration, "已注册", StringComparison.Ordinal) &&
-                string.Equals(_diagnosticsReport.Configuration, "通过", StringComparison.Ordinal)
+                string.Equals(_diagnosticsReport.DriverRegistration, Tr.Get("common.status.registered"), StringComparison.Ordinal) &&
+                string.Equals(_diagnosticsReport.Configuration, Tr.Get("common.status.passed"), StringComparison.Ordinal)
                     ? "SuccessBrush"
                     : "WarningBrush");
         }
@@ -2571,8 +2828,8 @@ namespace TrackSwap
         {
             var dialog = new SaveFileDialog
             {
-                Title = "导出 TrackSwap 诊断包",
-                Filter = "ZIP 压缩包 (*.zip)|*.zip",
+                Title = Tr.Get("settings.runtime.export_diagnostics_button_click.export_trackswap_diagnostics_bundle"),
+                Filter = Tr.Get("settings.runtime.export_diagnostics_button_click.zip_zip_zip"),
                 DefaultExt = ".zip",
                 AddExtension = true,
                 FileName = "TrackSwap-diagnostics-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip"
@@ -2588,8 +2845,8 @@ namespace TrackSwap
                 _diagnosticsService.Export(dialog.FileName, _runtimeStatus);
                 AppDialog.Show(
                     this,
-                    "诊断包已导出：\n" + dialog.FileName,
-                    "导出完成",
+                    Tr.Get("settings.runtime.export_diagnostics_button_click.diagnostics_bundle_export") + dialog.FileName,
+                    Tr.Get("common.status.export_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             }
@@ -2601,8 +2858,8 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    "无法导出诊断包：" + exception.Message,
-                    "导出失败",
+                    Tr.Get("settings.runtime.export_diagnostics_button_click.cannot_export_diagnostics_bundle") + exception.Message,
+                    Tr.Get("common.error.export_failed"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -2633,7 +2890,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法保存高级选项",
+                    Tr.Get("route.show_steam_vr_role_targets_check_box_click.cannot_save_advanced"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -2676,7 +2933,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法保存高级选项",
+                    Tr.Get("route.show_steam_vr_role_targets_check_box_click.cannot_save_advanced"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -2697,7 +2954,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法保存高级选项",
+                    Tr.Get("route.show_steam_vr_role_targets_check_box_click.cannot_save_advanced"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -2709,14 +2966,14 @@ namespace TrackSwap
             if (_runtimeStatus == null)
             {
                 PhysicalSourceHidingEnabledCheckBox.IsChecked = _physicalSourceHidingEnabled;
-                AppDialog.Show(this, "Runtime 离线时无法保存设备隐藏设置。", "无法保存", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, Tr.Get("settings.advanced.physical_source_hiding.runtime_offline"), Tr.Get("common.error.save_failed"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             bool nextValue = PhysicalSourceHidingEnabledCheckBox.IsChecked == true;
             if (nextValue && AppDialog.Show(
                     this,
-                    "该功能会注入 OpenVR 位姿提交接口，可能与其它二次修改定位数据的软件冲突，例如 Space Calibrator 的 Hidden Tracker 功能。\n\n确定启用吗？",
-                    "启用设备隐藏",
+                    Tr.Get("settings.advanced.physical_source_hiding.confirmation"),
+                    Tr.Get("settings.advanced.physical_source_hiding_enabled_check_box_click.enable_device_hide"),
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Warning) != MessageBoxResult.OK)
             {
@@ -2762,7 +3019,7 @@ namespace TrackSwap
                     if (previousRouteValues.TryGetValue(route.RouteId, out bool hidden)) route.HidePhysicalSource = hidden;
                 }
                 PhysicalSourceHidingEnabledCheckBox.IsChecked = previousValue;
-                AppDialog.Show(this, exception.Message, "无法保存设备隐藏设置", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("settings.advanced.physical_source_hiding.save_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2772,7 +3029,7 @@ namespace TrackSwap
             if (_runtimeStatus == null)
             {
                 HidePhysicalSourceCheckBox.IsChecked = _selectedRoute.HidePhysicalSource;
-                AppDialog.Show(this, "Runtime 离线时无法保存设备隐藏设置。", "无法保存", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, Tr.Get("settings.advanced.physical_source_hiding.runtime_offline"), Tr.Get("common.error.save_failed"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             bool nextValue = HidePhysicalSourceCheckBox.IsChecked == true;
@@ -2784,8 +3041,8 @@ namespace TrackSwap
             if (nextValue && isHeadset &&
                 AppDialog.Show(
                     this,
-                    "当前位姿来源是头显。启用后，SteamVR 中的实体头显位姿会被移动到极高处，视角也会随之离开正常游玩区域。\n\n确定继续吗？",
-                    "隐藏头显位姿",
+                    Tr.Get("route.physical_source_hiding.hmd_confirmation"),
+                    Tr.Get("route.hide_physical_source_check_box_click.hide_hmd_pose"),
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Warning) != MessageBoxResult.OK)
             {
@@ -2831,7 +3088,7 @@ namespace TrackSwap
             {
                 RuntimeRotationSourceComboBox.SelectedItem = null;
                 RuntimeRotationSourceComboBox.IsEnabled = split && !_selectedRoute.PendingDeletion;
-                RuntimeRotationSourceComboBox.Tag = split ? "请选择" : "与位置来源相同";
+                RuntimeRotationSourceComboBox.Tag = split ? Tr.Get("common.action.select") : Tr.Get("route.rotation_source.same_as_position");
             }
             finally
             {
@@ -2882,8 +3139,8 @@ namespace TrackSwap
                     _controllerHandSelectionPriority.ToString(CultureInfo.InvariantCulture);
                 AppDialog.Show(
                     this,
-                    "控制器优先级必须是 -2147483648 到 2147483647 之间的整数。",
-                    "优先级格式无效",
+                    Tr.Get("settings.advanced.controller_priority.range_error"),
+                    Tr.Get("settings.advanced.apply_controller_hand_selection_priority_from_text_async.priority_invalid"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;
@@ -2935,7 +3192,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法保存控制器优先级",
+                    Tr.Get("settings.advanced.set_controller_hand_selection_priority_async.cannot_save_controller_priority"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -2972,7 +3229,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法保存高级选项",
+                    Tr.Get("route.show_steam_vr_role_targets_check_box_click.cannot_save_advanced"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -3001,8 +3258,8 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        "TrackSwap 自身的跟随机制仍会生效，但未能同步 SteamVR 的启动应用列表。\n\n" + exception.Message,
-                        "SteamVR 启动设置未同步",
+                        Tr.Get("app.sync_steam_vr_auto_launch_async.trackswap_steamvr_start_apply") + exception.Message,
+                        Tr.Get("app.sync_steam_vr_auto_launch_async.steamvr_start_settings"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                 }
@@ -3037,7 +3294,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法更改 Runtime 启停行为",
+                    Tr.Get("settings.advanced.lifecycle.change_failed"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -3047,6 +3304,7 @@ namespace TrackSwap
         {
             _uiPreferencesService.Save(new UiPreferences
             {
+                LanguageLocale = _languageLocale,
                 ShowSteamVrRoleTargets = _showSteamVrRoleTargets,
                 AllowDuplicatePoseSources = _allowDuplicatePoseSources,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
@@ -3117,7 +3375,7 @@ namespace TrackSwap
                 {
                     if (showError)
                     {
-                        AppDialog.Show(this, error, "Runtime 启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                        AppDialog.Show(this, error, Tr.Get("app.ensure_runtime_started_async.runtime_start_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                     return;
                 }
@@ -3141,7 +3399,7 @@ namespace TrackSwap
             bool pendingDeletion = _selectedRoute?.PendingDeletion == true;
             RenameRouteMenuItem.IsEnabled = _selectedRoute != null && !pendingDeletion;
             ToggleRouteMenuItem.IsEnabled = _selectedRoute != null && !pendingDeletion;
-            DeleteRouteMenuItem.Header = pendingDeletion ? "取消删除" : "删除配置…";
+            DeleteRouteMenuItem.Header = pendingDeletion ? Tr.Get("route.update_route_context_menu.cancel_delete") : Tr.Get("route.action.delete_ellipsis");
             DeleteRouteMenuItem.Foreground = pendingDeletion
                 ? FindBrush("TextBrush")
                 : FindBrush("DestructiveBrush");
@@ -3160,7 +3418,7 @@ namespace TrackSwap
             }
             if (_workingRoutes.Any(route => route != item.Route && string.Equals(route.Name, name, StringComparison.OrdinalIgnoreCase)))
             {
-                AppDialog.Show(this, "配置名称不能重复。", "无法重命名", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, Tr.Get("route.rename_route_menu_item_click.config_name_cannot"), Tr.Get("route.rename_route_menu_item_click.cannot"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             item.Route.Name = name;
@@ -3175,18 +3433,18 @@ namespace TrackSwap
         private string PromptForRouteName(string currentName)
         {
             var input = new TextBox { Text = currentName, MinWidth = 280, FontFamily = new FontFamily("Microsoft YaHei UI") };
-            var ok = new Button { Content = "保存", IsDefault = true, MinWidth = 76, Margin = new Thickness(8, 0, 0, 0) };
-            var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 76 };
+            var ok = new Button { Content = Tr.Get("route.prompt_for_route_name.save"), IsDefault = true, MinWidth = 76, Margin = new Thickness(8, 0, 0, 0) };
+            var cancel = new Button { Content = Tr.Get("dialog.cancel"), IsCancel = true, MinWidth = 76 };
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
             buttons.Children.Add(cancel);
             buttons.Children.Add(ok);
             var panel = new StackPanel { Margin = new Thickness(20) };
-            panel.Children.Add(new TextBlock { Text = "配置名称", Foreground = FindBrush("MutedTextBrush"), Margin = new Thickness(0, 0, 0, 7) });
+            panel.Children.Add(new TextBlock { Text = Tr.Get("route.prompt_for_route_name.config_name"), Foreground = FindBrush("MutedTextBrush"), Margin = new Thickness(0, 0, 0, 7) });
             panel.Children.Add(input);
             panel.Children.Add(buttons);
             var dialog = new Window
             {
-                Title = "重命名配置",
+                Title = Tr.Get("route.prompt_for_route_name.config"),
                 Owner = this,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 SizeToContent = SizeToContent.WidthAndHeight,
@@ -3199,7 +3457,7 @@ namespace TrackSwap
                 string value = input.Text.Trim();
                 if (value.Length == 0 || value.Length > 64)
                 {
-                    AppDialog.Show(dialog, "名称必须包含 1–64 个字符。", "名称无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    AppDialog.Show(dialog, Tr.Get("route.prompt_for_route_name.name_required_1_64_count"), Tr.Get("route.prompt_for_route_name.name_invalid"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 dialog.DialogResult = true;
@@ -3227,7 +3485,7 @@ namespace TrackSwap
             }
             if (_runtimeStatus == null)
             {
-                AppDialog.Show(this, "Runtime 离线时无法安全记录待删除状态。请先启动 Runtime。", "无法删除", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, Tr.Get("route.toggle_selected_route_async.runtime_offline_cannot_delete_status_start_runtime"), Tr.Get("route.toggle_selected_route_async.cannot_delete"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             bool enabling = !_selectedRoute.Enabled;
@@ -3238,8 +3496,8 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        "该配置仍使用旧的 SteamVR 角色目标。请先选择一个明确的在线实体设备并应用，再启用配置。",
-                        "需要迁移目标",
+                        Tr.Get("route.validation.legacy_role_target_enable_error"),
+                        Tr.Get("route.toggle_selected_route_async.required_migration_target"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                     return;
@@ -3264,9 +3522,9 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        "无法启用：该配置会让一条路由读取另一条路由已经覆盖的设备角色，形成级联移动。\n\n" +
+                        Tr.Get("route.toggle_selected_route_async.cannot_enable_config_item_read_item_device_role") +
                         string.Join(Environment.NewLine, dependencyErrors),
-                        "检测到跨路由位姿级联",
+                        Tr.Get("route.toggle_selected_route_async.pose"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                     return;
@@ -3275,15 +3533,15 @@ namespace TrackSwap
             if (!enabling && _selectedRoute.Mode == RouteMode.ReplaceTarget &&
                 _statusService.IsRunning() && AppDialog.Show(
                     this,
-                    "停用后虚拟代理会立即停止输出，但 SteamVR 静态映射仍然生效，因此对应目标会暂时失去定位。是否继续？",
-                    "确认停用",
+                    Tr.Get("route.toggle_selected_route_async.disable_stop_output_steamvr_static_mapping_target"),
+                    Tr.Get("route.toggle_selected_route_async.confirm_disable"),
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Warning) != MessageBoxResult.OK)
             {
                 return;
             }
             _selectedRoute.Enabled = enabling;
-            ToggleSelectedRouteButton.Content = _selectedRoute.Enabled ? "停用" : "启用";
+            ToggleSelectedRouteButton.Content = _selectedRoute.Enabled ? Tr.Get("common.action.disable") : Tr.Get("common.action.enable");
             if (IsRouteComplete(_selectedRoute))
             {
                 await PersistWorkingRoutesAsync();
@@ -3316,16 +3574,16 @@ namespace TrackSwap
             if (!hasStaticMapping)
             {
                 string outputName = _selectedRoute.Mode == RouteMode.VirtualController
-                    ? "虚拟控制器"
+                    ? Tr.Get("route.delete_route_menu_item_click.virtual_controller")
                     : _selectedRoute.Mode == RouteMode.VirtualHmd
-                        ? "虚拟头显"
+                        ? Tr.Get("route.delete_route_menu_item_click.virtual_hmd")
                     : _selectedRoute.Mode == RouteMode.DirectProxy
-                        ? "虚拟追踪器"
-                        : "代理追踪器";
+                        ? Tr.Get("route.delete_route_menu_item_click.virtual_tracker")
+                        : Tr.Get("route.delete_route_menu_item_click.tracker");
                 if (AppDialog.Show(
                         this,
-                        "确定删除配置 “" + _selectedRoute.Name + "”？对应" + outputName + "将立即停止输出。",
-                        "删除配置",
+                        Tr.Get("route.delete_route_menu_item_click.ok_delete_config") + _selectedRoute.Name + Tr.Get("route.delete.target_mapping_fragment") + outputName + Tr.Get("route.delete_route_menu_item_click.stop_output"),
+                        Tr.Get("route.action.delete"),
                         MessageBoxButton.OKCancel,
                         MessageBoxImage.Warning) != MessageBoxResult.OK)
                 {
@@ -3340,12 +3598,12 @@ namespace TrackSwap
             }
 
             string message = steamVrRunning
-                ? "SteamVR 正在运行。配置会先标记为“待删除”并继续输出，避免目标立即失去定位。完全退出 SteamVR 后，TrackSwap 将自动清理静态绑定并完成删除。"
-                : "确定删除配置 “" + _selectedRoute.Name + "”？TrackSwap 将清理对应的静态绑定。";
+                ? Tr.Get("route.delete.pending_cleanup_notice")
+                : Tr.Get("route.delete_route_menu_item_click.ok_delete_config") + _selectedRoute.Name + Tr.Get("route.delete_route_menu_item_click.trackswap_cleanup");
             if (AppDialog.Show(
                     this,
                     message,
-                    steamVrRunning ? "标记为待删除" : "删除配置",
+                    steamVrRunning ? Tr.Get("route.delete_route_menu_item_click.delete") : Tr.Get("route.action.delete"),
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Warning) != MessageBoxResult.OK)
             {
@@ -3376,7 +3634,7 @@ namespace TrackSwap
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
             if (errors.Count != 0)
             {
-                AppDialog.Show(this, string.Join(Environment.NewLine, errors), "配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, string.Join(Environment.NewLine, errors), Tr.Get("route.validation.invalid"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             try
@@ -3389,7 +3647,7 @@ namespace TrackSwap
             }
             catch (Exception exception)
             {
-                AppDialog.Show(this, exception.Message, "保存配置失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("route.persist_working_routes_async.save_config_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
@@ -3468,7 +3726,7 @@ namespace TrackSwap
                             (RuntimeControlInputComboBox.SelectedItem as ControlInputOption)?.Source ?? ControlInputSource.None;
                         RuntimeControllerOutputText.Text = string.IsNullOrWhiteSpace(
                             ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand))
-                            ? "请选择控制器侧别"
+                            ? Tr.Get("route.controller.select_hand")
                             : ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand);
                         SelectedProxyText.Text = string.IsNullOrWhiteSpace(
                             ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand))
@@ -3492,7 +3750,7 @@ namespace TrackSwap
             if (!TryReadOffset(out PoseOffset offset, out string error))
             {
                 _routeAutoApplyTimer.Stop();
-                SetRouteAutoApplyIssue("偏移格式无效", error);
+                SetRouteAutoApplyIssue(Tr.Get("route.pose_offset.invalid_format"), error);
                 return;
             }
 
@@ -3614,7 +3872,7 @@ namespace TrackSwap
             }
             if (!TryReadOffset(out PoseOffset offset, out string error))
             {
-                SetRouteAutoApplyIssue("偏移格式无效", error);
+                SetRouteAutoApplyIssue(Tr.Get("route.pose_offset.invalid_format"), error);
                 return;
             }
 
@@ -3623,7 +3881,7 @@ namespace TrackSwap
             _routeAutoApplyQueued = false;
             try
             {
-                SelectedRouteSyncText.Text = "正在应用…";
+                SelectedRouteSyncText.Text = Tr.Get("route.apply_route_editor_automatically_async.in_progress_apply");
                 SelectedRouteSyncText.Foreground = FindBrush("WarningBrush");
                 SelectedRouteSyncText.ToolTip = null;
                 await ApplyRuntimeConfigurationAsync(showErrors: false, confirmSourceSwitch: false);
@@ -3710,10 +3968,10 @@ namespace TrackSwap
                 RuntimeControllerHandComboBox.SelectedItem = null;
                 RuntimeControlInputComboBox.SelectedItem = null;
                 SelectedProxyText.Text = option.Mode == RouteMode.VirtualController
-                    ? "请选择控制器侧别"
+                    ? Tr.Get("route.controller.select_hand")
                     : ProtocolConstants.GetOutputSerial(option.Mode, _selectedRoute.VirtualDeviceSlot);
                 RuntimeProxyText.Text = ProtocolConstants.GetOutputSerial(option.Mode, _selectedRoute.VirtualDeviceSlot);
-                RuntimeControllerOutputText.Text = "请选择控制器侧别";
+                RuntimeControllerOutputText.Text = Tr.Get("route.controller.select_hand");
 
                 _isLoading = true;
                 try
@@ -3776,8 +4034,8 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    "未找到 TrackSwap VR 视图程序。请重新构建或安装完整版本。",
-                    "无法打开 VR 视图",
+                    Tr.Get("app.open_vr_view_button_click.not_found_trackswap_vr_view_complete_version"),
+                    Tr.Get("viewer.open_failed_title"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
                 return;
@@ -3787,14 +4045,41 @@ namespace TrackSwap
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = viewerPath,
+                    Arguments = BuildVrViewerLocalizationArguments(),
                     WorkingDirectory = Path.GetDirectoryName(viewerPath),
                     UseShellExecute = false
                 });
             }
             catch (Exception exception)
             {
-                AppDialog.Show(this, exception.Message, "无法打开 VR 视图", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("viewer.open_failed_title"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private static string BuildVrViewerLocalizationArguments()
+        {
+            var entries = new[]
+            {
+                new[] { "title", Tr.Get("viewer.title") },
+                new[] { "both", Tr.Get("viewer.eye.both") },
+                new[] { "left", Tr.Get("viewer.eye.left") },
+                new[] { "right", Tr.Get("viewer.eye.right") },
+                new[] { "topmost", Tr.Get("viewer.topmost") },
+                new[] { "screenshot", Tr.Get("viewer.screenshot") },
+                new[] { "fullscreen", Tr.Get("viewer.fullscreen") },
+                new[] { "waiting-display", Tr.Get("viewer.waiting_display") },
+                new[] { "waiting-frame", Tr.Get("viewer.waiting_frame") },
+                new[] { "status", Tr.Get("viewer.status") },
+                new[] { "size-hd", Tr.Get("viewer.size.hd") },
+                new[] { "size-full-hd", Tr.Get("viewer.size.full_hd") },
+                new[] { "size-quad-hd", Tr.Get("viewer.size.quad_hd") },
+                new[] { "size-source", Tr.Get("viewer.size.source") },
+                new[] { "size-follow", Tr.Get("viewer.size.follow") },
+                new[] { "png-filter", Tr.Get("viewer.png_filter") }
+            };
+            return string.Join(" ", entries.Select(entry =>
+                "--loc-" + entry[0] + " " +
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(entry[1]))));
         }
 
         private void OpenSteamVrRoomSetupButton_Click(object sender, RoutedEventArgs e)
@@ -3812,8 +4097,8 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    "未找到 SteamVR 房间设置程序。请检查 SteamVR 是否已完整安装。",
-                    "无法打开房间设置",
+                    Tr.Get("settings.steamvr.room_setup.not_found"),
+                    Tr.Get("steamvr.room_setup.open_failed_title"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
                 return;
@@ -3833,7 +4118,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法打开房间设置",
+                    Tr.Get("steamvr.room_setup.open_failed_title"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -3905,7 +4190,7 @@ namespace TrackSwap
             {
                 if (showErrors)
                 {
-                    AppDialog.Show(this, "Runtime 未连接，或尚未选择完整路由。", "无法应用", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    AppDialog.Show(this, Tr.Get("route.apply_runtime_configuration_async.runtime_connect_select_complete"), Tr.Get("common.error.apply_failed"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 else if (_runtimeStatus == null)
                 {
@@ -3920,16 +4205,16 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        "该配置仍使用隐藏的 SteamVR 角色目标。请先选择明确的实体设备，或在“设置 → 高级选项”中启用 SteamVR 角色目标。",
-                        "需要迁移目标",
+                        Tr.Get("route.validation.hidden_steamvr_role_target"),
+                        Tr.Get("route.toggle_selected_route_async.required_migration_target"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                 }
                 else
                 {
-                    const string message = "请选择明确的实体设备，或在高级选项中显示 SteamVR 角色目标。";
-                    SetRouteAutoApplyIssue("需要迁移目标", message);
-                    AppDialog.Show(this, message, "配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    string message = Tr.Get("route.validation.physical_device_required");
+                    SetRouteAutoApplyIssue(Tr.Get("route.toggle_selected_route_async.required_migration_target"), message);
+                    AppDialog.Show(this, message, Tr.Get("route.validation.invalid"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 return;
             }
@@ -3945,17 +4230,17 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        "不能用目标角色当前绑定的设备替换同一个角色。这样会形成位姿反馈环，使目标停在上一帧。\n\n" +
-                        "请选择 Tracker、其他控制器或其他不会被该路由覆盖的位姿来源。",
-                        "检测到自引用路由",
+                        Tr.Get("route.validation.role_feedback_loop") +
+                        Tr.Get("route.apply_runtime_configuration_async.select_tracker_controller_pose_source"),
+                        Tr.Get("route.validation.self_reference_detected"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                 }
                 else
                 {
-                    const string message = "物理来源不能读取同一条路由正在替换的设备角色。";
-                    SetRouteAutoApplyIssue("配置无效", message);
-                    AppDialog.Show(this, message, "配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    string message = Tr.Get("route.validation.source_role_conflict");
+                    SetRouteAutoApplyIssue(Tr.Get("route.validation.invalid"), message);
+                    AppDialog.Show(this, message, Tr.Get("route.validation.invalid"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 return;
             }
@@ -3964,11 +4249,11 @@ namespace TrackSwap
             {
                 if (showErrors)
                 {
-                    AppDialog.Show(this, parseError, "偏移格式无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    AppDialog.Show(this, parseError, Tr.Get("route.pose_offset.invalid_format"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 else
                 {
-                    SetRouteAutoApplyIssue("偏移格式无效", parseError);
+                    SetRouteAutoApplyIssue(Tr.Get("route.pose_offset.invalid_format"), parseError);
                 }
                 return;
             }
@@ -3989,15 +4274,15 @@ namespace TrackSwap
             {
                 MessageBoxResult switchResult = AppDialog.Show(
                     this,
-                    "此操作不仅会更新位姿，还会切换位姿来源。\n\n" +
+                    Tr.Get("route.apply_runtime_configuration_async.pose_switch_pose_source") +
                     (positionSourceChanged
-                        ? "位置：" + DescribePoseSource(activeRoute.PoseSourceKind, activeRoute.SourceDevicePath) +
+                        ? Tr.Get("route.apply_runtime_configuration_async.position") + DescribePoseSource(activeRoute.PoseSourceKind, activeRoute.SourceDevicePath) +
                             "\n→ " + DescribePoseSource(source.PoseSourceKind, source.DevicePath) + "\n\n"
                         : string.Empty) +
                     (rotationSourceChanged
-                        ? "旋转：" + activeRoute.RotationSourceDevicePath + "\n→ " + rotationSource.DevicePath
+                        ? Tr.Get("route.apply_runtime_configuration_async.rotation") + activeRoute.RotationSourceDevicePath + "\n→ " + rotationSource.DevicePath
                         : string.Empty),
-                    "确认切换位姿来源",
+                    Tr.Get("route.apply_runtime_configuration_async.confirm_switch_pose_source"),
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Warning);
                 if (switchResult != MessageBoxResult.OK)
@@ -4051,24 +4336,24 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        errors.Any(error => error.IndexOf("跨配置的位姿级联", StringComparison.Ordinal) >= 0)
-                            ? "无法应用：该配置会让一条路由读取另一条路由已经覆盖的设备角色，形成级联移动。\n\n" +
+                        errors.Any(error => error.IndexOf(Tr.Get("route.apply_runtime_configuration_async.config_pose"), StringComparison.Ordinal) >= 0)
+                            ? Tr.Get("route.apply_runtime_configuration_async.cannot_apply_config_item_read_item_device_role") +
                                 string.Join(Environment.NewLine, errors)
                             : string.Join(Environment.NewLine, errors),
-                        "运行时配置无效",
+                        Tr.Get("route.apply_runtime_configuration_async.config_invalid"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                 }
                 else
                 {
                     string message = string.Join(Environment.NewLine, errors);
-                    SetRouteAutoApplyIssue("配置无效", message);
-                    AppDialog.Show(this, message, "配置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    SetRouteAutoApplyIssue(Tr.Get("route.validation.invalid"), message);
+                    AppDialog.Show(this, message, Tr.Get("route.validation.invalid"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 return;
             }
 
-            RuntimeAppliedStateText.Text = "正在提交…";
+            RuntimeAppliedStateText.Text = Tr.Get("route.apply_runtime_configuration_async.in_progress_submit");
             RuntimeAppliedStateText.Foreground = FindBrush("WarningBrush");
             try
             {
@@ -4095,10 +4380,10 @@ namespace TrackSwap
                     if (!staticStateReady)
                     {
                         RuntimeRouteChangeWarningText.Text = _selectedRoute.Mode == RouteMode.VirtualHmd
-                            ? "虚拟头显配置已保存。完全退出并重新启动 SteamVR 后生效。"
+                            ? Tr.Get("route.apply_runtime_configuration_async.virtual_hmd_config_save_exit_start_steamvr")
                             : replacesTarget
-                            ? "运行时配置已保存。退出 SteamVR 后将自动写入静态映射。"
-                            : "直接输出模式已保存。退出 SteamVR 后将自动移除旧的静态映射。";
+                            ? Tr.Get("route.apply_runtime_configuration_async.config_save_exit_steamvr_automatic_write_static_mapping")
+                            : Tr.Get("route.status.static_mapping_removal_pending");
                         RuntimeRouteChangeWarningText.Visibility = Visibility.Visible;
                     }
                 }
@@ -4107,11 +4392,11 @@ namespace TrackSwap
             {
                 if (showErrors)
                 {
-                    AppDialog.Show(this, exception.Message, "运行时路由应用失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(this, exception.Message, Tr.Get("route.apply_runtime_configuration_async.apply_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
                 else if (_selectedRoute != null)
                 {
-                    SetRouteAutoApplyIssue("自动应用失败", exception.Message);
+                    SetRouteAutoApplyIssue(Tr.Get("route.apply_runtime_configuration_async.automatic_apply_failed"), exception.Message);
                 }
                 await RefreshStatusAsync();
             }
@@ -4131,7 +4416,7 @@ namespace TrackSwap
             {
                 if (!TryParseNumber(fields[index].Text, out values[index]))
                 {
-                    error = "所有偏移字段都必须是有限数字。";
+                    error = Tr.Get("route.preview.try_read_offset.offset_required");
                     return false;
                 }
             }
@@ -4141,7 +4426,7 @@ namespace TrackSwap
                 (values[5] * values[5]) + (values[6] * values[6]));
             if (quaternionLength < 1e-6)
             {
-                error = "旋转四元数不能为零。";
+                error = Tr.Get("route.preview.try_read_offset.rotation_quaternion_cannot");
                 return false;
             }
 
@@ -4184,7 +4469,7 @@ namespace TrackSwap
         {
             if (_statusService.IsRunning())
             {
-                AppDialog.Show(this, "请先完全退出 SteamVR，避免退出时覆盖配置。", "SteamVR 正在运行", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, Tr.Get("app.apply_button_click.exit_steamvr_exit_config"), Tr.Get("steamvr.status.running"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 UpdateSteamVrStatus();
                 return;
             }
@@ -4200,8 +4485,8 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    "旧版 SteamVR 角色目标仅用于查看和维护已有规则。请选择一个明确的在线实体设备作为新目标。",
-                    "需要明确设备目标",
+                    Tr.Get("app.apply_button_click.steamvr_role_target_select_count_online_physical_device_target"),
+                    Tr.Get("app.apply_button_click.required_device_target"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;
@@ -4210,14 +4495,14 @@ namespace TrackSwap
             string validationError = _settingsService.ValidateOverride(_settingsPath, source.DevicePath, target.TargetPath);
             if (validationError != null)
             {
-                AppDialog.Show(this, validationError, "无法应用", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, validationError, Tr.Get("common.error.apply_failed"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             MessageBoxResult result = AppDialog.Show(
                 this,
-                "将使用以下位姿映射：\n\n" + source.DevicePath + "\n→ " + target.TargetPath + "\n\n应用前会自动备份原始配置。",
-                "确认应用",
+                Tr.Get("app.apply_button_click.down_pose_mapping") + source.DevicePath + "\n→ " + target.TargetPath + Tr.Get("app.apply_button_click.apply_automatic_backup_raw_config"),
+                Tr.Get("app.apply_button_click.confirm_apply"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Information);
 
@@ -4233,7 +4518,7 @@ namespace TrackSwap
             }
             catch (Exception exception)
             {
-                AppDialog.Show(this, exception.Message, "应用失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("app.apply_button_click.apply_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -4252,7 +4537,7 @@ namespace TrackSwap
 
             if (source == null || target == null)
             {
-                AppDialog.Show(this, "无法在当前设备列表中找到这条规则，请在 SteamVR 运行时重新载入。", "设备不可用", MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(this, Tr.Get("settings.steamvr.edit_override_button_click.cannot_current_device_item_steamvr_load"), Tr.Get("settings.steamvr.edit_override_button_click.device_available"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -4325,7 +4610,7 @@ namespace TrackSwap
         {
             if (_statusService.IsRunning())
             {
-                AppDialog.Show(this, "请先完全退出 SteamVR，再移除规则。", "SteamVR 正在运行", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, Tr.Get("settings.steamvr.remove_override_button_click.exit_steamvr_remove"), Tr.Get("steamvr.status.running"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -4337,8 +4622,8 @@ namespace TrackSwap
 
             MessageBoxResult result = AppDialog.Show(
                 this,
-                "确定移除以下位姿映射？\n\n" + mapping.SourcePath + "\n→ " + mapping.TargetPath + "\n\n移除前会自动备份原始配置。",
-                "确认移除",
+                Tr.Get("settings.steamvr.remove_override_button_click.ok_remove_down_pose_mapping") + mapping.SourcePath + "\n→ " + mapping.TargetPath + Tr.Get("settings.steamvr.remove_override_button_click.remove_automatic_backup_raw_config"),
+                Tr.Get("settings.steamvr.remove_override_button_click.confirm_remove"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Warning);
 
@@ -4354,7 +4639,7 @@ namespace TrackSwap
             }
             catch (Exception exception)
             {
-                AppDialog.Show(this, exception.Message, "移除失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("settings.steamvr.remove_override_button_click.remove_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -4884,27 +5169,27 @@ namespace TrackSwap
                 (Color)ColorConverter.ConvertFromString("#5A9BFF"));
 
             string sourceMode = manualPose
-                ? "位置来源模型：无（手动位姿）"
+                ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model_manual_pose")
                 : _hideSourceInPreview
-                ? "位置来源模型：已隐藏"
-                : models[0] == null ? "位置来源模型：内置回退" : "位置来源模型：SteamVR " + models[0].Name;
+                ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model_hide")
+                : models[0] == null ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model") : Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model_steamvr") + models[0].Name;
             string rotationSourceMode = !_selectedRoute.SplitPoseSource
-                ? "旋转来源模型：与位置来源相同"
+                ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model_position_source")
                 : _hideSourceInPreview
-                    ? "旋转来源模型：已隐藏"
+                    ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model_hide")
                     : models[1] == null
-                        ? "旋转来源模型：内置回退"
-                        : "旋转来源模型：SteamVR " + models[1].Name;
+                        ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model")
+                        : Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model_steamvr") + models[1].Name;
             string targetMode = !replacesTarget
-                ? "目标模型：无（直接输出）"
+                ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model_output")
                 : _hideTargetInPreview
-                ? "目标模型：已隐藏"
-                : models[2] == null ? "目标模型：内置回退" : "目标模型：SteamVR " + models[2].Name;
+                ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model_hide")
+                : models[2] == null ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model") : Tr.Get("route.preview.refresh_preview_device_models_async.target_model_steamvr") + models[2].Name;
             string proxyMode = !showProxy
-                ? "代理模型：已隐藏"
+                ? Tr.Get("route.preview.refresh_preview_device_models_async.model_hide")
                 : models[3] == null
-                    ? "代理模型：内置回退"
-                    : "代理模型：SteamVR " + models[3].Name;
+                    ? Tr.Get("route.preview.refresh_preview_device_models_async.model")
+                    : Tr.Get("route.preview.refresh_preview_device_models_async.model_steamvr") + models[3].Name;
             _previewModelDescription = sourceMode + "\n" + rotationSourceMode + "\n" + targetMode + "\n" + proxyMode;
             PreviewStatusText.ToolTip = _previewModelDescription;
         }
@@ -4994,10 +5279,10 @@ namespace TrackSwap
             {
                 _telemetryFailureCount++;
                 PreviewStatusText.Text = _telemetryFailureCount < 5
-                    ? "遥测重试…"
-                    : "遥测暂停";
+                    ? Tr.Get("preview.telemetry.retrying")
+                    : Tr.Get("preview.telemetry.paused");
                 PreviewStatusText.Foreground = FindBrush("WarningBrush");
-                PreviewStatusText.ToolTip = "保留最后有效画面：" + exception.Message;
+                PreviewStatusText.ToolTip = Tr.Get("route.preview.refresh_telemetry_async.preserve") + exception.Message;
             }
             finally
             {
@@ -5009,21 +5294,21 @@ namespace TrackSwap
         {
             ApplySourceAndTargetPreview(snapshot);
 
-            PreviewStatusText.Text = "实时";
+            PreviewStatusText.Text = Tr.Get("preview.status.live");
             PreviewStatusText.Foreground = FindBrush("SuccessBrush");
-            string healthText = "输出 " + PoseHealth(snapshot.Output) +
+            string healthText = Tr.Get("route.preview.render_telemetry.output") + PoseHealth(snapshot.Output) +
                 (_selectedRoute?.PoseSourceKind == PoseSourceKind.Manual
-                    ? " · 手动位姿"
-                    : " · 位置来源 " + PoseHealth(snapshot.Source)) +
+                    ? Tr.Get("route.preview.render_telemetry.manual_pose")
+                    : Tr.Get("route.preview.render_telemetry.position_source") + PoseHealth(snapshot.Source)) +
                 (_selectedRoute?.SplitPoseSource == true
-                    ? " · 旋转来源 " + PoseHealth(snapshot.RotationSource)
+                    ? Tr.Get("route.preview.render_telemetry.rotation_source") + PoseHealth(snapshot.RotationSource)
                     : string.Empty) +
-                " · 目标 " + PoseHealth(snapshot.Target) + " · 来源局部空间";
+                Tr.Get("route.preview.render_telemetry.target") + PoseHealth(snapshot.Target) + Tr.Get("route.preview.render_telemetry.source");
             string diagnosticText = healthText;
             if (IsRenderablePose(snapshot.Source) && IsRenderablePose(snapshot.Output) &&
                 TryGetRelativePoseMatrix(snapshot.Source, snapshot.Output, out Matrix3D actualOutputMatrix))
             {
-                healthText += " · 实际偏移 (" +
+                healthText += Tr.Get("route.preview.render_telemetry.offset") +
                     actualOutputMatrix.OffsetX.ToString("F3", CultureInfo.InvariantCulture) + ", " +
                     actualOutputMatrix.OffsetY.ToString("F3", CultureInfo.InvariantCulture) + ", " +
                     actualOutputMatrix.OffsetZ.ToString("F3", CultureInfo.InvariantCulture) + ") m";
@@ -5033,7 +5318,7 @@ namespace TrackSwap
                     double dx = snapshot.Output.PositionX - snapshot.Target.PositionX;
                     double dy = snapshot.Output.PositionY - snapshot.Target.PositionY;
                     double dz = snapshot.Output.PositionZ - snapshot.Target.PositionZ;
-                    targetDistanceText = " · 输出→目标 " +
+                    targetDistanceText = Tr.Get("route.preview.render_telemetry.output_target") +
                         Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz))
                             .ToString("F4", CultureInfo.InvariantCulture) + " m";
                 }
@@ -5352,7 +5637,7 @@ namespace TrackSwap
 
         private static string PoseHealth(PoseTelemetry pose)
         {
-            return pose.Valid ? "有效" : pose.Connected ? "无有效位姿" : "未连接";
+            return pose.Valid ? Tr.Get("common.status.valid") : pose.Connected ? Tr.Get("route.preview.pose_health.pose") : Tr.Get("common.status.disconnected");
         }
 
         private static bool IsRenderablePose(PoseTelemetry pose)
@@ -5739,8 +6024,8 @@ namespace TrackSwap
         {
             MessageBoxResult result = AppDialog.Show(
                 this,
-                "确定清空设备记录？\n\n在线设备会在下次扫描时重新记录；现有配置仍会保留其引用，并继续用绿色或橙色圆点显示连接状态。",
-                "清空设备记录",
+                Tr.Get("settings.devices.clear_history.confirmation"),
+                Tr.Get("settings.devices.clear_history"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Warning);
             if (result != MessageBoxResult.OK)
@@ -5762,7 +6047,7 @@ namespace TrackSwap
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    "无法清空设备记录",
+                    Tr.Get("settings.devices.clear_device_history_button_click.cannot_clear_device_history"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -5893,7 +6178,7 @@ namespace TrackSwap
             }
             catch (Exception exception)
             {
-                AppDialog.Show(this, exception.Message, "保存 OSC 设置失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("settings.osc.apply_osc_settings_async.save_osc_settings_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -5930,38 +6215,38 @@ namespace TrackSwap
             };
         }
 
-        private void InitializeXInputMappingOptions()
+        private void InitializeXInputMappingOptions(bool registerPreviews = true)
         {
             _loadingXInputFields = true;
             try
             {
                 var joystickOptions = new[]
                 {
-                    new XInputBindingOption(XInputBindingSource.None, "无", null),
-                    new XInputBindingOption(XInputBindingSource.None, "操作手柄以绑定…", null, isCaptureCommand: true),
-                    new XInputBindingOption(XInputBindingSource.LeftStick, "左摇杆", "XboxSeriesX_Left_Stick.png"),
-                    new XInputBindingOption(XInputBindingSource.RightStick, "右摇杆", "XboxSeriesX_Right_Stick.png")
+                    new XInputBindingOption(XInputBindingSource.None, Tr.Get("common.value.none"), null),
+                    new XInputBindingOption(XInputBindingSource.None, Tr.Get("settings.xinput.capture_prompt"), null, isCaptureCommand: true),
+                    new XInputBindingOption(XInputBindingSource.LeftStick, Tr.Get("settings.xinput.initialize_xinput_mapping_options.left_joystick"), "XboxSeriesX_Left_Stick.png"),
+                    new XInputBindingOption(XInputBindingSource.RightStick, Tr.Get("settings.xinput.initialize_xinput_mapping_options.right_joystick"), "XboxSeriesX_Right_Stick.png")
                 };
                 var inputOptions = new[]
                 {
-                    new XInputBindingOption(XInputBindingSource.None, "无", null),
-                    new XInputBindingOption(XInputBindingSource.None, "操作手柄以绑定…", null, isCaptureCommand: true),
-                    new XInputBindingOption(XInputBindingSource.A, "A 键", "XboxSeriesX_A.png"),
-                    new XInputBindingOption(XInputBindingSource.B, "B 键", "XboxSeriesX_B.png"),
-                    new XInputBindingOption(XInputBindingSource.X, "X 键", "XboxSeriesX_X.png"),
-                    new XInputBindingOption(XInputBindingSource.Y, "Y 键", "XboxSeriesX_Y.png"),
-                    new XInputBindingOption(XInputBindingSource.DPadUp, "方向键 上", "XboxSeriesX_Dpad_Up.png"),
-                    new XInputBindingOption(XInputBindingSource.DPadDown, "方向键 下", "XboxSeriesX_Dpad_Down.png"),
-                    new XInputBindingOption(XInputBindingSource.DPadLeft, "方向键 左", "XboxSeriesX_Dpad_Left.png"),
-                    new XInputBindingOption(XInputBindingSource.DPadRight, "方向键 右", "XboxSeriesX_Dpad_Right.png"),
-                    new XInputBindingOption(XInputBindingSource.LeftStickClick, "左摇杆按下", "XboxSeriesX_Left_Stick_Click.png"),
-                    new XInputBindingOption(XInputBindingSource.RightStickClick, "右摇杆按下", "XboxSeriesX_Right_Stick_Click.png"),
-                    new XInputBindingOption(XInputBindingSource.LeftShoulder, "左肩键 LB", "XboxSeriesX_LB.png"),
-                    new XInputBindingOption(XInputBindingSource.RightShoulder, "右肩键 RB", "XboxSeriesX_RB.png"),
-                    new XInputBindingOption(XInputBindingSource.LeftTrigger, "左扳机 LT", "XboxSeriesX_LT.png"),
-                    new XInputBindingOption(XInputBindingSource.RightTrigger, "右扳机 RT", "XboxSeriesX_RT.png"),
-                    new XInputBindingOption(XInputBindingSource.View, "视图按钮", "XboxSeriesX_View.png"),
-                    new XInputBindingOption(XInputBindingSource.Menu, "菜单按钮", "XboxSeriesX_Menu.png")
+                    new XInputBindingOption(XInputBindingSource.None, Tr.Get("common.value.none"), null),
+                    new XInputBindingOption(XInputBindingSource.None, Tr.Get("settings.xinput.capture_prompt"), null, isCaptureCommand: true),
+                    new XInputBindingOption(XInputBindingSource.A, Tr.Get("settings.xinput.initialize_xinput_mapping_options.a"), "XboxSeriesX_A.png"),
+                    new XInputBindingOption(XInputBindingSource.B, Tr.Get("settings.xinput.initialize_xinput_mapping_options.b"), "XboxSeriesX_B.png"),
+                    new XInputBindingOption(XInputBindingSource.X, Tr.Get("settings.xinput.initialize_xinput_mapping_options.x"), "XboxSeriesX_X.png"),
+                    new XInputBindingOption(XInputBindingSource.Y, Tr.Get("settings.xinput.initialize_xinput_mapping_options.y"), "XboxSeriesX_Y.png"),
+                    new XInputBindingOption(XInputBindingSource.DPadUp, Tr.Get("settings.xinput.initialize_xinput_mapping_options.up"), "XboxSeriesX_Dpad_Up.png"),
+                    new XInputBindingOption(XInputBindingSource.DPadDown, Tr.Get("settings.xinput.initialize_xinput_mapping_options.down"), "XboxSeriesX_Dpad_Down.png"),
+                    new XInputBindingOption(XInputBindingSource.DPadLeft, Tr.Get("settings.xinput.initialize_xinput_mapping_options.left"), "XboxSeriesX_Dpad_Left.png"),
+                    new XInputBindingOption(XInputBindingSource.DPadRight, Tr.Get("settings.xinput.initialize_xinput_mapping_options.right"), "XboxSeriesX_Dpad_Right.png"),
+                    new XInputBindingOption(XInputBindingSource.LeftStickClick, Tr.Get("settings.xinput.initialize_xinput_mapping_options.left_joystick_down"), "XboxSeriesX_Left_Stick_Click.png"),
+                    new XInputBindingOption(XInputBindingSource.RightStickClick, Tr.Get("settings.xinput.initialize_xinput_mapping_options.right_joystick_down"), "XboxSeriesX_Right_Stick_Click.png"),
+                    new XInputBindingOption(XInputBindingSource.LeftShoulder, Tr.Get("settings.xinput.initialize_xinput_mapping_options.left_lb"), "XboxSeriesX_LB.png"),
+                    new XInputBindingOption(XInputBindingSource.RightShoulder, Tr.Get("settings.xinput.initialize_xinput_mapping_options.right_rb"), "XboxSeriesX_RB.png"),
+                    new XInputBindingOption(XInputBindingSource.LeftTrigger, Tr.Get("settings.xinput.initialize_xinput_mapping_options.left_trigger_lt"), "XboxSeriesX_LT.png"),
+                    new XInputBindingOption(XInputBindingSource.RightTrigger, Tr.Get("settings.xinput.initialize_xinput_mapping_options.right_trigger_rt"), "XboxSeriesX_RT.png"),
+                    new XInputBindingOption(XInputBindingSource.View, Tr.Get("settings.xinput.initialize_xinput_mapping_options.view"), "XboxSeriesX_View.png"),
+                    new XInputBindingOption(XInputBindingSource.Menu, Tr.Get("settings.input.menu_button"), "XboxSeriesX_Menu.png")
                 };
 
                 DataTemplate itemTemplate = (DataTemplate)FindResource("XInputBindingOptionTemplate");
@@ -5978,8 +6263,8 @@ namespace TrackSwap
 
                 var touchDefaultOptions = new[]
                 {
-                    new XInputTouchDefaultOption(true, "默认接触"),
-                    new XInputTouchDefaultOption(false, "默认抬起")
+                    new XInputTouchDefaultOption(true, Tr.Get("settings.xinput.default_touch")),
+                    new XInputTouchDefaultOption(false, Tr.Get("settings.xinput.initialize_xinput_mapping_options.default"))
                 };
                 XInputLeftThumbDefaultComboBox.ItemsSource = touchDefaultOptions;
                 XInputLeftIndexDefaultComboBox.ItemsSource = touchDefaultOptions;
@@ -6000,11 +6285,15 @@ namespace TrackSwap
 
                 XInputHapticModeComboBox.ItemsSource = new[]
                 {
-                    new XInputHapticModeOption(XInputHapticMode.PreserveHandedness, "保留手别"),
-                    new XInputHapticModeOption(XInputHapticMode.MirrorHandedness, "保留手别（镜像）"),
-                    new XInputHapticModeOption(XInputHapticMode.Unified, "统一震动")
+                    new XInputHapticModeOption(XInputHapticMode.PreserveHandedness, Tr.Get("settings.xinput.initialize_xinput_mapping_options.preserve_hand")),
+                    new XInputHapticModeOption(XInputHapticMode.MirrorHandedness, Tr.Get("settings.xinput.preserve_hand_mirrored")),
+                    new XInputHapticModeOption(XInputHapticMode.Unified, Tr.Get("settings.xinput.initialize_xinput_mapping_options.haptic"))
                 };
 
+                if (!registerPreviews)
+                {
+                    return;
+                }
                 RegisterXInputPreview(XInputLeftPrimaryComboBox, XInputLeftPrimaryPreviewImage);
                 RegisterXInputPreview(XInputLeftSecondaryComboBox, XInputLeftSecondaryPreviewImage);
                 RegisterXInputPreview(XInputLeftJoystickComboBox, XInputLeftJoystickPreviewImage);
@@ -6390,10 +6679,10 @@ namespace TrackSwap
             _xInputCaptureSuppressedSources = new HashSet<XInputBindingSource>();
             _xInputCaptureBaselineReady = false;
             _xInputCaptureDeadlineUtc = DateTime.UtcNow.AddSeconds(5);
-            command.SetDisplayName("等待手柄输入…");
+            command.SetDisplayName(Tr.Get("settings.xinput.begin_xinput_capture.waiting_input"));
             comboBox.ToolTip = IsXInputJoystickComboBox(comboBox)
-                ? "请明显推动左摇杆或右摇杆；按 Esc 取消"
-                : "请按下手柄按钮或扣动扳机；按 Esc 取消";
+                ? Tr.Get("settings.xinput.begin_xinput_capture.left_joystick_right_joystick_esc_cancel")
+                : Tr.Get("settings.xinput.begin_xinput_capture.down_trigger_esc_cancel");
             UpdateXInputPreview(comboBox);
         }
 
@@ -6498,7 +6787,7 @@ namespace TrackSwap
             ComboBox comboBox = _xInputCaptureComboBox;
             if (_xInputCaptureCommandOption != null)
             {
-                _xInputCaptureCommandOption.SetDisplayName("操作手柄以绑定…");
+                _xInputCaptureCommandOption.SetDisplayName(Tr.Get("settings.xinput.capture_prompt"));
             }
             if (comboBox != null)
             {
@@ -6651,16 +6940,16 @@ namespace TrackSwap
         {
             ResetXInputHandBindings(
                 left: true,
-                "确定要将左手的全部按键绑定和触摸辅助设置恢复为默认值吗？",
-                "重置左手绑定");
+                Tr.Get("settings.xinput.reset_left_confirmation"),
+                Tr.Get("settings.xinput.reset_left_xinput_bindings_button_click.reset_left"));
         }
 
         private void ResetRightXInputBindingsButton_Click(object sender, RoutedEventArgs e)
         {
             ResetXInputHandBindings(
                 left: false,
-                "确定要将右手的全部按键绑定和触摸辅助设置恢复为默认值吗？",
-                "重置右手绑定");
+                Tr.Get("settings.xinput.reset_right_confirmation"),
+                Tr.Get("settings.xinput.reset_right_xinput_bindings_button_click.reset_right"));
         }
 
         private void ResetXInputHandBindings(bool left, string message, string title)
@@ -6732,7 +7021,7 @@ namespace TrackSwap
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
             if (errors.Count != 0)
             {
-                AppDialog.Show(this, string.Join(Environment.NewLine, errors), "XInput 设置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(this, string.Join(Environment.NewLine, errors), Tr.Get("settings.xinput.apply_xinput_settings_async.xinput_settings_invalid"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -6746,7 +7035,7 @@ namespace TrackSwap
             }
             catch (Exception exception)
             {
-                AppDialog.Show(this, exception.Message, "保存 XInput 设置失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(this, exception.Message, Tr.Get("settings.xinput.apply_xinput_settings_async.save_xinput_settings_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -6870,9 +7159,28 @@ namespace TrackSwap
             SteamVr,
             Devices,
             Files,
+            Language,
             Osc,
             XInput,
             Advanced
+        }
+
+        private sealed class LanguageIssueListItem
+        {
+            public LanguageIssueListItem(string key, string kindLabel, string detail, Brush kindBrush, string copyHint)
+            {
+                Key = key;
+                KindLabel = kindLabel;
+                Detail = detail;
+                KindBrush = kindBrush;
+                CopyHint = copyHint;
+            }
+
+            public string Key { get; }
+            public string KindLabel { get; }
+            public string Detail { get; }
+            public Brush KindBrush { get; }
+            public string CopyHint { get; }
         }
 
         private sealed class FileLocationListItem
@@ -6921,7 +7229,7 @@ namespace TrackSwap
 
             public bool IsOnline { get; }
 
-            public string StateText => IsOnline ? "在线" : "离线";
+            public string StateText => IsOnline ? Tr.Get("common.status.online") : Tr.Get("common.status.offline");
         }
 
         private sealed class RuntimeLifecycleOption

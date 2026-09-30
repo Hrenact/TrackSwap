@@ -1,7 +1,7 @@
 <Window x:Class="TrackSwap.BackupRestoreWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="恢复备份 · TrackSwap"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:i18n="clr-namespace:TrackSwap.Localization"
+        Title="{i18n:Loc Key=backup.restore.restore_backup_trackswap}"
         Width="720"
         Height="560"
         MinWidth="620"
@@ -25,9 +25,9 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="恢复备份" FontSize="21" FontWeight="Medium" />
+                    <TextBlock Text="{i18n:Loc Key=backup.restore.restore_backup}" FontSize="21" FontWeight="Medium" />
                     <TextBlock Margin="0,5,0,0"
-                               Text="仅恢复位姿映射，保留当前其他 SteamVR 设置。恢复前会再次备份当前配置。"
+                               Text="{i18n:Loc Key=backup.restore.restore_pose_mapping_preserve_current_steamvr_settings_restore_backup_cu}"
                                Foreground="{StaticResource MutedTextBrush}" />
                 </StackPanel>
                 <TextBlock Grid.Column="1"
@@ -42,7 +42,7 @@
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <Grid Margin="24,20">
                 <TextBlock x:Name="EmptyBackupsText"
-                           Text="还没有找到 TrackSwap 创建的备份。"
+                           Text="{i18n:Loc Key=backup.restore.trackswap_create_backup}"
                            Foreground="{StaticResource MutedTextBrush}"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center" />
@@ -80,7 +80,7 @@
                                     </StackPanel>
 
                                     <Button Grid.Column="1"
-                                            Content="恢复"
+                                            Content="{i18n:Loc Key=backup.restore.restore}"
                                             Tag="{Binding}"
                                             Margin="18,0,0,0"
                                             Padding="14,7"
@@ -102,7 +102,7 @@
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="0,1,0,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="关闭" Padding="18,8" Click="CloseButton_Click" />
+                <Button Content="{i18n:Loc Key=backup.restore.close}" Padding="18,8" Click="CloseButton_Click" />
             </StackPanel>
         </Border>
     </Grid>

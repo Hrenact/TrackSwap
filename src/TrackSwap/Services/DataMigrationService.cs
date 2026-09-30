@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -55,15 +56,15 @@ namespace TrackSwap.Services
         {
             if (!TrackSwapDataPaths.ContainsRecognizedData(LegacyDirectory))
             {
-                throw new InvalidOperationException("没有找到可迁移的旧版 TrackSwap 数据。");
+                throw new InvalidOperationException(Tr.Get("service.data_migration.migrate.migration_trackswap"));
             }
             if (TrackSwapDataPaths.PathsEqual(LegacyDirectory, PreferredDirectory))
             {
-                throw new InvalidOperationException("当前数据已经位于安装目录中。");
+                throw new InvalidOperationException(Tr.Get("service.data_migration.migrate.current_install_directory"));
             }
             if (!_preferredWritableProvider())
             {
-                throw new UnauthorizedAccessException("TrackSwap 安装目录不可写，无法迁移旧版数据。");
+                throw new UnauthorizedAccessException(Tr.Get("service.data_migration.migrate.trackswap_install_directory_cannot_migration"));
             }
 
             ValidateRuntimeConfigurationIfPresent(LegacyDirectory);
@@ -71,11 +72,11 @@ namespace TrackSwap.Services
             bool targetHasData = TrackSwapDataPaths.ContainsRecognizedData(target);
             if (targetHasData && !replaceExisting)
             {
-                throw new InvalidOperationException("安装目录已经存在 TrackSwap 数据。");
+                throw new InvalidOperationException(Tr.Get("service.data_migration.migrate.install_directory_trackswap"));
             }
 
             string parent = Path.GetDirectoryName(target)
-                ?? throw new InvalidDataException("目标数据目录没有上级目录。");
+                ?? throw new InvalidDataException(Tr.Get("service.data_migration.migrate.target_data_directory_up_directory"));
             Directory.CreateDirectory(parent);
             string staging = target + ".migration-" + Guid.NewGuid().ToString("N");
             Directory.CreateDirectory(staging);
@@ -91,7 +92,7 @@ namespace TrackSwap.Services
                 {
                     File.Copy(sourcePath, Path.Combine(staging, Path.GetFileName(sourcePath)), true);
                 }
-                foreach (string directoryName in new[] { "Backups", "Logs" })
+                foreach (string directoryName in new[] { "Backups", "Logs", "i18n" })
                 {
                     string sourceDirectory = Path.Combine(LegacyDirectory, directoryName);
                     if (Directory.Exists(sourceDirectory))
@@ -133,7 +134,7 @@ namespace TrackSwap.Services
         {
             if (TrackSwapDataPaths.PathsEqual(ActiveDirectory, LegacyDirectory))
             {
-                throw new InvalidOperationException("TrackSwap 当前仍在使用旧版数据目录，不能清理。");
+                throw new InvalidOperationException(Tr.Get("service.data_migration.clean_legacy_data.trackswap_current_data_directory_cannot_cleanup"));
             }
 
             int removed = 0;
@@ -149,6 +150,7 @@ namespace TrackSwap.Services
             }
             RemoveEmptyDirectories(Path.Combine(LegacyDirectory, "Backups"));
             RemoveEmptyDirectories(Path.Combine(LegacyDirectory, "Logs"));
+            RemoveEmptyDirectories(Path.Combine(LegacyDirectory, "i18n"));
 
             bool directoryRemoved = false;
             if (Directory.Exists(LegacyDirectory) &&
@@ -183,9 +185,11 @@ namespace TrackSwap.Services
         {
             string steamVrBackups = Path.Combine(directory, "Backups", "SteamVR");
             string automaticBackups = Path.Combine(directory, "Backups", "Automatic");
+            string languagePacks = Path.Combine(directory, "i18n");
             return EnumerateFilesIfPresent(steamVrBackups, "steamvr.vrsettings.trackswap-*.backup")
                 .Concat(EnumerateFilesIfPresent(steamVrBackups, "appconfig.json.trackswap-*.backup"))
                 .Concat(EnumerateFilesIfPresent(automaticBackups, "TrackSwap-*.trackswap-backup"))
+                .Concat(EnumerateFilesIfPresent(languagePacks, "*.json"))
                 .ToList();
         }
 
@@ -227,11 +231,11 @@ namespace TrackSwap.Services
             }
             catch (JsonException exception)
             {
-                throw new InvalidDataException("旧版 Runtime 配置无法读取。", exception);
+                throw new InvalidDataException(Tr.Get("service.data_migration.validate_runtime_configuration_if_present.runtime_config_cannot_read"), exception);
             }
             if (configuration == null)
             {
-                throw new InvalidDataException("旧版 Runtime 配置为空。");
+                throw new InvalidDataException(Tr.Get("service.data_migration.validate_runtime_configuration_if_present.runtime_config"));
             }
 
             IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);

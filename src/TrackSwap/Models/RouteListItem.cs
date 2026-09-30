@@ -1,4 +1,5 @@
 using TrackSwap.Protocol;
+using TrackSwap.Localization;
 using System.Windows.Media;
 
 namespace TrackSwap.Models
@@ -13,9 +14,9 @@ namespace TrackSwap.Models
         }
 
         public RouteConfiguration Route { get; }
-        public string Name => string.IsNullOrWhiteSpace(Route.Name) ? "未命名配置" : Route.Name;
+        public string Name => string.IsNullOrWhiteSpace(Route.Name) ? Tr.Get("route.unnamed") : Route.Name;
         public string ProxyName => Route.Mode == RouteMode.Unspecified
-            ? "请选择运行模式"
+            ? Tr.Get("route.select_mode")
             : Route.Mode == RouteMode.VirtualController
                 ? ProtocolConstants.GetControllerSerial(Route.ControllerHand)
                 : Route.Mode == RouteMode.VirtualHmd

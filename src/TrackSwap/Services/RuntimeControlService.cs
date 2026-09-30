@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -86,7 +87,7 @@ namespace TrackSwap.Services
             var payload = JsonConvert.DeserializeObject<AppliedRevision>(response.PayloadJson, JsonSettings);
             if (payload == null)
             {
-                throw new InvalidDataException("Runtime 返回了空的应用响应。");
+                throw new InvalidDataException(Tr.Get("service.runtime_control.apply_configuration_async.runtime_apply"));
             }
 
             return payload.Revision;
@@ -110,7 +111,7 @@ namespace TrackSwap.Services
             string executable = FindRuntimeExecutablePath();
             if (executable == null)
             {
-                error = "未在程序目录中找到 TrackSwap.Runtime.exe。请使用完整的 v010 程序包。";
+                error = Tr.Get("service.runtime_control.try_start_runtime.program_directory_trackswap_runtime_exe_complete_v010");
                 return false;
             }
 
@@ -163,7 +164,7 @@ namespace TrackSwap.Services
             T result = JsonConvert.DeserializeObject<T>(response.PayloadJson, JsonSettings);
             if (result == null)
             {
-                throw new InvalidDataException("Runtime 返回了空响应。");
+                throw new InvalidDataException(Tr.Get("service.runtime_control.find_runtime_executable_path.runtime"));
             }
 
             return result;
@@ -199,7 +200,7 @@ namespace TrackSwap.Services
                     }
                     catch (OperationCanceledException exception)
                     {
-                        throw new TimeoutException("向 Runtime 发送控制请求超时。", exception);
+                        throw new TimeoutException(Tr.Get("service.runtime_control.send_async.runtime"), exception);
                     }
 
                     string responseLine;
@@ -209,13 +210,13 @@ namespace TrackSwap.Services
                     }
                     catch (OperationCanceledException exception)
                     {
-                        throw new TimeoutException("等待 Runtime 控制响应超时。", exception);
+                        throw new TimeoutException(Tr.Get("service.runtime_control.send_async.waiting_runtime"), exception);
                     }
                     MessageEnvelope response = JsonConvert.DeserializeObject<MessageEnvelope>(responseLine, JsonSettings);
                     if (response == null || response.ProtocolVersion != ProtocolConstants.CurrentProtocolVersion ||
                         !string.Equals(response.RequestId, requestId, StringComparison.Ordinal))
                     {
-                        throw new InvalidDataException("Runtime 返回了无效的控制消息。");
+                        throw new InvalidDataException(Tr.Get("service.runtime_control.send_async.runtime_invalid"));
                     }
 
                     return response;
@@ -236,7 +237,7 @@ namespace TrackSwap.Services
                 int read = await stream.ReadAsync(buffer, 0, 1, cancellationToken);
                 if (read == 0)
                 {
-                    throw new EndOfStreamException("Runtime 在回复前关闭了控制连接。");
+                    throw new EndOfStreamException(Tr.Get("service.runtime_control.read_bounded_line_async.runtime_close_connect"));
                 }
                 if (buffer[0] == (byte)'\n')
                 {
@@ -245,7 +246,7 @@ namespace TrackSwap.Services
                 bytes.Add(buffer[0]);
             }
 
-            throw new InvalidDataException("Runtime 控制响应超过允许的大小限制。");
+            throw new InvalidDataException(Tr.Get("service.runtime_control.read_bounded_line_async.runtime_allow"));
         }
 
         private static Exception CreateUnexpectedResponseException(MessageEnvelope response)
@@ -262,7 +263,7 @@ namespace TrackSwap.Services
             {
             }
 
-            return new InvalidDataException("Runtime 返回了非预期响应：" + response.MessageType);
+            return new InvalidDataException(Tr.Get("service.runtime_control.create_unexpected_response_exception.runtime") + response.MessageType);
         }
 
         private sealed class AppliedRevision

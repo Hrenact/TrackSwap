@@ -4,6 +4,7 @@ using System.Media;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using TrackSwap.Localization;
 
 namespace TrackSwap
 {
@@ -26,7 +27,9 @@ namespace TrackSwap
             _buttons = buttons;
             _image = image;
             Owner = owner;
-            Title = string.IsNullOrWhiteSpace(title) ? "TrackSwap" : title;
+            Title = string.IsNullOrWhiteSpace(title)
+                ? LocalizationManager.Current.Translate("app.title")
+                : title;
             MessageText.Text = message ?? string.Empty;
             ConfigureIcon(image);
             ConfigureButtons(buttons);
@@ -107,20 +110,20 @@ namespace TrackSwap
             switch (buttons)
             {
                 case MessageBoxButton.OK:
-                    AddButton("确定", MessageBoxResult.OK, isDefault: true, isCancel: true);
+                    AddButton(LocalizationManager.Current.Translate("dialog.ok"), MessageBoxResult.OK, isDefault: true, isCancel: true);
                     break;
                 case MessageBoxButton.OKCancel:
-                    AddButton("确定", MessageBoxResult.OK, isDefault: true);
-                    AddButton("取消", MessageBoxResult.Cancel, isCancel: true);
+                    AddButton(LocalizationManager.Current.Translate("dialog.ok"), MessageBoxResult.OK, isDefault: true);
+                    AddButton(LocalizationManager.Current.Translate("dialog.cancel"), MessageBoxResult.Cancel, isCancel: true);
                     break;
                 case MessageBoxButton.YesNo:
-                    AddButton("是", MessageBoxResult.Yes, isDefault: true);
-                    AddButton("否", MessageBoxResult.No, isCancel: true);
+                    AddButton(LocalizationManager.Current.Translate("dialog.yes"), MessageBoxResult.Yes, isDefault: true);
+                    AddButton(LocalizationManager.Current.Translate("dialog.no"), MessageBoxResult.No, isCancel: true);
                     break;
                 case MessageBoxButton.YesNoCancel:
-                    AddButton("是", MessageBoxResult.Yes, isDefault: true);
-                    AddButton("否", MessageBoxResult.No);
-                    AddButton("取消", MessageBoxResult.Cancel, isCancel: true);
+                    AddButton(LocalizationManager.Current.Translate("dialog.yes"), MessageBoxResult.Yes, isDefault: true);
+                    AddButton(LocalizationManager.Current.Translate("dialog.no"), MessageBoxResult.No);
+                    AddButton(LocalizationManager.Current.Translate("dialog.cancel"), MessageBoxResult.Cancel, isCancel: true);
                     break;
             }
         }

@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -26,7 +27,7 @@ namespace TrackSwap.Services
                 if (failures.Count != 0)
                 {
                     throw new InvalidOperationException(
-                        "SteamVR 集成清理未完整完成：" + string.Join("；", failures));
+                        Tr.Get("service.steam_integration_maintenance.remove_async.steamvr_cleanup_complete_complete") + string.Join("；", failures));
                 }
             });
         }
@@ -81,7 +82,7 @@ namespace TrackSwap.Services
                 RedirectStandardError = true
             };
             using (Process process = Process.Start(startInfo) ??
-                throw new InvalidOperationException("无法启动 SteamVR 集成维护程序。"))
+                throw new InvalidOperationException(Tr.Get("service.steam_integration_maintenance.run_script.cannot_start_steamvr")))
             {
                 string output = process.StandardOutput.ReadToEnd();
                 string error = process.StandardError.ReadToEnd();
@@ -90,8 +91,8 @@ namespace TrackSwap.Services
                 {
                     string detail = string.IsNullOrWhiteSpace(error) ? output : error;
                     throw new InvalidOperationException(
-                        Path.GetFileName(scriptPath) + " 返回错误 " + process.ExitCode +
-                        (string.IsNullOrWhiteSpace(detail) ? "。" : "：" + detail.Trim()));
+                        Path.GetFileName(scriptPath) + Tr.Get("service.steam_integration_maintenance.run_script.error") + process.ExitCode +
+                        (string.IsNullOrWhiteSpace(detail) ? "." : ": " + detail.Trim()));
                 }
             }
         }
@@ -114,7 +115,7 @@ namespace TrackSwap.Services
                 }
             }
             return candidates.FirstOrDefault(File.Exists) ??
-                throw new FileNotFoundException("未找到 SteamVR 集成维护脚本。", scriptName);
+                throw new FileNotFoundException(Tr.Get("service.steam_integration_maintenance.find_script.not_found_steamvr"), scriptName);
         }
 
         private static string FindRequiredFile(string fileName, string developmentCandidate)
@@ -128,7 +129,7 @@ namespace TrackSwap.Services
             return candidates
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .FirstOrDefault(File.Exists) ??
-                throw new FileNotFoundException("未找到 SteamVR 集成维护所需文件。", fileName);
+                throw new FileNotFoundException(Tr.Get("service.steam_integration_maintenance.find_required_file.not_found_steamvr_file"), fileName);
         }
 
         private static string Quote(string value)

@@ -1,4 +1,5 @@
 using System;
+using TrackSwap.Localization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -86,11 +87,11 @@ namespace TrackSwap.Services
 
             if (role == ETrackedControllerRole.LeftHand)
             {
-                parts.Add("左手");
+                parts.Add(Tr.Get("common.hand.left"));
             }
             else if (role == ETrackedControllerRole.RightHand)
             {
-                parts.Add("右手");
+                parts.Add(Tr.Get("common.hand.right"));
             }
 
             if (!string.IsNullOrWhiteSpace(serial))
@@ -125,13 +126,13 @@ namespace TrackSwap.Services
             switch (deviceClass)
             {
                 case ETrackedDeviceClass.Hmd:
-                    return "头显";
+                    return Tr.Get("common.device.hmd");
                 case ETrackedDeviceClass.Controller:
-                    return "控制器";
+                    return Tr.Get("service.open_vr_device.device_class_name.controller");
                 case ETrackedDeviceClass.GenericTracker:
-                    return "追踪器";
+                    return Tr.Get("service.open_vr_device.device_class_name.tracker");
                 default:
-                    return "OpenVR 设备";
+                    return Tr.Get("service.open_vr_device.device_class_name.openvr_device");
             }
         }
 
@@ -173,7 +174,7 @@ namespace TrackSwap.Services
             IntPtr address = Marshal.ReadIntPtr(table, index * IntPtr.Size);
             if (address == IntPtr.Zero)
             {
-                throw new InvalidOperationException("OpenVR 函数表不完整。");
+                throw new InvalidOperationException(Tr.Get("service.open_vr_device.read_string_property.openvr_complete"));
             }
 
             return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
