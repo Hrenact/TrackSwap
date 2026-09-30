@@ -8,6 +8,11 @@ $packDirectory = Join-Path $fixtureRoot 'packs'
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
 
+    $crowdinConfiguration = Get-Content -LiteralPath (Join-Path $repositoryRoot 'crowdin.yml') -Raw
+    if ($crowdinConfiguration -notmatch '(?m)^\s+skip_untranslated_strings:\s*true\s*$') {
+        throw 'Crowdin must skip untranslated strings instead of exporting Chinese source fallback text.'
+    }
+
     & (Join-Path $repositoryRoot 'scripts\Export-CrowdinSource.ps1') `
         -RepositoryRoot $repositoryRoot `
         -OutputPath $sourcePath | Out-Null
