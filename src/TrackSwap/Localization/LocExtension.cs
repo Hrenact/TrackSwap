@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Markup;
 
@@ -46,6 +47,18 @@ namespace TrackSwap.Localization
         public static string Get(string key)
         {
             return LocalizationManager.Current.Translate(key);
+        }
+
+        public static string Format(string key, params object[] arguments)
+        {
+            string value = Get(key);
+            for (int index = 0; index < arguments.Length; index++)
+            {
+                value = value.Replace(
+                    "{" + index.ToString(CultureInfo.InvariantCulture) + "}",
+                    Convert.ToString(arguments[index], CultureInfo.CurrentCulture) ?? string.Empty);
+            }
+            return value;
         }
     }
 }

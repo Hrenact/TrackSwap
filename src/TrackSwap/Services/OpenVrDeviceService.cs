@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using TrackSwap.Models;
+using TrackSwap.Protocol;
 
 namespace TrackSwap.Services
 {
@@ -56,6 +57,10 @@ namespace TrackSwap.Services
                 string model = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.ModelNumber);
                 string serial = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.SerialNumber);
                 string renderModel = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.RenderModelName);
+                string connectedWirelessDongleId = ReadStringProperty(
+                    getStringProperty,
+                    index,
+                    ETrackedDeviceProperty.ConnectedWirelessDongle);
                 ETrackedControllerRole role = deviceClass == ETrackedDeviceClass.Controller
                     ? getRole(index)
                     : ETrackedControllerRole.Invalid;
@@ -68,7 +73,9 @@ namespace TrackSwap.Services
                     serial,
                     GetRoleTargetPath(deviceClass, role),
                     renderModel,
-                    GetDeviceKind(deviceClass)));
+                    GetDeviceKind(deviceClass),
+                    PoseSourceKind.Device,
+                    connectedWirelessDongleId));
             }
 
             return devices
@@ -217,6 +224,7 @@ namespace TrackSwap.Services
             ModelNumber = 1001,
             SerialNumber = 1002,
             RenderModelName = 1003,
+            ConnectedWirelessDongle = 1009,
             RegisteredDeviceType = 1036
         }
 

@@ -1,6 +1,6 @@
-# TrackSwap 本地化
+# TrackSwap VR 本地化
 
-TrackSwap 的官方界面语言是简体中文。社区语言包使用纯 JSON 文件，放在当前用户数据目录的 `i18n` 子目录中：
+TrackSwap VR 的官方界面语言是简体中文。社区语言包使用纯 JSON 文件，放在当前用户数据目录的 `i18n` 子目录中：
 
 ```text
 TrackSwap\UserData\i18n
@@ -35,7 +35,7 @@ TrackSwap\UserData\i18n
 
 语言包使用标准 JSON，不支持注释。字符串的使用场景将放在 Crowdin 上下文或独立工具元数据中，不混入运行时 JSON。如果原文含 `{0}`、`{1}` 等占位符，翻译后必须完整保留。
 
-TrackSwap 不执行语言包中的任何代码，也不加载 XAML、DLL 或脚本。单个语言包最大 1 MiB，单条译文最长 1024 个字符，同一 locale 只能由一个文件提供。
+TrackSwap VR 不执行语言包中的任何代码，也不加载 XAML、DLL 或脚本。单个语言包最大 1 MiB，单条译文最长 1024 个字符，同一 locale 只能由一个文件提供。
 
 ## 检查翻译
 
@@ -45,7 +45,7 @@ TrackSwap 不执行语言包中的任何代码，也不加载 XAML、DLL 或脚�
 - `无效`：翻译为空或含不支持的控制字符。
 - `未知`：语言包含有当前版本官方目录中不存在的键。
 
-缺失或无效翻译不会回退成中文，而会直接显示成 `⟦key.name⟧`。单击界面中的缺失键或翻译检查列表即可复制原始键值，方便在 JSON 中搜索。
+缺失或无效翻译不会回退成中文，而会直接显示成 `[key.name]`。为避免干扰按钮等控件的正常交互，界面中的回退键本身不响应复制；请在翻译检查列表中单击对应条目复制原始键值，方便在 JSON 中搜索。
 
 独立的 TrackSwap VR 视图会在打开时读取主界面当前选中的语言；语言包刷新后，重新打开 VR 视图即可应用新文案。
 
@@ -61,7 +61,7 @@ Crowdin 使用仓库根目录的 `crowdin.yml`。上传到 Crowdin 的源文件�
 ./scripts/Export-CrowdinSource.ps1
 ```
 
-Crowdin 导出的翻译 CSV 位于 `localization/crowdin/translations/%locale%.csv`。将它转换为 TrackSwap 运行时语言包：
+Crowdin 导出的翻译 CSV 位于 `localization/crowdin/translations/%locale%.csv`。将它转换为 TrackSwap VR 运行时语言包：
 
 ```powershell
 ./scripts/Import-CrowdinTranslation.ps1 `
@@ -74,10 +74,11 @@ Crowdin 导出的翻译 CSV 位于 `localization/crowdin/translations/%locale%.c
 
 - 内嵌的 `zh-CN.json` 是唯一官方源文目录。新增界面文案时，先添加稳定的语义键，再在 XAML 或代码中引用；不要在界面层重新维护一份中文常量。
 - 社区语言包只能是活动数据目录 `i18n` 下的纯 JSON。不得从语言包加载代码、XAML、程序集或脚本。
-- 缺失、空白或格式错误的译文必须显示 `⟦key⟧`；语言包中不属于官方目录的键报告为未知。不要静默回退为中文。界面上出现的回退键应便于单击复制。
+- 缺失、空白或格式错误的译文必须显示 `[key]`；语言包中不属于官方目录的键报告为未知。不要静默回退为中文。回退键不得拦截所属控件的正常交互；复制原始键值统一通过翻译检查列表完成。
 - 运行日志和底层诊断统一使用英文，不进入本地化目录。
 - 文件只有一个扁平 `strings` 对象，值直接是译文字符串；不得嵌套分组，也不得使用 `{ "source", "translation" }` 包装。键名使用稳定、小写、点分的 `feature.area.purpose` 语义结构；禁止哈希、`ui.auto.*` 和不透明数字尾缀。按序数排序键，并在顶级功能前缀之间留一个空行。
 - 翻译必须完整保留 `{0}`、`{1}` 等复合格式占位符。
+- 含动态值的用户可见文案必须以完整句子或完整语义单元保存，并用 `{0}`、`{1}` 等占位符插值；不得把“共 ”、“ 个设备”或标点拆成前缀键、后缀键后在代码中拼接。调用方必须允许译文重新排列或重复占位符。
 - `localization/crowdin/source.csv` 只能通过 `scripts/Export-CrowdinSource.ps1` 生成，不得手工编辑，也不得让 Crowdin 回写官方中文目录。
 - Crowdin CSV 必须把源文与译文分别放在 `source_phrase` 和 `translation` 列，禁止 `source_or_translation`。
 - `crowdin.yml` 的文件组和 Crowdin 项目级导出设置都必须启用 `skip_untranslated_strings` 与 `export_only_approved`，避免中文源文或未批准译文进入语言包。

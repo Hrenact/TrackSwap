@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using TrackSwap.Localization;
 using TrackSwap.Protocol;
 
@@ -24,7 +23,8 @@ namespace TrackSwap.Models
             string roleTargetPath = null,
             string renderModelName = null,
             TrackedDeviceKind deviceKind = TrackedDeviceKind.Unknown,
-            PoseSourceKind poseSourceKind = PoseSourceKind.Device)
+            PoseSourceKind poseSourceKind = PoseSourceKind.Device,
+            string connectedWirelessDongleId = null)
         {
             DisplayName = displayName;
             DevicePath = devicePath;
@@ -35,6 +35,7 @@ namespace TrackSwap.Models
             RenderModelName = renderModelName;
             DeviceKind = deviceKind;
             PoseSourceKind = poseSourceKind;
+            ConnectedWirelessDongleId = connectedWirelessDongleId;
         }
 
         public string DisplayName { get; }
@@ -57,23 +58,35 @@ namespace TrackSwap.Models
 
         public PoseSourceKind PoseSourceKind { get; }
 
+        public string ConnectedWirelessDongleId { get; }
+
         public static string BaseDisplayName(string displayName)
         {
             string value = displayName ?? string.Empty;
-            var prefixes = new List<string>
+            foreach (string templateKey in new[]
             {
-                Tr.Get("device.status.online_prefix"),
-                Tr.Get("device.status.offline_prefix"),
-                Tr.Get("device.status.saved_prefix"),
-                "当前 · ", "在线 · ", "离线 · ", "历史 · ", "在线设备 · ", "已保存设备 · "
-            };
-            foreach (string prefix in prefixes)
+                "device.status.online",
+                "device.status.offline",
+                "device.status.saved"
+            })
             {
-                if (value.StartsWith(prefix, StringComparison.Ordinal))
+                if (TryStripFormattedValue(value, Tr.Get(templateKey), out string stripped))
                 {
-                    value = value.Substring(prefix.Length);
+                    value = stripped;
                     break;
                 }
+            }
+            foreach (string prefix in new[]
+            {
+                "当前 · ", "在线 · ", "离线 · ", "历史 · ", "在线设备 · ", "已保存设备 · "
+            })
+            {
+                if (!value.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                value = value.Substring(prefix.Length);
+                break;
             }
             const string oldOnlineSuffix = " · 在线";
             if (value.EndsWith(oldOnlineSuffix, StringComparison.Ordinal))
@@ -81,6 +94,30 @@ namespace TrackSwap.Models
                 value = value.Substring(0, value.Length - oldOnlineSuffix.Length);
             }
             return value;
+        }
+
+        private static bool TryStripFormattedValue(string value, string template, out string stripped)
+        {
+            const string placeholder = "{0}";
+            int placeholderIndex = template?.IndexOf(placeholder, StringComparison.Ordinal) ?? -1;
+            if (placeholderIndex < 0)
+            {
+                stripped = value;
+                return false;
+            }
+
+            string prefix = template.Substring(0, placeholderIndex);
+            string suffix = template.Substring(placeholderIndex + placeholder.Length);
+            if (!value.StartsWith(prefix, StringComparison.Ordinal) ||
+                !value.EndsWith(suffix, StringComparison.Ordinal) ||
+                value.Length < prefix.Length + suffix.Length)
+            {
+                stripped = value;
+                return false;
+            }
+
+            stripped = value.Substring(prefix.Length, value.Length - prefix.Length - suffix.Length);
+            return true;
         }
 
         public override string ToString()

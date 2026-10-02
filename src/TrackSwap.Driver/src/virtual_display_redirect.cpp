@@ -231,7 +231,7 @@ vr::EVRInitError VirtualDisplayRedirect::Activate(std::uint32_t objectId)
 {
     objectId_ = objectId;
     const auto properties = vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap Virtual Display");
+    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap VR Virtual Display");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
     vr::VRProperties()->SetFloatProperty(properties, vr::Prop_SecondsFromVsyncToPhotons_Float, 0.0F);
     vr::VRProperties()->SetUint64Property(properties, vr::Prop_GraphicsAdapterLuid_Uint64, adapterLuid_);

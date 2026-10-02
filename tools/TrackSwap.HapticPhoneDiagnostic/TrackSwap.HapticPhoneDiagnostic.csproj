@@ -6,6 +6,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AssemblyName>TrackSwap.HapticPhoneDiagnostic</AssemblyName>
     <RootNamespace>TrackSwap.HapticPhoneDiagnostic</RootNamespace>
+    <AssemblyTitle>TrackSwap VR Haptic Phone Diagnostic</AssemblyTitle>
+    <Product>TrackSwap VR</Product>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="QRCoder" Version="1.8.0" />

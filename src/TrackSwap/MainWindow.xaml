@@ -382,7 +382,67 @@
                             <ColumnDefinition Width="14" />
                             <ColumnDefinition Width="1.15*" />
                         </Grid.ColumnDefinitions>
-                        <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                        <StackPanel VerticalAlignment="Top">
+                            <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                <StackPanel>
+                                    <TextBlock Text="{i18n:Loc Key=route.motion_smoothing.title}" FontSize="15" FontWeight="Medium" />
+                                    <TextBlock Text="{i18n:Loc Key=route.motion_smoothing.description}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,13,0,0">
+                                        <CheckBox x:Name="MotionSmoothingLinkCheckBox"
+                                                  Width="17"
+                                                  Height="17"
+                                                  Style="{StaticResource AdvancedOptionCheckBoxStyle}"
+                                                  VerticalAlignment="Center"
+                                                  Click="MotionSmoothingLinkCheckBox_Click" />
+                                        <TextBlock Text="{i18n:Loc Key=route.motion_smoothing.link_strengths}"
+                                                   Margin="9,0,0,0"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="78" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="42" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="10" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <CheckBox x:Name="MotionSmoothingPositionCheckBox"
+                                                  Style="{StaticResource AdvancedOptionCheckBoxStyle}"
+                                                  Content="{i18n:Loc Key=route.motion_smoothing.position}"
+                                                  VerticalAlignment="Center"
+                                                  Click="MotionSmoothingPositionCheckBox_Click" />
+                                        <Slider x:Name="MotionSmoothingPositionSlider"
+                                                Grid.Column="1"
+                                                 Minimum="0"
+                                                 Maximum="100"
+                                                 TickFrequency="1"
+                                                 IsSnapToTickEnabled="True"
+                                                 VerticalAlignment="Center"
+                                                 ValueChanged="MotionSmoothingPositionSlider_ValueChanged" />
+                                        <TextBlock x:Name="MotionSmoothingPositionValueText" Grid.Column="2" Text="0%" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Consolas" Foreground="{StaticResource MutedTextBrush}" />
+                                        <CheckBox x:Name="MotionSmoothingRotationCheckBox"
+                                                  Grid.Row="2"
+                                                  Style="{StaticResource AdvancedOptionCheckBoxStyle}"
+                                                  Content="{i18n:Loc Key=route.motion_smoothing.rotation}"
+                                                  VerticalAlignment="Center"
+                                                  Click="MotionSmoothingRotationCheckBox_Click" />
+                                        <Slider x:Name="MotionSmoothingRotationSlider"
+                                                Grid.Row="2"
+                                                 Grid.Column="1"
+                                                 Minimum="0"
+                                                 Maximum="100"
+                                                 TickFrequency="1"
+                                                 IsSnapToTickEnabled="True"
+                                                 VerticalAlignment="Center"
+                                                 ValueChanged="MotionSmoothingRotationSlider_ValueChanged" />
+                                        <TextBlock x:Name="MotionSmoothingRotationValueText" Grid.Row="2" Grid.Column="2" Text="0%" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Consolas" Foreground="{StaticResource MutedTextBrush}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                            <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                             <StackPanel>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -398,8 +458,24 @@
                                     <StackPanel Grid.Column="2"><TextBlock Text="{i18n:Loc Key=route.editor.offset_translation_ytext_box_y_up}" FontSize="10" Foreground="#63C77A"/><TextBox x:Name="OffsetTranslationYTextBox" Text="0" Margin="0,4,0,0"/></StackPanel>
                                     <StackPanel Grid.Column="4"><TextBlock Text="{i18n:Loc Key=route.editor.offset_translation_ztext_box_z}" FontSize="10" Foreground="#5B9CFF"/><TextBox x:Name="OffsetTranslationZTextBox" Text="0" Margin="0,4,0,0"/></StackPanel>
                                 </Grid>
-                                <TextBlock Text="{i18n:Loc Key=route.editor.rotation_quaternion}" Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
-                                <Grid Margin="0,6,0,0">
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="{i18n:Loc Key=route.editor.rotation}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" VerticalAlignment="Center" />
+                                    <Border Grid.Column="1" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="EulerRotationModeButton" Content="{i18n:Loc Key=route.editor.rotation_mode.euler}" Style="{StaticResource GizmoSegmentButtonStyle}" Padding="8,3" MinWidth="46" Click="EulerRotationModeButton_Click" />
+                                            <Border Width="1" Background="{StaticResource BorderBrush}" />
+                                            <Button x:Name="QuaternionRotationModeButton" Content="{i18n:Loc Key=route.editor.rotation_mode.quaternion}" Style="{StaticResource GizmoSegmentButtonStyle}" Padding="8,3" MinWidth="54" Click="QuaternionRotationModeButton_Click" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                                <Grid x:Name="EulerRotationFieldsGrid" Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <StackPanel><TextBlock Text="X · °" FontSize="10" Foreground="#D46A6A"/><TextBox x:Name="OffsetEulerXTextBox" Text="0" Margin="0,4,0,0"/></StackPanel>
+                                    <StackPanel Grid.Column="2"><TextBlock Text="Y · °" FontSize="10" Foreground="#63C77A"/><TextBox x:Name="OffsetEulerYTextBox" Text="0" Margin="0,4,0,0"/></StackPanel>
+                                    <StackPanel Grid.Column="4"><TextBlock Text="Z · °" FontSize="10" Foreground="#5B9CFF"/><TextBox x:Name="OffsetEulerZTextBox" Text="0" Margin="0,4,0,0"/></StackPanel>
+                                </Grid>
+                                <Grid x:Name="QuaternionRotationFieldsGrid" Margin="0,6,0,0" Visibility="Collapsed">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="8"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                     <StackPanel><TextBlock Text="X" FontSize="10" Foreground="#D46A6A"/><TextBox x:Name="OffsetRotationXTextBox" Text="0" Margin="0,4,0,0"/></StackPanel>
@@ -408,8 +484,9 @@
                                     <StackPanel Grid.Row="2" Grid.Column="2"><TextBlock Text="W" FontSize="10" Foreground="{StaticResource MutedTextBrush}"/><TextBox x:Name="OffsetRotationWTextBox" Text="1" Margin="0,4,0,0"/></StackPanel>
                                 </Grid>
                             </StackPanel>
-                        </Border>
-                        <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True">
+                            </Border>
+                        </StackPanel>
+                        <Border Grid.Column="2" MinHeight="590" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3" ClipToBounds="True">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
@@ -550,7 +627,7 @@
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
                                             <StackPanel>
-                                                <TextBlock Text="TrackSwap UI" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                                <TextBlock Text="TrackSwap VR UI" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                                                 <TextBlock x:Name="DiagnosticUiVersionText" Text="{i18n:Loc Key=common.status.checking}" Margin="0,4,0,0" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="1">
@@ -675,61 +752,103 @@
                                 <TextBlock Text="{i18n:Loc Key=settings.category.devices}" FontSize="18" FontWeight="Medium" />
                                 <TextBlock Text="{i18n:Loc Key=settings.devices.device_select_connect_device}" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                                 <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{i18n:Loc Key=settings.category.devices}" FontSize="15" FontWeight="Medium" />
-                                            <TextBlock Text="{i18n:Loc Key=settings.devices.physical_device_save_online_offline_config_file}" Margin="0,4,20,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="1" x:Name="DeviceHistoryCountText" Foreground="{StaticResource MutedTextBrush}" />
-                                        <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,16,0,0" Padding="12,10" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
-                                            <TextBlock x:Name="DeviceHistoryPathText" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" />
-                                        </Border>
-                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,14,0,0">
-                                            <TextBlock Text="{i18n:Loc Key=settings.devices.file_device}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
-                                            <TextBlock x:Name="EmptyDeviceHistoryText" Text="{i18n:Loc Key=settings.devices.empty_device_history_device_history}" Margin="0,10,0,0" Foreground="{StaticResource MutedTextBrush}" />
-                                            <ItemsControl x:Name="DeviceHistoryItemsControl" Margin="0,8,0,0">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Border Margin="0,0,0,6" Padding="12,9" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
-                                                            <Grid>
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="18" />
-                                                                    <ColumnDefinition Width="*" />
-                                                                </Grid.ColumnDefinitions>
-                                                                <Ellipse Width="7" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                                                    <Ellipse.Style>
-                                                                        <Style TargetType="Ellipse">
-                                                                            <Setter Property="Fill" Value="{StaticResource WarningBrush}" />
-                                                                            <Style.Triggers>
-                                                                                <DataTrigger Binding="{Binding IsOnline}" Value="True">
-                                                                                    <Setter Property="Fill" Value="{StaticResource SuccessBrush}" />
-                                                                                </DataTrigger>
-                                                                            </Style.Triggers>
-                                                                        </Style>
-                                                                    </Ellipse.Style>
-                                                                </Ellipse>
-                                                                <StackPanel Grid.Column="1">
-                                                                    <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-                                                                    <TextBlock Text="{Binding DevicePath}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
-                                                                </StackPanel>
-                                                            </Grid>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-                                        <Button Grid.Row="3" Grid.ColumnSpan="2" Content="{i18n:Loc Key=settings.devices.clear_history}" HorizontalAlignment="Right" Margin="0,8,0,0" Click="ClearDeviceHistoryButton_Click" />
-                                    </Grid>
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="{i18n:Loc Key=settings.devices.tracked_devices}" FontSize="15" FontWeight="Medium" />
+                                                <TextBlock Text="{i18n:Loc Key=settings.devices.tracked_devices_description}" Margin="0,4,20,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" x:Name="DeviceHistoryCountText" Foreground="{StaticResource MutedTextBrush}" />
+                                        </Grid>
+                                        <TextBlock x:Name="EmptyDeviceHistoryText" Text="{i18n:Loc Key=settings.devices.empty_device_history_device_history}" Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" />
+                                        <ItemsControl x:Name="DeviceHistoryItemsControl" Margin="0,12,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,6" Padding="12,9" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <Ellipse Width="7" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                                <Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{StaticResource WarningBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsOnline}" Value="True"><Setter Property="Fill" Value="{StaticResource SuccessBrush}"/></DataTrigger></Style.Triggers></Style></Ellipse.Style>
+                                                            </Ellipse>
+                                                            <StackPanel Grid.Column="1">
+                                                                <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding IdentityText}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding ReceiverSummary}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                                                <TextBlock Text="{Binding NoteDisplay}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                            <Button Grid.Column="2" Content="{i18n:Loc Key=common.action.edit}" Tag="{Binding}" Margin="12,0,0,0" Padding="10,5" VerticalAlignment="Center" Click="EditDeviceMetadataButton_Click" />
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="{i18n:Loc Key=settings.devices.receivers}" FontSize="15" FontWeight="Medium" />
+                                                <TextBlock Text="{i18n:Loc Key=settings.devices.receivers_description}" Margin="0,4,20,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" x:Name="ReceiverHistoryCountText" Foreground="{StaticResource MutedTextBrush}" />
+                                        </Grid>
+                                        <TextBlock x:Name="EmptyReceiverHistoryText" Text="{i18n:Loc Key=settings.devices.receivers_empty}" Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" />
+                                        <ItemsControl x:Name="ReceiverHistoryItemsControl" Margin="0,12,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,6" Padding="12,9" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <Ellipse Width="7" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                                <Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{StaticResource MutedTextBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsInUse}" Value="True"><Setter Property="Fill" Value="{StaticResource SuccessBrush}"/></DataTrigger></Style.Triggers></Style></Ellipse.Style>
+                                                            </Ellipse>
+                                                            <StackPanel Grid.Column="1">
+                                                                <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding ReceiverId}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding ConnectionSummary}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                                                <TextBlock Text="{Binding NoteDisplay}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                            <Button Grid.Column="2" Content="{i18n:Loc Key=common.action.edit}" Tag="{Binding}" Margin="12,0,0,0" Padding="10,5" VerticalAlignment="Center" Click="EditReceiverMetadataButton_Click" />
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <StackPanel>
+                                        <TextBlock Text="{i18n:Loc Key=settings.devices.connections}" FontSize="15" FontWeight="Medium" />
+                                        <TextBlock Text="{i18n:Loc Key=settings.devices.connections_description}" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        <Grid Margin="12,16,12,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{i18n:Loc Key=settings.devices.connections_device}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                            <TextBlock Grid.Column="1" Text="{i18n:Loc Key=settings.devices.connections_current}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                            <TextBlock Grid.Column="2" Text="{i18n:Loc Key=settings.devices.connections_last}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                        </Grid>
+                                        <TextBlock x:Name="EmptyDeviceConnectionsText" Text="{i18n:Loc Key=settings.devices.connections_empty}" Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" />
+                                        <ItemsControl x:Name="DeviceConnectionItemsControl" Margin="0,8,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,6" Padding="12,9" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="{Binding DeviceDisplayName}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding CurrentReceiverDisplayName}" TextTrimming="CharacterEllipsis">
+                                                                <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/><Style.Triggers><DataTrigger Binding="{Binding HasCurrentConnection}" Value="True"><Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                                            </TextBlock>
+                                                            <TextBlock Grid.Column="2" Text="{Binding LastReceiverDisplayName}" Foreground="{StaticResource MutedTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
                                 </Border>
                             </StackPanel>
 
@@ -863,7 +982,6 @@
                                                       DisplayMemberPath="Label"
                                                       SelectionChanged="LanguageComboBox_SelectionChanged" />
                                         </Grid>
-                                        <TextBlock x:Name="LanguagePackStatusText" Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                                         <Grid Margin="0,12,0,0">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -884,63 +1002,104 @@
 
                                 <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <StackPanel>
-                                        <TextBlock i18n:Localize.Key="language.issues.title" FontSize="15" FontWeight="Medium" />
-                                        <TextBlock i18n:Localize.Key="language.issues.description" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
-                                        <TextBlock x:Name="LanguageIssuesEmptyText" i18n:Localize.Key="language.issues.empty" Margin="0,14,0,0" Foreground="{StaticResource SuccessBrush}" />
-                                        <Grid x:Name="LanguageIssuesHeader" Margin="0,12,0,0" Height="30" Background="{StaticResource SurfaceRaisedBrush}">
+                                        <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="90" />
                                                 <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock i18n:Localize.Key="language.issues.column.status"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       Foreground="{StaticResource MutedTextBrush}"
-                                                       FontSize="10" />
-                                            <Border Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
-                                                <TextBlock i18n:Localize.Key="language.issues.column.key"
+                                            <TextBlock i18n:Localize.Key="language.issues.title" FontSize="15" FontWeight="Medium" VerticalAlignment="Center" />
+                                            <Button Grid.Column="1"
+                                                    x:Name="LanguageIssuesToggleButton"
+                                                    MinWidth="92"
+                                                    Margin="16,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Click="LanguageIssuesToggleButton_Click" />
+                                        </Grid>
+                                        <TextBlock i18n:Localize.Key="language.issues.description" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        <StackPanel x:Name="LanguageIssuesContentPanel" Visibility="Collapsed">
+                                            <TextBlock x:Name="LanguageIssuesEmptyText" i18n:Localize.Key="language.issues.empty" Margin="0,14,0,0" Foreground="{StaticResource SuccessBrush}" />
+                                            <Grid x:Name="LanguageIssuesHeader" Margin="0,12,0,0" Height="30" Background="{StaticResource SurfaceRaisedBrush}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="90" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock i18n:Localize.Key="language.issues.column.status"
                                                            HorizontalAlignment="Center"
                                                            VerticalAlignment="Center"
                                                            Foreground="{StaticResource MutedTextBrush}"
                                                            FontSize="10" />
-                                            </Border>
-                                        </Grid>
-                                        <ItemsControl x:Name="LanguageIssuesItemsControl">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Button Tag="{Binding Key}"
-                                                            Margin="0,1,0,0"
-                                                            Padding="0"
-                                                            MinHeight="34"
-                                                            HorizontalContentAlignment="Stretch"
-                                                            Click="LanguageIssueButton_Click"
-                                                            ToolTip="{Binding CopyHint}">
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="90" />
-                                                                <ColumnDefinition Width="*" />
-                                                            </Grid.ColumnDefinitions>
-                                                            <TextBlock Text="{Binding KindLabel}"
-                                                                       HorizontalAlignment="Center"
-                                                                       VerticalAlignment="Center"
-                                                                       Foreground="{Binding KindBrush}"
-                                                                       FontSize="10" />
-                                                            <Border Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
-                                                                <TextBlock Text="{Binding Key}"
-                                                                           Margin="12,7"
+                                                <Border Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                                                    <TextBlock i18n:Localize.Key="language.issues.column.key"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{StaticResource MutedTextBrush}"
+                                                               FontSize="10" />
+                                                </Border>
+                                            </Grid>
+                                            <ListBox x:Name="LanguageIssuesItemsControl"
+                                                     MaxHeight="420"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     ScrollViewer.CanContentScroll="True"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                     VirtualizingPanel.IsVirtualizing="True"
+                                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                                <ListBox.ItemContainerStyle>
+                                                    <Style TargetType="ListBoxItem">
+                                                        <Setter Property="Padding" Value="0" />
+                                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                        <Setter Property="Focusable" Value="False" />
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="ListBoxItem">
+                                                                    <ContentPresenter />
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </ListBox.ItemContainerStyle>
+                                                <ListBox.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <VirtualizingStackPanel />
+                                                    </ItemsPanelTemplate>
+                                                </ListBox.ItemsPanel>
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button Tag="{Binding Key}"
+                                                                Margin="0,1,0,0"
+                                                                Padding="0"
+                                                                MinHeight="34"
+                                                                HorizontalContentAlignment="Stretch"
+                                                                Click="LanguageIssueButton_Click"
+                                                                ToolTip="{Binding CopyHint}">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="90" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding KindLabel}"
                                                                            HorizontalAlignment="Center"
                                                                            VerticalAlignment="Center"
-                                                                           FontFamily="Consolas"
-                                                                           Foreground="{StaticResource TextBrush}"
-                                                                           TextAlignment="Center"
-                                                                           TextWrapping="Wrap" />
-                                                            </Border>
-                                                        </Grid>
-                                                    </Button>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                        <TextBlock x:Name="LanguageCopyStatusText" Margin="0,5,0,0" Foreground="{StaticResource SuccessBrush}" FontSize="11" Visibility="Collapsed" />
+                                                                           Foreground="{Binding KindBrush}"
+                                                                           FontSize="10" />
+                                                                <Border Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                                                                    <TextBlock Text="{Binding Key}"
+                                                                               Margin="12,7"
+                                                                               HorizontalAlignment="Center"
+                                                                               VerticalAlignment="Center"
+                                                                               FontFamily="Consolas"
+                                                                               Foreground="{StaticResource TextBrush}"
+                                                                               TextAlignment="Center"
+                                                                               TextWrapping="Wrap" />
+                                                                </Border>
+                                                            </Grid>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                            <TextBlock x:Name="LanguageCopyStatusText" Margin="0,5,0,0" Foreground="{StaticResource SuccessBrush}" FontSize="11" Visibility="Collapsed" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -1079,6 +1238,7 @@
                                         </StackPanel>
                                         <Grid Grid.Column="1" Height="60">
                                             <Slider x:Name="XInputAnalogThresholdSlider"
+                                                    Style="{StaticResource ThresholdMarkerSliderStyle}"
                                                     Minimum="0"
                                                     Maximum="100"
                                                     TickFrequency="1"

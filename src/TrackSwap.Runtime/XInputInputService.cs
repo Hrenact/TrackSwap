@@ -66,11 +66,23 @@ internal sealed class XInputInputService : IDisposable
 
     public XInputRuntimeStatus GetStatus()
     {
+        lock (syncRoot)
+        {
+            if (!leftInputEnabled && !rightInputEnabled)
+            {
+                return new XInputRuntimeStatus();
+            }
+        }
+
         bool physicalConnected = TryGetFirstConnectedController(out XInputGamepadSnapshot physicalSnapshot);
         XInputPhysicalState physicalInput = CreatePhysicalState(physicalConnected, physicalSnapshot);
         lock (syncRoot)
         {
             bool enabled = leftInputEnabled || rightInputEnabled;
+            if (!enabled)
+            {
+                return new XInputRuntimeStatus();
+            }
             return new XInputRuntimeStatus
             {
                 Enabled = enabled,

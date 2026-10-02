@@ -15,9 +15,7 @@
 #include <dwmapi.h>
 #include <dxgi1_2.h>
 #include <shellapi.h>
-#include <shobjidl.h>
 #include <wincrypt.h>
-#include <wincodec.h>
 #include <windows.h>
 #include <windowsx.h>
 #include <wrl/client.h>
@@ -45,7 +43,6 @@ struct ViewerStrings
     std::wstring left = L"左眼";
     std::wstring right = L"右眼";
     std::wstring topmost = L"置顶";
-    std::wstring screenshot = L"截图";
     std::wstring fullscreen = L"全屏";
     std::wstring waitingDisplay = L"等待 SteamVR 虚拟显示…";
     std::wstring waitingFrame = L"虚拟头显已连接，等待首帧…";
@@ -55,7 +52,6 @@ struct ViewerStrings
     std::wstring sizeQuadHd = L"尺寸 2560×1440";
     std::wstring sizeSource = L"尺寸 原始";
     std::wstring sizeFollow = L"尺寸 跟随窗口";
-    std::wstring pngFilter = L"PNG 图像";
 };
 
 std::wstring DecodeBase64Utf8(const wchar_t* encoded)
@@ -120,10 +116,9 @@ private:
     void ToggleTopmost();
     void CycleOutputSize();
     void ApplyOutputSize();
-    bool SaveScreenshot();
     void CloseSharedState();
     int Scale(int logicalPixels) const;
-    std::array<RECT, 7> ButtonRectangles() const;
+    std::array<RECT, 6> ButtonRectangles() const;
     void InvalidateToolbar();
     void InvalidateStatus();
     void LoadLocalizationArguments();
@@ -331,7 +326,6 @@ LRESULT ViewerApp::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARA
         else if (wParam == '2') eyeMode_ = EyeMode::Left;
         else if (wParam == '3') eyeMode_ = EyeMode::Right;
         else if (wParam == 'T') ToggleTopmost();
-        else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000) != 0) SaveScreenshot();
         InvalidateToolbar();
         return 0;
     case WM_CLOSE:
@@ -675,7 +669,6 @@ void ViewerApp::LoadLocalizationArguments()
             assign(option, L"--loc-left", encoded, strings_.left) ||
             assign(option, L"--loc-right", encoded, strings_.right) ||
             assign(option, L"--loc-topmost", encoded, strings_.topmost) ||
-            assign(option, L"--loc-screenshot", encoded, strings_.screenshot) ||
             assign(option, L"--loc-fullscreen", encoded, strings_.fullscreen) ||
             assign(option, L"--loc-waiting-display", encoded, strings_.waitingDisplay) ||
             assign(option, L"--loc-waiting-frame", encoded, strings_.waitingFrame) ||
@@ -684,8 +677,7 @@ void ViewerApp::LoadLocalizationArguments()
             assign(option, L"--loc-size-full-hd", encoded, strings_.sizeFullHd) ||
             assign(option, L"--loc-size-quad-hd", encoded, strings_.sizeQuadHd) ||
             assign(option, L"--loc-size-source", encoded, strings_.sizeSource) ||
-            assign(option, L"--loc-size-follow", encoded, strings_.sizeFollow) ||
-            assign(option, L"--loc-png-filter", encoded, strings_.pngFilter);
+            assign(option, L"--loc-size-follow", encoded, strings_.sizeFollow);
         if (recognized)
         {
             ++index;
@@ -713,13 +705,13 @@ void ViewerApp::PaintChrome()
         DEFAULT_PITCH, L"Segoe UI");
     auto oldFont = SelectObject(dc, font);
     const wchar_t* labels[]{strings_.both.c_str(), strings_.left.c_str(), strings_.right.c_str(),
-        OutputSizeText(), strings_.topmost.c_str(), strings_.screenshot.c_str(), strings_.fullscreen.c_str()};
+        OutputSizeText(), strings_.topmost.c_str(), strings_.fullscreen.c_str()};
     const auto boxes = ButtonRectangles();
-    for (int index = 0; index < 7; ++index)
+    for (int index = 0; index < 6; ++index)
     {
         const bool selected = (index == 0 && eyeMode_ == EyeMode::Both) ||
             (index == 1 && eyeMode_ == EyeMode::Left) || (index == 2 && eyeMode_ == EyeMode::Right) ||
-            (index == 4 && topmost_) || (index == 6 && fullscreen_);
+            (index == 4 && topmost_) || (index == 5 && fullscreen_);
         HBRUSH fill = CreateSolidBrush(selected ? RGB(35,74,120) : RGB(28,28,28));
         FillRect(dc, &boxes[index], fill); DeleteObject(fill);
         HPEN pen = CreatePen(PS_SOLID, 1, selected ? RGB(77,151,255) : RGB(55,55,55));
@@ -782,8 +774,7 @@ void ViewerApp::HandleClick(int x, int y)
     else if (selected == 2) eyeMode_ = EyeMode::Right;
     else if (selected == 3) CycleOutputSize();
     else if (selected == 4) ToggleTopmost();
-    else if (selected == 5) SaveScreenshot();
-    else if (selected == 6) ToggleFullscreen();
+    else if (selected == 5) ToggleFullscreen();
     InvalidateToolbar();
 }
 
@@ -792,12 +783,12 @@ int ViewerApp::Scale(int logicalPixels) const
     return MulDiv(logicalPixels, static_cast<int>(dpi_), 96);
 }
 
-std::array<RECT, 7> ViewerApp::ButtonRectangles() const
+std::array<RECT, 6> ViewerApp::ButtonRectangles() const
 {
     const RECT logical[]{
         {12,8,94,34},{98,8,180,34},{184,8,266,34},{280,8,444,34},
-        {448,8,534,34},{538,8,638,34},{642,8,742,34}};
-    std::array<RECT, 7> scaled{};
+        {448,8,534,34},{538,8,638,34}};
+    std::array<RECT, 6> scaled{};
     for (std::size_t index = 0; index < scaled.size(); ++index)
         scaled[index] = {Scale(logical[index].left), Scale(logical[index].top),
             Scale(logical[index].right), Scale(logical[index].bottom)};
@@ -868,59 +859,6 @@ void ViewerApp::ApplyOutputSize()
         rectangle.bottom - rectangle.top, SWP_NOMOVE | SWP_NOZORDER);
 }
 
-bool ViewerApp::SaveScreenshot()
-{
-    std::lock_guard<std::mutex> lock(renderMutex_);
-    if (!swapChain_) return false;
-    ComPtr<ID3D11Texture2D> backBuffer;
-    if (FAILED(swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer)))) return false;
-    D3D11_TEXTURE2D_DESC description{}; backBuffer->GetDesc(&description);
-    description.BindFlags = 0; description.MiscFlags = 0;
-    description.Usage = D3D11_USAGE_STAGING; description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    ComPtr<ID3D11Texture2D> staging;
-    if (FAILED(device_->CreateTexture2D(&description, nullptr, &staging))) return false;
-    context_->CopyResource(staging.Get(), backBuffer.Get());
-    D3D11_MAPPED_SUBRESOURCE mapped{};
-    if (FAILED(context_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
-
-    ComPtr<IFileSaveDialog> dialog;
-    ComPtr<IShellItem> item;
-    bool success = false;
-    if (SUCCEEDED(CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
-    {
-        const COMDLG_FILTERSPEC filters[]{{strings_.pngFilter.c_str(), L"*.png"}};
-        dialog->SetFileTypes(1, filters); dialog->SetDefaultExtension(L"png");
-        dialog->SetFileName(L"TrackSwap-VR.png");
-        if (SUCCEEDED(dialog->Show(window_)) && SUCCEEDED(dialog->GetResult(&item)))
-        {
-            PWSTR path = nullptr;
-            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
-            {
-                ComPtr<IWICImagingFactory> factory;
-                ComPtr<IWICStream> stream;
-                ComPtr<IWICBitmapEncoder> encoder;
-                ComPtr<IWICBitmapFrameEncode> frame;
-                ComPtr<IPropertyBag2> properties;
-                if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
-                    SUCCEEDED(factory->CreateStream(&stream)) && SUCCEEDED(stream->InitializeFromFilename(path, GENERIC_WRITE)) &&
-                    SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) &&
-                    SUCCEEDED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) &&
-                    SUCCEEDED(encoder->CreateNewFrame(&frame, &properties)) && SUCCEEDED(frame->Initialize(properties.Get())) &&
-                    SUCCEEDED(frame->SetSize(description.Width, description.Height)))
-                {
-                    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
-                    if (SUCCEEDED(frame->SetPixelFormat(&format)) &&
-                        SUCCEEDED(frame->WritePixels(description.Height, mapped.RowPitch,
-                            mapped.RowPitch * description.Height, static_cast<BYTE*>(mapped.pData))) &&
-                        SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit())) success = true;
-                }
-                CoTaskMemFree(path);
-            }
-        }
-    }
-    context_->Unmap(staging.Get(), 0);
-    return success;
-}
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)

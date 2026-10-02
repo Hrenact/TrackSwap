@@ -80,6 +80,8 @@ namespace TrackSwap.Services
 
         public bool ShowProxyInPreview { get; set; }
 
+        public bool UseEulerRotationEditor { get; set; } = true;
+
         public RuntimeLifecycleMode RuntimeLifecycleMode { get; set; } = RuntimeLifecycleMode.FollowTrackSwap;
 
         public bool FollowSteamVrWithTrackSwap { get; set; }

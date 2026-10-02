@@ -51,7 +51,7 @@ namespace TrackSwap.Services
                 DriverPath = driverPath,
                 Configuration = runtimeStatus?.Configuration == null
                     ? Tr.Get("service.diagnostics.inspect.runtime_read")
-                    : configurationErrors.Count == 0 ? Tr.Get("common.status.passed") : configurationErrors.Count + Tr.Get("common.count.issue_suffix"),
+                    : configurationErrors.Count == 0 ? Tr.Get("common.status.passed") : Tr.Format("common.count.issues", configurationErrors.Count),
                 ConfigurationErrors = configurationErrors
             };
         }
@@ -147,36 +147,54 @@ namespace TrackSwap.Services
             IReadOnlyList<RouteConfiguration> routes = configuration?.Routes ?? new List<RouteConfiguration>();
             var builder = new StringBuilder();
             builder.AppendLine(Tr.Get("service.diagnostics.build_summary.trackswap"));
-            builder.AppendLine(Tr.Get("diagnostics.generated_at_prefix") + DateTimeOffset.Now.ToString("O"));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.ui_version") + report.UiVersion);
-            builder.AppendLine(Tr.Get("diagnostics.operating_system_prefix") + GetOperatingSystemDescription());
-            builder.AppendLine("Runtime: " + (status == null ? Tr.Get("common.status.disconnected") : Tr.Get("common.status.online")));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.runtime") + report.RuntimeProgram + " · " + (report.RuntimeProgramPath ?? "—"));
-            builder.AppendLine("SteamVR: " + report.SteamVr + " · " + (report.SteamVrPath ?? "—"));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.trackswap_driver") + report.DriverRegistration + " · " + (report.DriverPath ?? "—"));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.driver_connect") + (status?.DriverConnected == true ? Tr.Get("dialog.yes") : Tr.Get("dialog.no")));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.config_revision") + (status == null ? "—" : status.ConfigurationRevision.ToString()));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.driver_applied_revision") + (status == null ? "—" : status.DriverAppliedRevision.ToString()));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.static_mapping") + (status == null
-                ? Tr.Get("common.status.unknown")
-                : status.StaticMappingPending ? Tr.Get("common.status.pending") : Tr.Get("service.diagnostics.build_summary.complete")));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.device_hide") + (status?.PhysicalSourceHiding == null
-                ? Tr.Get("common.status.unknown")
-                : status.PhysicalSourceHiding.State + " · " +
-                  status.PhysicalSourceHiding.ActiveDeviceCount + " / " +
-                  status.PhysicalSourceHiding.RequestedDeviceCount));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.config") + report.Configuration);
+            builder.AppendLine(Tr.Format("diagnostics.generated_at", DateTimeOffset.Now.ToString("O")));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.ui_version", report.UiVersion));
+            builder.AppendLine(Tr.Format("diagnostics.operating_system", GetOperatingSystemDescription()));
+            builder.AppendLine(Tr.Format(
+                "service.diagnostics.build_summary.runtime_state",
+                status == null ? Tr.Get("common.status.disconnected") : Tr.Get("common.status.online")));
+            builder.AppendLine(Tr.Format(
+                "service.diagnostics.build_summary.runtime",
+                report.RuntimeProgram,
+                report.RuntimeProgramPath ?? "—"));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.steamvr", report.SteamVr, report.SteamVrPath ?? "—"));
+            builder.AppendLine(Tr.Format(
+                "service.diagnostics.build_summary.trackswap_driver",
+                report.DriverRegistration,
+                report.DriverPath ?? "—"));
+            builder.AppendLine(Tr.Format(
+                "service.diagnostics.build_summary.driver_connect",
+                status?.DriverConnected == true ? Tr.Get("dialog.yes") : Tr.Get("dialog.no")));
+            builder.AppendLine(Tr.Format(
+                "service.diagnostics.build_summary.config_revision",
+                status == null ? "—" : status.ConfigurationRevision.ToString()));
+            builder.AppendLine(Tr.Format(
+                "service.diagnostics.build_summary.driver_applied_revision",
+                status == null ? "—" : status.DriverAppliedRevision.ToString()));
+            builder.AppendLine(Tr.Format(
+                "service.diagnostics.build_summary.static_mapping",
+                status == null
+                    ? Tr.Get("common.status.unknown")
+                    : status.StaticMappingPending ? Tr.Get("common.status.pending") : Tr.Get("service.diagnostics.build_summary.complete")));
+            builder.AppendLine(Tr.Format(
+                "service.diagnostics.build_summary.device_hide",
+                status?.PhysicalSourceHiding == null
+                    ? Tr.Get("common.status.unknown")
+                    : status.PhysicalSourceHiding.State + " · " +
+                      status.PhysicalSourceHiding.ActiveDeviceCount + " / " +
+                      status.PhysicalSourceHiding.RequestedDeviceCount));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.config", report.Configuration));
             builder.AppendLine();
             builder.AppendLine(Tr.Get("service.diagnostics.build_summary.name_device_path"));
-            builder.AppendLine(Tr.Get("diagnostics.total_prefix") + routes.Count);
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.enable") + routes.Count(route => route.Enabled));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.delete") + routes.Count(route => route.PendingDeletion));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.virtual_tracker") + routes.Count(route => route.Mode == RouteMode.DirectProxy));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.virtual_controller") + routes.Count(route => route.Mode == RouteMode.VirtualController));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.virtual_hmd") + routes.Count(route => route.Mode == RouteMode.VirtualHmd));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.replace_device_pose") + routes.Count(route => route.Mode == RouteMode.ReplaceTarget));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.osc_input") + routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.Osc));
-            builder.AppendLine(Tr.Get("service.diagnostics.build_summary.xinput_input") + routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.XInput));
+            builder.AppendLine(Tr.Format("diagnostics.total", routes.Count));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.enable", routes.Count(route => route.Enabled)));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.delete", routes.Count(route => route.PendingDeletion)));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.virtual_tracker", routes.Count(route => route.Mode == RouteMode.DirectProxy)));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.virtual_controller", routes.Count(route => route.Mode == RouteMode.VirtualController)));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.virtual_hmd", routes.Count(route => route.Mode == RouteMode.VirtualHmd)));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.replace_device_pose", routes.Count(route => route.Mode == RouteMode.ReplaceTarget)));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.osc_input", routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.Osc)));
+            builder.AppendLine(Tr.Format("service.diagnostics.build_summary.xinput_input", routes.Count(route => route.Mode == RouteMode.VirtualController && route.ControlInputSource == ControlInputSource.XInput)));
             if (report.ConfigurationErrors.Count > 0)
             {
                 builder.AppendLine();

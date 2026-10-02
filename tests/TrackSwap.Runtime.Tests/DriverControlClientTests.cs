@@ -58,6 +58,14 @@ public sealed class DriverControlClientTests
                 TranslationY = 175.0,
                 TranslationZ = -50.0,
                 RotationW = 1.0
+            },
+            MotionSmoothing = new MotionSmoothingConfiguration
+            {
+                Enabled = true,
+                SmoothPosition = true,
+                SmoothRotation = false,
+                PositionStrength = 42.0,
+                RotationStrength = 73.0
             }
         };
 
@@ -78,6 +86,9 @@ public sealed class DriverControlClientTests
         Assert.Equal(0.0, reader.ReadDouble(), 12);
         Assert.Equal(0.0, reader.ReadDouble(), 12);
         Assert.Equal(1.0, reader.ReadDouble(), 12);
+        Assert.Equal(0x03, reader.ReadByte());
+        Assert.Equal(42.0, reader.ReadDouble(), 12);
+        Assert.Equal(73.0, reader.ReadDouble(), 12);
         Assert.Equal(DriverControlProtocol.ApplyHmdSnapshotFixedBytes, payload.Length);
     }
 

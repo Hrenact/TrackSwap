@@ -26,6 +26,24 @@ foreach ($file in $sourceFiles) {
     $sourceTexts[$file.FullName] = Get-Content -LiteralPath $file.FullName -Raw
 }
 
+$referencedKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($text in $sourceTexts.Values) {
+    foreach ($match in [regex]::Matches($text, 'Tr\.(?:Get|Format)\s*\(\s*"([^"]+)"')) {
+        [void]$referencedKeys.Add($match.Groups[1].Value)
+    }
+    foreach ($match in [regex]::Matches($text, '(?:i18n:Loc|Localize)\s+Key=([A-Za-z0-9_.]+)')) {
+        [void]$referencedKeys.Add($match.Groups[1].Value)
+    }
+    foreach ($match in [regex]::Matches($text, 'Localize\.SetKey\s*\([^,]+,\s*"([^"]+)"')) {
+        [void]$referencedKeys.Add($match.Groups[1].Value)
+    }
+}
+foreach ($key in ($referencedKeys | Sort-Object)) {
+    if (-not $catalog.strings.ContainsKey($key)) {
+        throw "Source references localization key '$key', but the Simplified Chinese catalog does not define it."
+    }
+}
+
 $areaDescriptions = @{
     'app' = 'Application shell, global workflow, and window-level messages.'
     'backup' = 'SteamVR backup and restore window.'

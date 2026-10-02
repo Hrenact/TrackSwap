@@ -1,6 +1,6 @@
-# TrackSwap 手机振动诊断器
+# TrackSwap VR 手机振动诊断器
 
-这是一个不会打进正式安装包的开发诊断工具。它监听 TrackSwap Runtime 真正发送的 OSC/UDP 触觉包，通过 WebSocket 转发给同一局域网内的手机网页，再调用浏览器的振动 API。
+这是一个不会打进正式安装包的开发诊断工具。它监听 TrackSwap VR Runtime 真正发送的 OSC/UDP 触觉包，通过 WebSocket 转发给同一局域网内的手机网页，再调用浏览器的振动 API。
 
 ## 使用
 
@@ -10,10 +10,10 @@
    dotnet run --project tools\TrackSwap.HapticPhoneDiagnostic\TrackSwap.HapticPhoneDiagnostic.csproj -c Release
    ```
 
-2. 在 TrackSwap 的 OSC 设置中使用地址 `127.0.0.1`，发送端口使用 `9016`。
+2. 在 TrackSwap VR 的 OSC 设置中使用地址 `127.0.0.1`，发送端口使用 `9016`。
 3. 若 Windows 防火墙询问，只允许“专用网络”。
 4. 用同一局域网内的 Android 手机扫描桌面页面显示的二维码。
-5. 在手机上点击“启用手机振动”，再点击 TrackSwap 左手或右手体感卡片的“测试”。
+5. 在手机上点击“启用手机振动”，再点击 TrackSwap VR 左手或右手体感卡片的“测试”。
 6. 按 `Ctrl+C` 停止诊断器。
 
 默认监听 OSC UDP `9016`，网页使用 HTTP `9017`。可选参数：

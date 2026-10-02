@@ -75,7 +75,7 @@ namespace TrackSwap.Services
                 .Where(path => !string.IsNullOrWhiteSpace(path) && path.StartsWith("/devices/", StringComparison.Ordinal))
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-                .Select(path => new TargetOption(Tr.Get("device.status.saved_prefix") + BuildFriendlyName(path), path))
+                .Select(path => new TargetOption(Tr.Format("device.status.saved", BuildFriendlyName(path)), path))
                 .ToList();
         }
 
@@ -94,7 +94,7 @@ namespace TrackSwap.Services
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .Select(path => new TargetOption(
-                    Tr.Get("service.steam_vr_settings.read_known_role_targets.role_target") + BuildTargetFriendlyName(path) + Tr.Get("common.qualifier.maintenance_only"),
+                    Tr.Format("service.steam_vr_settings.role_target_display_name", BuildTargetFriendlyName(path)),
                     path))
                 .ToList();
         }
@@ -156,7 +156,9 @@ namespace TrackSwap.Services
                     string summary = summaries.Count == 0
                         ? Tr.Get("service.steam_vr_settings.read_backups.backup_pose")
                         : string.Join(Environment.NewLine, summaries)
-                            + (count > summaries.Count ? Environment.NewLine + Tr.Get("common.count.additional_prefix") + (count - summaries.Count) + Tr.Get("service.steam_vr_settings.read_backups.item") : string.Empty);
+                            + (count > summaries.Count
+                                ? Environment.NewLine + Tr.Format("service.steam_vr_settings.read_backups.additional_items", count - summaries.Count)
+                                : string.Empty);
 
                     backups.Add(new BackupOption(
                         backupPath,
@@ -227,7 +229,9 @@ namespace TrackSwap.Services
                     !File.ReadAllBytes(sourcePath).SequenceEqual(File.ReadAllBytes(destinationPath)))
                 {
                     File.Delete(destinationPath);
-                    throw new IOException(Tr.Get("service.steam_vr_settings.migrate_legacy_backups.steamvr_config_backup_copy_failed") + Path.GetFileName(sourcePath));
+                    throw new IOException(Tr.Format(
+                        "service.steam_vr_settings.migrate_legacy_backups.steamvr_config_backup_copy_failed",
+                        Path.GetFileName(sourcePath)));
                 }
                 File.Delete(sourcePath);
                 migrated++;

@@ -42,7 +42,7 @@ internal static class RuntimeHost
             cancellation.Cancel();
         };
 
-        Console.WriteLine($"TrackSwap Runtime listening on {ProtocolConstants.PipeName}");
+        Console.WriteLine($"TrackSwap VR Runtime listening on {ProtocolConstants.PipeName}");
         Console.WriteLine($"Configuration: {store.Path}");
         try
         {

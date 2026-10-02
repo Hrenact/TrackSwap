@@ -65,6 +65,7 @@ bool VirtualController::QueueSnapshot(
     const char* rotationSourceDevicePath,
     std::int32_t handSelectionPriority,
     const pose_math::RigidOffset& offset,
+    const pose_smoothing::Configuration& smoothing,
     std::uint64_t revision)
 {
     std::lock_guard<std::mutex> lock(pendingMutex_);
@@ -89,6 +90,7 @@ bool VirtualController::QueueSnapshot(
     }
     pendingHandSelectionPriority_ = handSelectionPriority;
     pendingOffset_ = offset;
+    pendingSmoothing_ = smoothing;
     pendingRevision_ = revision;
     latestAcceptedRevision_ = revision;
     hasPendingSnapshot_ = true;
@@ -122,7 +124,7 @@ vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
     objectId_ = objectId;
     const auto properties = vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
     const bool left = hand_ == ControllerHand::Left;
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, left ? "TrackSwap Controller Left" : "TrackSwap Controller Right");
+    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, left ? "TrackSwap VR Controller Left" : "TrackSwap VR Controller Right");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_controller");
@@ -211,6 +213,7 @@ vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
 
 void VirtualController::Deactivate()
 {
+    poseSmoother_.Reset();
     objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
@@ -231,6 +234,7 @@ void VirtualController::Update()
     ApplyInput();
     if (!activeEnabled_)
     {
+        poseSmoother_.Reset();
         lastPose_ = pose_math::MakeInvalidPose();
         PublishTelemetry();
         vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
@@ -271,10 +275,12 @@ void VirtualController::Update()
     if (activeManualPose_)
     {
         lastPose_ = pose_math::ApplyOffset(pose_math::MakeValidIdentityPose(), activeOffset_);
+        lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
     }
     else if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid ||
         (splitSource && rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid))
     {
+        poseSmoother_.Reset();
         lastPose_ = pose_math::MakeInvalidPose(true);
     }
     else
@@ -287,6 +293,7 @@ void VirtualController::Update()
                 pose_math::ConvertPose(rawPoses_[rotationSourceId_]));
         }
         lastPose_ = pose_math::ApplyOffset(basePose, activeOffset_);
+        lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
     }
     PublishTelemetry();
     vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
@@ -302,6 +309,8 @@ void VirtualController::ApplyPending()
     sourceDevicePath_ = pendingSourceDevicePath_;
     rotationSourceDevicePath_ = pendingRotationSourceDevicePath_;
     activeOffset_ = pendingOffset_;
+    activeSmoothing_ = pendingSmoothing_;
+    poseSmoother_.Reset();
     if (activeHandSelectionPriority_ != pendingHandSelectionPriority_)
     {
         activeHandSelectionPriority_ = pendingHandSelectionPriority_;

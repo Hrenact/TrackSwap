@@ -13,6 +13,7 @@
 #include "finger_animation.h"
 #include "hand_simulation.h"
 #include "pose_math.h"
+#include "pose_smoothing.h"
 
 namespace trackswap
 {
@@ -36,6 +37,7 @@ public:
         const char* rotationSourceDevicePath,
         std::int32_t handSelectionPriority,
         const pose_math::RigidOffset& offset,
+        const pose_smoothing::Configuration& smoothing,
         std::uint64_t revision);
     void QueueInput(const control_protocol::ControllerInputState& input);
     control_protocol::TelemetrySnapshot GetTelemetry() const;
@@ -73,6 +75,9 @@ private:
     std::array<char, MaximumDevicePathBytes> pendingRotationSourceDevicePath_{};
     pose_math::RigidOffset activeOffset_ = pose_math::IdentityOffset();
     pose_math::RigidOffset pendingOffset_ = pose_math::IdentityOffset();
+    pose_smoothing::Configuration activeSmoothing_{};
+    pose_smoothing::Configuration pendingSmoothing_{};
+    pose_smoothing::PoseSmoother poseSmoother_{};
     std::array<vr::TrackedDevicePose_t, vr::k_unMaxTrackedDeviceCount> rawPoses_{};
     vr::TrackedDeviceIndex_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     vr::TrackedDeviceIndex_t sourceId_ = vr::k_unTrackedDeviceIndexInvalid;

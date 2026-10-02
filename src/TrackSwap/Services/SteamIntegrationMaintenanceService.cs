@@ -26,8 +26,9 @@ namespace TrackSwap.Services
                 TryRun(() => RunScript("Uninstall-Driver.ps1", string.Empty), failures);
                 if (failures.Count != 0)
                 {
-                    throw new InvalidOperationException(
-                        Tr.Get("service.steam_integration_maintenance.remove_async.steamvr_cleanup_complete_complete") + string.Join("；", failures));
+                    throw new InvalidOperationException(Tr.Format(
+                        "service.steam_integration_maintenance.remove_async.steamvr_cleanup_complete_complete",
+                        string.Join("；", failures)));
                 }
             });
         }
@@ -90,9 +91,11 @@ namespace TrackSwap.Services
                 if (process.ExitCode != 0)
                 {
                     string detail = string.IsNullOrWhiteSpace(error) ? output : error;
-                    throw new InvalidOperationException(
-                        Path.GetFileName(scriptPath) + Tr.Get("service.steam_integration_maintenance.run_script.error") + process.ExitCode +
-                        (string.IsNullOrWhiteSpace(detail) ? "." : ": " + detail.Trim()));
+                    throw new InvalidOperationException(Tr.Format(
+                        "service.steam_integration_maintenance.run_script.failed",
+                        Path.GetFileName(scriptPath),
+                        process.ExitCode,
+                        string.IsNullOrWhiteSpace(detail) ? "。" : "：" + detail.Trim()));
                 }
             }
         }

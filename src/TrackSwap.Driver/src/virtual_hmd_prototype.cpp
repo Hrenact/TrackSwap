@@ -35,7 +35,8 @@ trackswap::control_protocol::TelemetryPose ToTelemetryPose(const vr::DriverPose_
 namespace trackswap
 {
 bool VirtualHmd::QueueSnapshot(bool enabled, std::uint8_t logicalSlot, bool manualPose, const char* sourceDevicePath,
-    const char* rotationSourceDevicePath, const pose_math::RigidOffset& offset, std::uint64_t revision)
+    const char* rotationSourceDevicePath, const pose_math::RigidOffset& offset,
+    const pose_smoothing::Configuration& smoothing, std::uint64_t revision)
 {
     std::lock_guard<std::mutex> lock(pendingMutex_);
     if (revision < latestAcceptedRevision_) return false;
@@ -55,6 +56,7 @@ bool VirtualHmd::QueueSnapshot(bool enabled, std::uint8_t logicalSlot, bool manu
         }
     }
     pendingOffset_ = offset;
+    pendingSmoothing_ = smoothing;
     pendingRevision_ = revision;
     latestAcceptedRevision_ = revision;
     hasPendingSnapshot_ = true;
@@ -74,7 +76,7 @@ vr::EVRInitError VirtualHmd::Activate(std::uint32_t objectId)
 {
     objectId_ = objectId;
     const auto properties = vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap Virtual HMD");
+    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap VR Virtual HMD");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, "trackswap/TRKSWAP-HMD");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RenderModelName_String, "generic_hmd");
@@ -96,15 +98,16 @@ vr::EVRInitError VirtualHmd::Activate(std::uint32_t objectId)
     if (proximityError != vr::VRInputError_None)
     {
         proximityHandle_ = vr::k_ulInvalidInputComponentHandle;
-        vr::VRDriverLog()->Log("TrackSwap virtual HMD could not create the proximity component.");
+        vr::VRDriverLog()->Log("TrackSwap VR virtual HMD could not create the proximity component.");
     }
     lastPose_ = pose_math::MakeInvalidPose(true);
-    vr::VRDriverLog()->Log("TrackSwap virtual HMD activated.");
+    vr::VRDriverLog()->Log("TrackSwap VR virtual HMD activated.");
     return vr::VRInitError_None;
 }
 
 void VirtualHmd::Deactivate()
 {
+    poseSmoother_.Reset();
     objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     proximityHandle_ = vr::k_ulInvalidInputComponentHandle;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
@@ -135,6 +138,7 @@ void VirtualHmd::Update()
     ApplyPending();
     if (!activeEnabled_)
     {
+        poseSmoother_.Reset();
         lastPose_ = pose_math::MakeInvalidPose(true);
         PublishTelemetry();
         vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
@@ -143,6 +147,7 @@ void VirtualHmd::Update()
     if (activeManualPose_)
     {
         lastPose_ = pose_math::ApplyOffset(pose_math::MakeValidIdentityPose(true), activeOffset_);
+        lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
         lastPose_.shouldApplyHeadModel = true;
         PublishTelemetry();
         vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
@@ -171,6 +176,7 @@ void VirtualHmd::Update()
     const bool split = rotationSourceDevicePath_[0] != '\0';
     if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid || (split && rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid))
     {
+        poseSmoother_.Reset();
         lastPose_ = pose_math::MakeInvalidPose(true);
     }
     else
@@ -178,6 +184,7 @@ void VirtualHmd::Update()
         vr::DriverPose_t base = pose_math::ConvertPose(rawPoses_[sourceId_]);
         if (split) base = pose_math::CombinePose(base, pose_math::ConvertPose(rawPoses_[rotationSourceId_]));
         lastPose_ = pose_math::ApplyOffset(base, activeOffset_);
+        lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
         lastPose_.shouldApplyHeadModel = true;
     }
     PublishTelemetry();
@@ -194,6 +201,8 @@ void VirtualHmd::ApplyPending()
     sourceDevicePath_ = pendingSourceDevicePath_;
     rotationSourceDevicePath_ = pendingRotationSourceDevicePath_;
     activeOffset_ = pendingOffset_;
+    activeSmoothing_ = pendingSmoothing_;
+    poseSmoother_.Reset();
     appliedRevision_ = pendingRevision_;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;

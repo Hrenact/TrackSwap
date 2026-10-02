@@ -90,7 +90,7 @@ internal static class Program
             await hub.AcceptAsync(context, context.RequestAborted).ConfigureAwait(false);
         });
 
-        Console.WriteLine("TrackSwap 手机振动诊断器");
+        Console.WriteLine("TrackSwap VR 手机振动诊断器");
         Console.WriteLine("----------------------------------------");
         Console.WriteLine($"桌面诊断页：{localUrl}");
         if (phoneUrls.Length == 0)

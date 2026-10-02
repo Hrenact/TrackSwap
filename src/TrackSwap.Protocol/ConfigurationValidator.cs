@@ -132,12 +132,12 @@ namespace TrackSwap.Protocol
                 }
                 if (route.HidePhysicalSource && ProtocolConstants.IsTrackSwapVirtualDevicePath(route.SourceDevicePath))
                 {
-                    errors.Add($"{prefix}不能隐藏 TrackSwap 自己创建的虚拟设备。");
+                    errors.Add($"{prefix}不能隐藏 TrackSwap VR 自己创建的虚拟设备。");
                 }
                 if (route.HidePhysicalSource && route.SplitPoseSource &&
                     ProtocolConstants.IsTrackSwapVirtualDevicePath(route.RotationSourceDevicePath))
                 {
-                    errors.Add($"{prefix}不能隐藏 TrackSwap 自己创建的虚拟旋转来源。");
+                    errors.Add($"{prefix}不能隐藏 TrackSwap VR 自己创建的虚拟旋转来源。");
                 }
                 if (!Enum.IsDefined(typeof(RouteMode), route.Mode) || route.Mode == RouteMode.Unspecified)
                 {
@@ -217,6 +217,7 @@ namespace TrackSwap.Protocol
 
                 ValidateOffset(route.Offset, prefix, errors);
                 ValidateOffset(route.ManualPose, prefix + "的手动位姿", errors);
+                ValidateMotionSmoothing(route.MotionSmoothing, prefix, errors);
             }
 
             ValidateCycles(configuration.Routes, errors);
@@ -486,6 +487,37 @@ namespace TrackSwap.Protocol
             if (lengthSquared < MinimumQuaternionLengthSquared)
             {
                 errors.Add($"{prefix}的旋转四元数不能为零。");
+            }
+        }
+
+        private static void ValidateMotionSmoothing(
+            MotionSmoothingConfiguration? smoothing,
+            string prefix,
+            ICollection<string> errors)
+        {
+            if (smoothing == null)
+            {
+                errors.Add($"{prefix}的运动平滑配置不能为空。");
+                return;
+            }
+
+            if (smoothing.Enabled && !smoothing.SmoothPosition && !smoothing.SmoothRotation)
+            {
+                errors.Add($"{prefix}启用运动平滑时必须至少选择位置或旋转。");
+            }
+
+            if (double.IsNaN(smoothing.PositionStrength) ||
+                double.IsInfinity(smoothing.PositionStrength) ||
+                smoothing.PositionStrength < MotionSmoothingConfiguration.MinimumStrength ||
+                smoothing.PositionStrength > MotionSmoothingConfiguration.MaximumStrength ||
+                double.IsNaN(smoothing.RotationStrength) ||
+                double.IsInfinity(smoothing.RotationStrength) ||
+                smoothing.RotationStrength < MotionSmoothingConfiguration.MinimumStrength ||
+                smoothing.RotationStrength > MotionSmoothingConfiguration.MaximumStrength ||
+                smoothing.PositionStrength != Math.Round(smoothing.PositionStrength) ||
+                smoothing.RotationStrength != Math.Round(smoothing.RotationStrength))
+            {
+                errors.Add($"{prefix}的运动平滑强度必须是 0 到 100 之间的整数。");
             }
         }
     }

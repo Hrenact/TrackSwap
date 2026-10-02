@@ -31,6 +31,7 @@ public:
         const char* targetDevicePath,
         bool hidePhysicalSource,
         const pose_math::RigidOffset& offset,
+        const pose_smoothing::Configuration& smoothing,
         std::uint64_t revision);
     bool QueueControllerSnapshot(
         ControllerHand hand,
@@ -42,10 +43,12 @@ public:
         bool hidePhysicalSource,
         std::int32_t handSelectionPriority,
         const pose_math::RigidOffset& offset,
+        const pose_smoothing::Configuration& smoothing,
         std::uint64_t revision);
     bool QueueHmdSnapshot(bool enabled, std::uint8_t logicalSlot, bool manualPose, const char* sourceDevicePath,
         const char* rotationSourceDevicePath, bool hidePhysicalSource,
-        const pose_math::RigidOffset& offset, std::uint64_t revision);
+        const pose_math::RigidOffset& offset, const pose_smoothing::Configuration& smoothing,
+        std::uint64_t revision);
     void AttachVirtualHmd(VirtualHmd* virtualHmd);
     bool QueueControllerInput(const control_protocol::ControllerInputState& input);
     control_protocol::TelemetryBatch GetTelemetry() const;

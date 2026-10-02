@@ -189,6 +189,23 @@ bool IsValidTargetPath(const char* path, std::size_t length)
         (length == sizeof(Left) - 1 && std::memcmp(path, Left, length) == 0) ||
         (length == sizeof(Right) - 1 && std::memcmp(path, Right, length) == 0);
 }
+
+bool ReadSmoothingConfiguration(
+    const char* input,
+    trackswap::pose_smoothing::Configuration& configuration)
+{
+    const auto flags = static_cast<std::uint8_t>(input[0]);
+    if ((flags & 0xF8U) != 0)
+    {
+        return false;
+    }
+    configuration.enabled = (flags & 0x01U) != 0;
+    configuration.smoothPosition = (flags & 0x02U) != 0;
+    configuration.smoothRotation = (flags & 0x04U) != 0;
+    std::memcpy(&configuration.positionStrength, input + 1, sizeof(double));
+    std::memcpy(&configuration.rotationStrength, input + 1 + sizeof(double), sizeof(double));
+    return trackswap::pose_smoothing::IsValidConfiguration(configuration);
+}
 } // namespace
 
 namespace trackswap
@@ -236,7 +253,7 @@ void ControlServer::Run()
             nullptr);
         if (pipe == INVALID_HANDLE_VALUE)
         {
-            vr::VRDriverLog()->Log("TrackSwap failed to create its local driver control pipe.");
+            vr::VRDriverLog()->Log("TrackSwap VR failed to create its local driver control pipe.");
             return;
         }
 
@@ -289,7 +306,8 @@ void ControlServer::Run()
             {
                 constexpr std::size_t FixedBytes =
                     (4 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
-                    (3 * sizeof(std::uint16_t)) + (7 * sizeof(double));
+                    (3 * sizeof(std::uint16_t)) + (7 * sizeof(double)) +
+                    sizeof(std::uint8_t) + (2 * sizeof(double));
                 valid = request.payloadBytes >= FixedBytes;
                 if (valid)
                 {
@@ -339,7 +357,10 @@ void ControlServer::Run()
                         const pose_math::RigidOffset offset{
                             {values[0], values[1], values[2]},
                             {values[6], values[3], values[4], values[5]}};
-                        valid = valid && pose_math::IsValidOffset(offset);
+                        pose_smoothing::Configuration smoothing{};
+                        valid = valid && pose_math::IsValidOffset(offset) &&
+                            ReadSmoothingConfiguration(
+                                targetPath + targetPathBytes + sizeof(values), smoothing);
                         if (valid)
                         {
                             std::array<char, control_protocol::MaximumPayloadBytes + 1> terminatedSource{};
@@ -360,6 +381,7 @@ void ControlServer::Run()
                                 terminatedTarget.data(),
                                 hidePhysicalSource,
                                 offset,
+                                smoothing,
                                 revision);
                         }
                     }
@@ -378,7 +400,8 @@ void ControlServer::Run()
             {
                 constexpr std::size_t FixedBytes =
                     (5 * sizeof(std::uint8_t)) + sizeof(std::uint64_t) +
-                    sizeof(std::int32_t) + (2 * sizeof(std::uint16_t)) + (7 * sizeof(double));
+                    sizeof(std::int32_t) + (2 * sizeof(std::uint16_t)) + (7 * sizeof(double)) +
+                    sizeof(std::uint8_t) + (2 * sizeof(double));
                 valid = request.payloadBytes >= FixedBytes;
                 if (valid)
                 {
@@ -433,7 +456,10 @@ void ControlServer::Run()
                         const pose_math::RigidOffset offset{
                             {values[0], values[1], values[2]},
                             {values[6], values[3], values[4], values[5]}};
-                        valid = pose_math::IsValidOffset(offset);
+                        pose_smoothing::Configuration smoothing{};
+                        valid = pose_math::IsValidOffset(offset) &&
+                            ReadSmoothingConfiguration(
+                                rotationSourcePath + rotationSourcePathBytes + sizeof(values), smoothing);
                         if (valid)
                         {
                             std::array<char, control_protocol::MaximumPayloadBytes + 1> terminatedSource{};
@@ -453,6 +479,7 @@ void ControlServer::Run()
                                 hidePhysicalSource,
                                 handSelectionPriority,
                                 offset,
+                                smoothing,
                                 revision);
                         }
                     }
@@ -462,7 +489,8 @@ void ControlServer::Run()
             {
                 constexpr std::size_t PrefixBytes = 4 * sizeof(std::uint8_t);
                 constexpr std::size_t FixedBytes = PrefixBytes + sizeof(std::uint64_t) +
-                    (2 * sizeof(std::uint16_t)) + (7 * sizeof(double));
+                    (2 * sizeof(std::uint16_t)) + (7 * sizeof(double)) +
+                    sizeof(std::uint8_t) + (2 * sizeof(double));
                 valid = request.payloadBytes >= FixedBytes;
                 if (valid)
                 {
@@ -500,7 +528,10 @@ void ControlServer::Run()
                         const pose_math::RigidOffset offset{
                             {values[0], values[1], values[2]},
                             {values[6], values[3], values[4], values[5]}};
-                        valid = pose_math::IsValidOffset(offset);
+                        pose_smoothing::Configuration smoothing{};
+                        valid = pose_math::IsValidOffset(offset) &&
+                            ReadSmoothingConfiguration(
+                                rotationSourcePath + rotationSourcePathBytes + sizeof(values), smoothing);
                         if (valid)
                         {
                             std::array<char, control_protocol::MaximumPayloadBytes + 1> terminatedSource{};
@@ -509,7 +540,7 @@ void ControlServer::Run()
                             std::memcpy(terminatedRotationSource.data(), rotationSourcePath, rotationSourcePathBytes);
                             valid = registry_->QueueHmdSnapshot(enabled, logicalSlot, manualPose,
                                 terminatedSource.data(), terminatedRotationSource.data(),
-                                hidePhysicalSource, offset, revision);
+                                hidePhysicalSource, offset, smoothing, revision);
                         }
                     }
                 }

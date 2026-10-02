@@ -1,6 +1,6 @@
 {
   "language_tag": "en_US",
-  "trackswap_controller": "TrackSwap Controller",
+  "trackswap_controller": "TrackSwap VR Controller",
   "/input/a": "A Button",
   "/input/b": "B Button",
   "/input/x": "X Button",

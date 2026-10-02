@@ -57,9 +57,7 @@ namespace TrackSwap
 
             MessageBoxResult result = AppDialog.Show(
                 this,
-                Tr.Get("backup.restore.restore_button_click.restore") + backup.DisplayTime + Tr.Get("backup.restore.restore_button_click.pose_config")
-                    + backup.Summary + "\n\n"
-                    + Tr.Get("backup.restore.restore_button_click.replace_tracking_overrides_current_config_automatic_backup"),
+                Tr.Format("backup.restore.confirmation", backup.DisplayTime, backup.Summary),
                 Tr.Get("backup.restore.restore_button_click.confirm_restore"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Warning);
@@ -74,7 +72,7 @@ namespace TrackSwap
                 string safetyBackup = _settingsService.RestoreTrackingOverrides(_settingsPath, backup.FilePath);
                 AppDialog.Show(
                     this,
-                    Tr.Get("backup.restore.restore_button_click.pose_config_restore_restore") + Path.GetFileName(safetyBackup),
+                    Tr.Format("backup.restore.completed_message", Path.GetFileName(safetyBackup)),
                     Tr.Get("backup.restore.restore_button_click.restore_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);

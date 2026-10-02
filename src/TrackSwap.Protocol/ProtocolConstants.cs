@@ -62,7 +62,7 @@ namespace TrackSwap.Protocol
     public static class DriverControlProtocol
     {
         public const uint Magic = 0x50575354; // "TSWP" in little-endian byte order.
-        public const ushort Version = 11;
+        public const ushort Version = 12;
         public const ushort SetSourceMessageType = 1;
         public const ushort SetOffsetMessageType = 2;
         public const ushort ApplySnapshotMessageType = 3;
@@ -75,9 +75,9 @@ namespace TrackSwap.Protocol
         public const ushort ResponseFlag = 0x8000;
         public const int HeaderBytes = 20;
         public const int MaximumPayloadBytes = 8192;
-        public const int ApplySnapshotFixedBytes = 74;
-        public const int ApplyControllerSnapshotFixedBytes = 77;
-        public const int ApplyHmdSnapshotFixedBytes = 72;
+        public const int ApplySnapshotFixedBytes = 91;
+        public const int ApplyControllerSnapshotFixedBytes = 94;
+        public const int ApplyHmdSnapshotFixedBytes = 89;
         public const int MaximumCombinedDevicePathBytes = MaximumPayloadBytes - ApplySnapshotFixedBytes;
         public const int TelemetryPoseBytes = 62;
         public const int TelemetrySnapshotBytes = 264;

@@ -9,11 +9,11 @@
       "is_dashboard_overlay": true,
       "strings": {
         "en_us": {
-          "name": "TrackSwap",
+          "name": "TrackSwap VR",
           "description": "SteamVR pose routing control surface"
         },
         "zh_cn": {
-          "name": "TrackSwap",
+          "name": "TrackSwap VR",
           "description": "SteamVR 位姿映射管理工具"
         }
       }

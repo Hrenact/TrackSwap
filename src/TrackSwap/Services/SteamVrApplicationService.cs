@@ -39,7 +39,7 @@ namespace TrackSwap.Services
                     if (disableError != EVRApplicationError.None &&
                         disableError != EVRApplicationError.UnknownApplication)
                     {
-                        throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.steamvr_auto_start_settings_failed_error_code") + (int)disableError);
+                        throw new InvalidOperationException(Tr.Format("service.steam_vr_application.set_auto_launch.steamvr_auto_start_settings_failed_error_code", (int)disableError));
                     }
 
                     // SteamVR may terminate any process whose executable belongs to a
@@ -51,7 +51,7 @@ namespace TrackSwap.Services
                     if (removeError != EVRApplicationError.None &&
                         removeError != EVRApplicationError.UnknownApplication)
                     {
-                        throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.steamvr_app_manifest_unregister_failed_error_code") + (int)removeError);
+                        throw new InvalidOperationException(Tr.Format("service.steam_vr_application.set_auto_launch.steamvr_app_manifest_unregister_failed_error_code", (int)removeError));
                     }
                     return disableError == EVRApplicationError.None;
                 }
@@ -60,7 +60,7 @@ namespace TrackSwap.Services
                 if (addError != EVRApplicationError.None &&
                     addError != EVRApplicationError.AppKeyAlreadyExists)
                 {
-                    throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.steamvr_app_manifest_register_failed_error_code") + (int)addError);
+                    throw new InvalidOperationException(Tr.Format("service.steam_vr_application.set_auto_launch.steamvr_app_manifest_register_failed_error_code", (int)addError));
                 }
 
                 identifyApplication(
@@ -75,7 +75,7 @@ namespace TrackSwap.Services
                 }
                 if (launchError != EVRApplicationError.None)
                 {
-                    throw new InvalidOperationException(Tr.Get("service.steam_vr_application.set_auto_launch.steamvr_auto_start_settings_failed_error_code") + (int)launchError);
+                    throw new InvalidOperationException(Tr.Format("service.steam_vr_application.set_auto_launch.steamvr_auto_start_settings_failed_error_code", (int)launchError));
                 }
                 return true;
             }

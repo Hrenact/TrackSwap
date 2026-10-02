@@ -68,6 +68,8 @@ add_library(driver_trackswap SHARED
     src/finger_animation.h
     src/pose_math.cpp
     src/pose_math.h
+    src/pose_smoothing.cpp
+    src/pose_smoothing.h
     src/pose_hiding_hook.cpp
     src/pose_hiding_hook.h
     src/runtime_launcher.cpp
@@ -113,7 +115,7 @@ target_include_directories(trackswap_vr_viewer PRIVATE "${CMAKE_CURRENT_SOURCE_D
 target_compile_definitions(trackswap_vr_viewer PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 target_compile_options(trackswap_vr_viewer PRIVATE /W4 /WX /permissive- /EHsc /utf-8)
 target_link_libraries(trackswap_vr_viewer PRIVATE
-    crypt32 d3d11 d3dcompiler dxgi dwmapi windowscodecs ole32 shell32 uuid)
+    crypt32 d3d11 d3dcompiler dxgi dwmapi ole32 shell32 uuid)
 set_target_properties(trackswap_vr_viewer PROPERTIES OUTPUT_NAME "TrackSwap.Viewer")
 
 install(TARGETS driver_trackswap RUNTIME DESTINATION bin/win64)
@@ -133,6 +135,18 @@ if(BUILD_TESTING)
     target_compile_definitions(trackswap_pose_math_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(trackswap_pose_math_tests PRIVATE /W4 /WX /permissive- /EHsc)
     add_test(NAME pose_math COMMAND trackswap_pose_math_tests)
+
+    add_executable(trackswap_pose_smoothing_tests
+        tests/pose_smoothing_tests.cpp
+        src/pose_smoothing.cpp
+        src/pose_smoothing.h
+    )
+    target_compile_features(trackswap_pose_smoothing_tests PRIVATE cxx_std_17)
+    target_include_directories(trackswap_pose_smoothing_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_include_directories(trackswap_pose_smoothing_tests SYSTEM PRIVATE "${openvr_SOURCE_DIR}/headers")
+    target_compile_definitions(trackswap_pose_smoothing_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_options(trackswap_pose_smoothing_tests PRIVATE /W4 /WX /permissive- /EHsc)
+    add_test(NAME pose_smoothing COMMAND trackswap_pose_smoothing_tests)
 
     add_executable(trackswap_finger_animation_tests
         tests/finger_animation_tests.cpp

@@ -42,6 +42,9 @@ namespace TrackSwap.Protocol
 
         public PoseOffset Offset { get; set; } = PoseOffset.Identity();
 
+        public MotionSmoothingConfiguration MotionSmoothing { get; set; } =
+            new MotionSmoothingConfiguration();
+
         /// <summary>
         /// Absolute standing-space pose used when PoseSourceKind is Manual.
         /// Translation is expressed in centimetres.

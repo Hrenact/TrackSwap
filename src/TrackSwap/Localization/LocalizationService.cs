@@ -62,14 +62,14 @@ namespace TrackSwap.Localization
         {
             if (string.IsNullOrWhiteSpace(key))
             {
-                return "⟦missing-key⟧";
+                return "[missing-key]";
             }
             if (_activeTranslations.TryGetValue(key, out string translated) &&
                 !string.IsNullOrWhiteSpace(translated))
             {
                 return translated;
             }
-            return "⟦" + key + "⟧";
+            return "[" + key + "]";
         }
 
         public bool IsMissing(string key)

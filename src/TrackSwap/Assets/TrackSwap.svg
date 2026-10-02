@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
-  <title id="title">TrackSwap</title>
+  <title id="title">TrackSwap VR</title>
   <desc id="description">A centered triangular tracking device with a pose locator.</desc>
 
   <rect x="8" y="8" width="496" height="496" rx="28" fill="#121212"/>

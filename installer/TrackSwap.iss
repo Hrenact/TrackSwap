@@ -1,5 +1,5 @@
 #ifndef TrackSwapVersion
-  #define TrackSwapVersion "v010"
+  #define TrackSwapVersion "v011"
 #endif
 #ifndef SourceDir
   #error SourceDir must point to a complete TrackSwap release directory.
@@ -12,14 +12,14 @@
 
 [Setup]
 AppId={#TrackSwapAppId}
-AppName=TrackSwap
+AppName=TrackSwap VR
 AppVersion={#TrackSwapVersion}
 AppPublisher=Hrenact
 AppPublisherURL=https://github.com/Hrenact/TrackSwap
 AppSupportURL=https://github.com/Hrenact/TrackSwap/issues
 AppUpdatesURL=https://github.com/Hrenact/TrackSwap/releases
 DefaultDirName={localappdata}\Programs\TrackSwap
-DefaultGroupName=TrackSwap
+DefaultGroupName=TrackSwap VR
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 LicenseFile={#SourceDir}\LICENSE
@@ -37,9 +37,9 @@ CloseApplications=yes
 RestartApplications=no
 AppMutex=Local\TrackSwap.UI.v1,Local\TrackSwap.Runtime.v1
 MinVersion=10.0.17763
-VersionInfoDescription=TrackSwap 安装程序
+VersionInfoDescription=TrackSwap VR 安装程序
 VersionInfoCompany=Hrenact
-VersionInfoProductName=TrackSwap
+VersionInfoProductName=TrackSwap VR
 VersionInfoCopyright=Copyright (C) 2026 Hrenact
 
 [Languages]
@@ -52,11 +52,15 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb"
 
 [Icons]
-Name: "{autoprograms}\TrackSwap"; Filename: "{app}\TrackSwap.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\TrackSwap"; Filename: "{app}\TrackSwap.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\TrackSwap VR"; Filename: "{app}\TrackSwap.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\TrackSwap VR"; Filename: "{app}\TrackSwap.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+
+[InstallDelete]
+Type: files; Name: "{autoprograms}\TrackSwap.lnk"
+Type: files; Name: "{autodesktop}\TrackSwap.lnk"
 
 [Run]
-Filename: "{app}\TrackSwap.exe"; Description: "打开 TrackSwap"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\TrackSwap.exe"; Description: "打开 TrackSwap VR"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function PowerShellPath(): String;
@@ -91,7 +95,7 @@ function InitializeUninstall(): Boolean;
 begin
   if SteamVrIsRunning() then
   begin
-    MsgBox('SteamVR 仍在运行。请完全退出 SteamVR 后再卸载 TrackSwap。', mbError, MB_OK);
+    MsgBox('SteamVR 仍在运行。请完全退出 SteamVR 后再卸载 TrackSwap VR。', mbError, MB_OK);
     Result := False;
     exit;
   end;
@@ -123,7 +127,7 @@ begin
     if not RunPowerShellScript(
       ExpandConstant('{app}\scripts\Install-Driver.ps1'),
       '-DriverPath "' + ExpandConstant('{app}\driver\trackswap') + '" -ReplaceExisting') then
-      RaiseException('TrackSwap 驱动注册失败。请确认 SteamVR 已完全退出，并检查安装日志。');
+      RaiseException('TrackSwap VR 驱动注册失败。请确认 SteamVR 已完全退出，并检查安装日志。');
 
     ManifestArguments := '-Mode Install -ManifestPath "' +
       ExpandConstant('{app}\TrackSwap.vrmanifest') + '" -JsonLibraryPath "' +
@@ -131,7 +135,7 @@ begin
     if not RunPowerShellScript(
       ExpandConstant('{app}\scripts\Manage-SteamVrRegistration.ps1'),
       ManifestArguments) then
-      RaiseException('TrackSwap 的 SteamVR 应用信息注册失败。请检查安装日志。');
+      RaiseException('TrackSwap VR 的 SteamVR 应用信息注册失败。请检查安装日志。');
   end;
 end;
 
@@ -147,11 +151,11 @@ begin
     if not RunPowerShellScript(
       ExpandConstant('{app}\scripts\Manage-SteamVrRegistration.ps1'),
       ManifestArguments) then
-      RaiseException('无法清理 TrackSwap 的 SteamVR 配置。卸载已停止，配置仍被保留。');
+      RaiseException('无法清理 TrackSwap VR 的 SteamVR 配置。卸载已停止，配置仍被保留。');
 
     if not RunPowerShellScript(
       ExpandConstant('{app}\scripts\Uninstall-Driver.ps1'),
       '') then
-      RaiseException('无法注销 TrackSwap 驱动。卸载已停止，驱动仍被保留。');
+      RaiseException('无法注销 TrackSwap VR 驱动。卸载已停止，驱动仍被保留。');
   end;
 end;

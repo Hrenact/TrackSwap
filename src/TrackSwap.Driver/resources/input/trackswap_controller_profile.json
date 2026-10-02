@@ -40,8 +40,8 @@
   ],
   "simulation_settings": {
     "hmd_profile": "rift",
-    "left_modelnumber": "TrackSwap Touch Left",
-    "right_modelnumber": "TrackSwap Touch Right",
+    "left_modelnumber": "TrackSwap VR Touch Left",
+    "right_modelnumber": "TrackSwap VR Touch Right",
     "left_serialnumber": "TRKSWAP-CONTROLLER-L",
     "right_serialnumber": "TRKSWAP-CONTROLLER-R",
     "left_rendermodel": "oculus_quest2_controller_left",

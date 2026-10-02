@@ -3,8 +3,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
 using TrackSwap.Localization;
 using TrackSwap.Services;
 
@@ -24,10 +22,6 @@ namespace TrackSwap
                 typeof(ComboBoxItem),
                 FrameworkElement.RequestBringIntoViewEvent,
                 new RequestBringIntoViewEventHandler(OnComboBoxItemRequestBringIntoView));
-            EventManager.RegisterClassHandler(
-                typeof(FrameworkElement),
-                UIElement.PreviewMouseLeftButtonDownEvent,
-                new MouseButtonEventHandler(OnLocalizedFallbackClicked));
         }
 
         protected override void OnStartup(StartupEventArgs e)
@@ -107,36 +101,5 @@ namespace TrackSwap
             }
         }
 
-        private static void OnLocalizedFallbackClicked(object sender, MouseButtonEventArgs e)
-        {
-            DependencyObject current = e.OriginalSource as DependencyObject;
-            while (current != null)
-            {
-                string text = current is TextBlock textBlock
-                    ? textBlock.Text
-                    : current is ContentControl contentControl && contentControl.Content is string content
-                        ? content
-                        : null;
-                if (TryExtractFallbackKey(text, out string key))
-                {
-                    Clipboard.SetText(key);
-                    e.Handled = true;
-                    return;
-                }
-                current = VisualTreeHelper.GetParent(current);
-            }
-        }
-
-        private static bool TryExtractFallbackKey(string value, out string key)
-        {
-            key = null;
-            if (string.IsNullOrWhiteSpace(value) || value.Length < 3 ||
-                value[0] != '⟦' || value[value.Length - 1] != '⟧')
-            {
-                return false;
-            }
-            key = value.Substring(1, value.Length - 2);
-            return key.Length != 0;
-        }
     }
 }

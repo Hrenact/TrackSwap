@@ -35,8 +35,10 @@ namespace TrackSwap.Services
                 IntPtr table = _getInterface(interfaceVersion, ref error);
                 if (table == IntPtr.Zero || error != EVRInitError.None)
                 {
-                    throw new InvalidOperationException(
-                        Tr.Get("service.open_vr_interop.get_interface.cannot_openvr") + interfaceVersion + Tr.Get("service.open_vr_interop.get_interface.error_code") + (int)error);
+                    throw new InvalidOperationException(Tr.Format(
+                        "service.open_vr_interop.get_interface.failed",
+                        interfaceVersion,
+                        (int)error));
                 }
                 return table;
             }
@@ -183,8 +185,9 @@ namespace TrackSwap.Services
                 init(ref error, EVRApplicationType.Utility, null);
                 if (error != EVRInitError.None)
                 {
-                    throw new InvalidOperationException(
-                        Tr.Get("service.open_vr_interop.ensure_initialized.openvr_failed_error_code") + (int)error);
+                    throw new InvalidOperationException(Tr.Format(
+                        "service.open_vr_interop.ensure_initialized.failed",
+                        (int)error));
                 }
 
                 _libraryPath = libraryPath;

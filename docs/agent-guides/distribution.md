@@ -4,6 +4,7 @@ Read this file before changing the installer, uninstaller, Steam depot tooling, 
 
 ## Installer and Uninstaller
 
+- The user-facing product name is `TrackSwap VR`. Preserve compatibility identifiers as `TrackSwap`: executable and assembly names, namespaces, GitHub repository paths, installer `AppId`, install/data directories, named pipes, mutexes, manifest filename/app key, driver identifiers, configuration schema keys, and release archive filenames. Installer upgrades remove obsolete `TrackSwap` shortcuts while creating `TrackSwap VR` shortcuts.
 - The primary Windows distribution is an unsigned Inno Setup installer until a maintainer adds code signing. Keep the complete ZIP as the portable/manual fallback.
 - Install per user by default under `%LOCALAPPDATA%\Programs\TrackSwap`; do not require elevation for the normal path.
 - Installation and uninstallation must refuse to mutate SteamVR integration while `vrserver`, `vrmonitor`, or `vrcompositor` is running.

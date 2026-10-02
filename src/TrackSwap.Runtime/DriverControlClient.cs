@@ -77,6 +77,7 @@ internal static class DriverControlClient
                 ? route!.ManualPose ?? PoseOffset.DefaultManualPose()
                 : route?.Offset ?? PoseOffset.Identity();
             WriteOffsetForOpenVr(writer, offset);
+            WriteMotionSmoothing(writer, enabled ? route?.MotionSmoothing : null);
         }
         return SendAccepted(DriverControlProtocol.ApplySnapshotMessageType, payloadStream.ToArray(), timeout);
     }
@@ -127,6 +128,7 @@ internal static class DriverControlClient
                 ? route!.ManualPose ?? PoseOffset.DefaultManualPose()
                 : route?.Offset ?? PoseOffset.Identity();
             WriteOffsetForOpenVr(writer, offset);
+            WriteMotionSmoothing(writer, enabled ? route?.MotionSmoothing : null);
         }
         return SendAccepted(DriverControlProtocol.ApplyControllerSnapshotMessageType, payloadStream.ToArray(), timeout);
     }
@@ -184,6 +186,7 @@ internal static class DriverControlClient
                 manualPose
                     ? route!.ManualPose ?? PoseOffset.DefaultManualPose()
                     : route?.Offset ?? PoseOffset.Identity());
+            WriteMotionSmoothing(writer, enabled ? route?.MotionSmoothing : null);
         }
         return payloadStream.ToArray();
     }
@@ -382,6 +385,20 @@ internal static class DriverControlClient
         writer.Write(offset.RotationW);
     }
 
+    private static void WriteMotionSmoothing(
+        BinaryWriter writer,
+        MotionSmoothingConfiguration? smoothing)
+    {
+        smoothing ??= new MotionSmoothingConfiguration();
+        byte flags = 0;
+        if (smoothing.Enabled) flags |= 0x01;
+        if (smoothing.SmoothPosition) flags |= 0x02;
+        if (smoothing.SmoothRotation) flags |= 0x04;
+        writer.Write(flags);
+        writer.Write(smoothing.PositionStrength);
+        writer.Write(smoothing.RotationStrength);
+    }
+
     internal static double ToOpenVrMetres(double centimetres)
     {
         return centimetres / CentimetresPerMetre;
@@ -429,7 +446,7 @@ internal static class DriverControlClient
         }
         catch (OperationCanceledException exception)
         {
-            throw new TimeoutException("连接 TrackSwap 驱动超时。", exception);
+            throw new TimeoutException("连接 TrackSwap VR 驱动超时。", exception);
         }
         pipe.ReadMode = PipeTransmissionMode.Byte;
 
@@ -457,7 +474,7 @@ internal static class DriverControlClient
         }
         catch (OperationCanceledException exception)
         {
-            throw new TimeoutException("等待 TrackSwap 驱动响应超时。", exception);
+            throw new TimeoutException("等待 TrackSwap VR 驱动响应超时。", exception);
         }
 
         using var headerStream = new MemoryStream(header, writable: false);
@@ -483,7 +500,7 @@ internal static class DriverControlClient
         }
         catch (OperationCanceledException exception)
         {
-            throw new TimeoutException("读取 TrackSwap 驱动响应超时。", exception);
+            throw new TimeoutException("读取 TrackSwap VR 驱动响应超时。", exception);
         }
 
         try

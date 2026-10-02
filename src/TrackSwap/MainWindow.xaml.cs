@@ -153,6 +153,10 @@ namespace TrackSwap
         private RouteConfiguration _selectedRoute;
         private bool _showingSettings;
         private bool _loadingLanguageSelection;
+        private bool _updatingMotionSmoothingControls;
+        private bool _updatingRotationEditorControls;
+        private bool _languageIssuesExpanded;
+        private bool _languageIssuesTogglePending;
         private string _languageLocale = LocalizationService.OfficialLocale;
         private SettingsSection _settingsSection = SettingsSection.Runtime;
         private bool _showSteamVrRoleTargets;
@@ -162,6 +166,7 @@ namespace TrackSwap
         private bool _hideSourceInPreview;
         private bool _hideTargetInPreview;
         private bool _showProxyInPreview;
+        private bool _useEulerRotationEditor = true;
         private bool _followSteamVrWithTrackSwap;
         private bool _steamVrObservedForUiLifecycle;
         private bool _steamVrUiCloseScheduled;
@@ -188,6 +193,7 @@ namespace TrackSwap
             _hideSourceInPreview = preferences.HideSourceInPreview;
             _hideTargetInPreview = preferences.HideTargetInPreview;
             _showProxyInPreview = preferences.ShowProxyInPreview;
+            _useEulerRotationEditor = preferences.UseEulerRotationEditor;
             _runtimeLifecycleMode = preferences.RuntimeLifecycleMode;
             _followSteamVrWithTrackSwap = preferences.FollowSteamVrWithTrackSwap;
             ShowSteamVrRoleTargetsCheckBox.IsChecked = _showSteamVrRoleTargets;
@@ -241,11 +247,15 @@ namespace TrackSwap
             OffsetRotationYTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
             OffsetRotationZTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
             OffsetRotationWTextBox.TextChanged += RuntimeOffsetTextBox_TextChanged;
-            foreach (TextBox field in GetOffsetTextBoxes())
+            OffsetEulerXTextBox.TextChanged += RuntimeEulerTextBox_TextChanged;
+            OffsetEulerYTextBox.TextChanged += RuntimeEulerTextBox_TextChanged;
+            OffsetEulerZTextBox.TextChanged += RuntimeEulerTextBox_TextChanged;
+            foreach (TextBox field in GetOffsetEditorTextBoxes())
             {
                 field.PreviewTextInput += RuntimeOffsetTextBox_PreviewTextInput;
                 DataObject.AddPastingHandler(field, RuntimeOffsetTextBox_Pasting);
             }
+            UpdateRotationEditorModePresentation();
             LoadOscFields(_workingOsc);
             LoadXInputFields(_workingXInput);
             OscListenAddressTextBox.TextChanged += (_, __) => ScheduleOscSettingsApply(immediate: false);
@@ -279,7 +289,7 @@ namespace TrackSwap
             _statusTimer.Tick += async (_, __) => await RefreshStatusAsync();
             _deviceRefreshTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(2)
+                Interval = TimeSpan.FromSeconds(1)
             };
             _deviceRefreshTimer.Tick += async (_, __) => await RefreshDevicesAsync();
             _telemetryTimer = new DispatcherTimer
@@ -619,7 +629,6 @@ namespace TrackSwap
                 string previousRuntimeTargetPath = (RuntimeTargetComboBox.SelectedItem as TargetOption)?.TargetPath;
                 _settingsPath = _pathService.FindSettingsPath();
                 SettingsPathText.Text = _settingsPath ?? Tr.Get("app.refresh_all.not_found_steamvr_vrsettings");
-                DeviceHistoryPathText.Text = _deviceHistoryService.FilePath;
                 ViewRawButton.IsEnabled = !string.IsNullOrWhiteSpace(_settingsPath) && File.Exists(_settingsPath);
                 RestoreBackupButton.IsEnabled = ViewRawButton.IsEnabled;
 
@@ -644,26 +653,95 @@ namespace TrackSwap
                     }
                 }
 
-                IReadOnlyList<DeviceOption> onlinePhysicalDevices = onlineSources
+                IReadOnlyList<DeviceOption> rawOnlinePhysicalDevices = onlineSources
                     .Where(IsPhysicalDevice)
                     .ToList();
-                _deviceHistoryService.Remember(onlinePhysicalDevices);
+                _deviceHistoryService.Remember(rawOnlinePhysicalDevices);
+                IReadOnlyList<DeviceOption> onlinePhysicalDevices =
+                    _deviceHistoryService.ApplyCustomNames(rawOnlinePhysicalDevices);
                 _onlinePhysicalDevices = onlinePhysicalDevices;
-                IReadOnlyList<DeviceOption> rememberedDevices = _deviceHistoryService.Load();
-                var onlineDevicePaths = new HashSet<string>(
-                    onlinePhysicalDevices.Select(device => device.DevicePath),
+                DeviceManagementCatalog deviceCatalog = _deviceHistoryService.LoadCatalog();
+                IReadOnlyList<DeviceOption> rememberedDevices = deviceCatalog.Devices
+                    .Select(device => device.ToDeviceOption())
+                    .ToList();
+                var onlineDevicesByPath = onlinePhysicalDevices.ToDictionary(
+                    device => device.DevicePath,
                     StringComparer.Ordinal);
-                IReadOnlyList<DeviceHistoryListItem> historyItems = rememberedDevices
-                    .Select(device => new DeviceHistoryListItem(
-                        DeviceOption.BaseDisplayName(device.DisplayName),
-                        device.DevicePath,
-                        onlineDevicePaths.Contains(device.DevicePath)))
+                var receiversById = deviceCatalog.Receivers.ToDictionary(
+                    receiver => receiver.ReceiverId,
+                    receiver => receiver,
+                    StringComparer.Ordinal);
+                string ReceiverName(string receiverId)
+                {
+                    if (string.IsNullOrWhiteSpace(receiverId))
+                    {
+                        return Tr.Get("common.status.unknown");
+                    }
+                    return receiversById.TryGetValue(receiverId, out ManagedReceiverRecord receiver)
+                        ? receiver.DisplayName
+                        : receiverId;
+                }
+
+                IReadOnlyList<DeviceHistoryListItem> historyItems = deviceCatalog.Devices
+                    .Select(device =>
+                    {
+                        onlineDevicesByPath.TryGetValue(device.DevicePath, out DeviceOption onlineDevice);
+                        return new DeviceHistoryListItem(
+                            device,
+                            onlineDevice != null,
+                            onlineDevice == null || string.IsNullOrWhiteSpace(onlineDevice.ConnectedWirelessDongleId)
+                                ? Tr.Get("common.value.none")
+                                : ReceiverName(onlineDevice.ConnectedWirelessDongleId),
+                            ReceiverName(device.LastConnectedReceiverId));
+                    })
                     .OrderByDescending(device => device.IsOnline)
                     .ThenBy(device => device.DisplayName, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
-                DeviceHistoryCountText.Text = historyItems.Count + Tr.Get("app.refresh_all.device");
+                DeviceHistoryCountText.Text = Tr.Format("settings.devices.device_count", historyItems.Count);
                 DeviceHistoryItemsControl.ItemsSource = historyItems;
                 EmptyDeviceHistoryText.Visibility = historyItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+                IReadOnlyList<ReceiverHistoryListItem> receiverItems = deviceCatalog.Receivers
+                    .Select(receiver =>
+                    {
+                        IReadOnlyList<string> connectedDevices = onlinePhysicalDevices
+                            .Where(device => string.Equals(
+                                device.ConnectedWirelessDongleId,
+                                receiver.ReceiverId,
+                                StringComparison.Ordinal))
+                            .Select(device => DeviceOption.BaseDisplayName(device.DisplayName))
+                            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+                            .ToList();
+                        return new ReceiverHistoryListItem(receiver, connectedDevices);
+                    })
+                    .OrderByDescending(receiver => receiver.IsInUse)
+                    .ThenBy(receiver => receiver.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+                ReceiverHistoryCountText.Text = Tr.Format("settings.devices.receiver_count", receiverItems.Count);
+                ReceiverHistoryItemsControl.ItemsSource = receiverItems;
+                EmptyReceiverHistoryText.Visibility = receiverItems.Count == 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+
+                IReadOnlyList<DeviceConnectionListItem> connectionItems = deviceCatalog.Devices
+                    .Select(device =>
+                    {
+                        onlineDevicesByPath.TryGetValue(device.DevicePath, out DeviceOption onlineDevice);
+                        return new DeviceConnectionListItem(
+                            device.DisplayName,
+                            onlineDevice == null || string.IsNullOrWhiteSpace(onlineDevice.ConnectedWirelessDongleId)
+                                ? Tr.Get("common.value.none")
+                                : ReceiverName(onlineDevice.ConnectedWirelessDongleId),
+                            ReceiverName(device.LastConnectedReceiverId),
+                            onlineDevice != null && !string.IsNullOrWhiteSpace(onlineDevice.ConnectedWirelessDongleId));
+                    })
+                    .OrderByDescending(connection => connection.HasCurrentConnection)
+                    .ThenBy(connection => connection.DeviceDisplayName, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+                DeviceConnectionItemsControl.ItemsSource = connectionItems;
+                EmptyDeviceConnectionsText.Visibility = connectionItems.Count == 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
                 _knownPhysicalDevices = MergeDeviceCatalog(
                     onlinePhysicalDevices,
                     rememberedDevices);
@@ -713,7 +791,7 @@ namespace TrackSwap
 
                 if (!string.IsNullOrWhiteSpace(enumerationWarning))
                 {
-                    RefreshButton.ToolTip = Tr.Get("app.refresh_all.online_device_read_failed_config") + enumerationWarning;
+                    RefreshButton.ToolTip = Tr.Format("app.refresh_all.online_device_read_failed_config", enumerationWarning);
                 }
                 else
                 {
@@ -760,8 +838,9 @@ namespace TrackSwap
                     }
                     catch (Exception exception)
                     {
-                        RefreshButton.ToolTip =
-                            Tr.Get("app.refresh_devices_async.device_scan_failed_preserve_up") + exception.Message;
+                        RefreshButton.ToolTip = Tr.Format(
+                            "app.refresh_devices_async.device_scan_failed_preserve_up",
+                            exception.Message);
                         return;
                     }
                 }
@@ -770,9 +849,11 @@ namespace TrackSwap
                     OpenVrInterop.Reset();
                 }
 
-                IReadOnlyList<DeviceOption> physicalDevices = onlineSources
+                IReadOnlyList<DeviceOption> rawPhysicalDevices = onlineSources
                     .Where(IsPhysicalDevice)
                     .ToList();
+                IReadOnlyList<DeviceOption> physicalDevices =
+                    _deviceHistoryService.ApplyCustomNames(rawPhysicalDevices);
                 if (steamVrRunning == _lastDeviceRefreshSteamVrRunning &&
                     DeviceCatalogsEqual(_onlinePhysicalDevices, physicalDevices))
                 {
@@ -803,6 +884,10 @@ namespace TrackSwap
                     !string.Equals(device.DisplayName, match.DisplayName, StringComparison.Ordinal) ||
                     !string.Equals(device.RoleTargetPath, match.RoleTargetPath, StringComparison.Ordinal) ||
                     !string.Equals(device.RenderModelName, match.RenderModelName, StringComparison.Ordinal) ||
+                    !string.Equals(
+                        device.ConnectedWirelessDongleId,
+                        match.ConnectedWirelessDongleId,
+                        StringComparison.Ordinal) ||
                     device.DeviceKind != match.DeviceKind)
                 {
                     return false;
@@ -882,11 +967,12 @@ namespace TrackSwap
                         : currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
                             ? BuildConfiguredRuntimeTargetName(currentTargetPath)
                             : DeviceNameFromPath(currentTargetPath);
-                string currentPrefix = currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
-                    ? string.Empty
-                    : currentDevice?.IsOnline == true ? Tr.Get("device.status.online_prefix") : Tr.Get("device.status.offline_prefix");
                 targets.Add(new TargetOption(
-                    currentPrefix + currentName,
+                    currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
+                        ? currentName
+                        : currentDevice?.IsOnline == true
+                            ? Tr.Format("device.status.online", currentName)
+                            : Tr.Format("device.status.offline", currentName),
                     currentTargetPath,
                     currentTargetPath.StartsWith("/user/", StringComparison.Ordinal)
                         ? (bool?)null
@@ -898,7 +984,7 @@ namespace TrackSwap
                 if (knownPaths.Add(device.DevicePath))
                 {
                     targets.Add(new TargetOption(
-                        Tr.Get("device.status.online_prefix") + DeviceOption.BaseDisplayName(device.DisplayName),
+                        Tr.Format("device.status.online", DeviceOption.BaseDisplayName(device.DisplayName)),
                         device.DevicePath,
                         true));
                 }
@@ -909,7 +995,7 @@ namespace TrackSwap
                 if (knownPaths.Add(device.DevicePath))
                 {
                     targets.Add(new TargetOption(
-                        Tr.Get("device.status.offline_prefix") + DeviceOption.BaseDisplayName(device.DisplayName),
+                        Tr.Format("device.status.offline", DeviceOption.BaseDisplayName(device.DisplayName)),
                         device.DevicePath,
                         false));
                 }
@@ -919,7 +1005,7 @@ namespace TrackSwap
             {
                 targets.Add(new TargetOption(
                     target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal)
-                        ? Tr.Get("device.status.offline_prefix") + DeviceOption.BaseDisplayName(target.DisplayName)
+                        ? Tr.Format("device.status.offline", DeviceOption.BaseDisplayName(target.DisplayName))
                         : target.DisplayName,
                     target.TargetPath,
                     target.TargetPath.StartsWith("/devices/", StringComparison.Ordinal)
@@ -970,9 +1056,13 @@ namespace TrackSwap
             {
                 result.Add(CloneDeviceOption(
                     current,
-                    (current?.IsOnline == true ? Tr.Get("device.status.online_prefix") : Tr.Get("device.status.offline_prefix")) + (current != null
-                        ? DeviceOption.BaseDisplayName(current.DisplayName)
-                        : DeviceNameFromPath(currentDevicePath)),
+                    current?.IsOnline == true
+                        ? Tr.Format("device.status.online", DeviceOption.BaseDisplayName(current.DisplayName))
+                        : Tr.Format(
+                            "device.status.offline",
+                            current != null
+                                ? DeviceOption.BaseDisplayName(current.DisplayName)
+                                : DeviceNameFromPath(currentDevicePath)),
                     currentDevicePath));
             }
 
@@ -981,7 +1071,7 @@ namespace TrackSwap
             {
                 result.Add(CloneDeviceOption(
                     device,
-                    Tr.Get("device.status.online_prefix") + DeviceOption.BaseDisplayName(device.DisplayName),
+                    Tr.Format("device.status.online", DeviceOption.BaseDisplayName(device.DisplayName)),
                     device.DevicePath));
             }
             foreach (DeviceOption device in knownDevices.Where(device =>
@@ -989,7 +1079,7 @@ namespace TrackSwap
             {
                 result.Add(CloneDeviceOption(
                     device,
-                    Tr.Get("device.status.offline_prefix") + DeviceOption.BaseDisplayName(device.DisplayName),
+                    Tr.Format("device.status.offline", DeviceOption.BaseDisplayName(device.DisplayName)),
                     device.DevicePath));
             }
             return result;
@@ -1009,7 +1099,8 @@ namespace TrackSwap
                 device?.RoleTargetPath,
                 device?.RenderModelName,
                 device?.DeviceKind ?? TrackedDeviceKind.Unknown,
-                PoseSourceKind.Device);
+                PoseSourceKind.Device,
+                device?.ConnectedWirelessDongleId);
         }
 
         private static bool IsPhysicalDevice(DeviceOption device)
@@ -1147,7 +1238,7 @@ namespace TrackSwap
                 status.DriverAppliedRevision == status.ConfigurationRevision;
             RuntimeAppliedStateText.Text = applied
                 ? Tr.Get("route.status.applied")
-                : Tr.Get("app.show_runtime_online.apply_driver") + status.DriverAppliedRevision.ToString(CultureInfo.InvariantCulture);
+                : Tr.Format("app.show_runtime_online.apply_driver", status.DriverAppliedRevision);
             RuntimeAppliedStateText.Foreground = FindBrush(applied ? "SuccessBrush" : "WarningBrush");
             string runtimeError = string.Join(
                 Environment.NewLine,
@@ -1203,7 +1294,7 @@ namespace TrackSwap
             RuntimeRevisionText.Text = "—";
             RuntimeAppliedStateText.Text = Tr.Get("app.show_runtime_offline.available");
             RuntimeAppliedStateText.Foreground = FindBrush("MutedTextBrush");
-            RuntimeErrorText.Text = Tr.Get("app.show_runtime_offline.cannot_connect_trackswap_runtime") + error;
+            RuntimeErrorText.Text = Tr.Format("app.show_runtime_offline.cannot_connect_trackswap_runtime", error);
             RuntimeErrorText.Visibility = Visibility.Visible;
             StartRuntimeButton.IsEnabled = true;
             UpdateDiagnosticConfigurationState(null);
@@ -1233,15 +1324,15 @@ namespace TrackSwap
                 if (hasReceiveError)
                 {
                     issues.Add(status.ReceivePortInUse
-                        ? Tr.Get("settings.osc.update_osc_status_indicator.osc_receive_port") + endpoint + Tr.Get("settings.osc.update_osc_status_indicator.close_receive_port")
-                        : Tr.Get("settings.osc.receive.failed_prefix") + endpoint + "：" + status.LastError);
+                        ? Tr.Format("settings.osc.receive.port_in_use", endpoint)
+                        : Tr.Format("settings.osc.receive.failed", endpoint, status.LastError));
                 }
                 if (hasSendError)
                 {
                     string sendEndpoint = string.IsNullOrWhiteSpace(status.SendEndpoint)
                         ? Tr.Get("settings.osc.update_osc_status_indicator.current_target")
                         : status.SendEndpoint;
-                    issues.Add(Tr.Get("settings.osc.update_osc_status_indicator.osc_cannot") + sendEndpoint + Tr.Get("settings.osc.update_osc_status_indicator.haptic_feedback") + status.LastSendError);
+                    issues.Add(Tr.Format("settings.osc.haptics.send_failed", sendEndpoint, status.LastSendError));
                 }
                 SetStatusIndicator(
                     OscStatusDot,
@@ -1253,7 +1344,7 @@ namespace TrackSwap
             }
             if (!status.Listening)
             {
-                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "WarningBrush", Tr.Get("settings.osc.receive.preparing_prefix") + endpoint);
+                SetStatusIndicator(OscStatusDot, OscStatusText, OscStatusBadge, "WarningBrush", Tr.Format("settings.osc.receive.preparing", endpoint));
                 return;
             }
             bool hasRecentSignal = status.LastMessageAtUtc.HasValue;
@@ -1269,8 +1360,8 @@ namespace TrackSwap
                 OscStatusBadge,
                 hasRecentSignal ? "SuccessBrush" : "WarningBrush",
                 hasRecentSignal
-                    ? Tr.Get("settings.osc.update_osc_status_indicator.osc_in_progress") + endpoint + Tr.Get("settings.osc.signal_suffix")
-                    : Tr.Get("settings.osc.receive.listening_prefix") + endpoint + Tr.Get("settings.osc.update_osc_status_indicator.waiting"));
+                    ? Tr.Format("settings.osc.receive.active", endpoint)
+                    : Tr.Format("settings.osc.receive.waiting", endpoint));
         }
 
         private void UpdateXInputStatusIndicator(XInputRuntimeStatus status)
@@ -1303,18 +1394,19 @@ namespace TrackSwap
             {
                 SetStatusIndicator(PhysicalSourceHidingStatusDot, PhysicalSourceHidingStatusText,
                     PhysicalSourceHidingStatusBadge, "DestructiveBrush",
-                    Tr.Get("settings.advanced.physical_source_hiding.failed") +
-                    (string.IsNullOrWhiteSpace(status.LastError) ? string.Empty : "\n" + status.LastError));
+                    string.IsNullOrWhiteSpace(status.LastError)
+                        ? Tr.Get("settings.advanced.physical_source_hiding.failed")
+                        : Tr.Format("settings.advanced.physical_source_hiding.failed_with_error", status.LastError));
                 return;
             }
             if (status.State == PhysicalSourceHidingState.Waiting)
             {
                 SetStatusIndicator(PhysicalSourceHidingStatusDot, PhysicalSourceHidingStatusText,
-                    PhysicalSourceHidingStatusBadge, "WarningBrush", Tr.Get("settings.advanced.physical_source_hiding.waiting_prefix") + count + "）");
+                    PhysicalSourceHidingStatusBadge, "WarningBrush", Tr.Format("settings.advanced.physical_source_hiding.waiting", count));
                 return;
             }
             SetStatusIndicator(PhysicalSourceHidingStatusDot, PhysicalSourceHidingStatusText,
-                PhysicalSourceHidingStatusBadge, "SuccessBrush", Tr.Get("settings.advanced.update_physical_source_hiding_status_indicator.device_hide") + count + "）");
+                PhysicalSourceHidingStatusBadge, "SuccessBrush", Tr.Format("settings.advanced.physical_source_hiding.active", count));
         }
 
         private void SetStatusIndicator(System.Windows.Shapes.Ellipse dot, TextBlock text, Border badge, string brushKey, string toolTip)
@@ -1334,7 +1426,7 @@ namespace TrackSwap
                     : _settingsService.ReadOverrides(_settingsPath);
 
             OverridesItemsControl.ItemsSource = overrides;
-            OverrideCountText.Text = overrides.Count + Tr.Get("settings.steamvr.refresh_override_list.item");
+            OverrideCountText.Text = Tr.Format("settings.steamvr.override_count", overrides.Count);
             EmptyOverridesText.Visibility = overrides.Count == 0
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -1486,7 +1578,7 @@ namespace TrackSwap
                     RouteConfiguration copy = CloneRoute(route);
                     if (string.IsNullOrWhiteSpace(copy.Name))
                     {
-                        copy.Name = unnamedIndex == 0 ? Tr.Get("route.default_name") : Tr.Get("route.default_name_numbered_prefix") + unnamedIndex + ")";
+                        copy.Name = unnamedIndex == 0 ? Tr.Get("route.default_name") : Tr.Format("route.default_name_numbered", unnamedIndex);
                     }
                     unnamedIndex++;
                     _workingRoutes.Add(copy);
@@ -1531,7 +1623,23 @@ namespace TrackSwap
                     RotationZ = offset.RotationZ,
                     RotationW = offset.RotationW
                 },
+                MotionSmoothing = CloneMotionSmoothing(
+                    route.MotionSmoothing ?? new MotionSmoothingConfiguration()),
                 ManualPose = ClonePoseOffset(route.ManualPose ?? PoseOffset.DefaultManualPose())
+            };
+        }
+
+        private static MotionSmoothingConfiguration CloneMotionSmoothing(
+            MotionSmoothingConfiguration value)
+        {
+            return new MotionSmoothingConfiguration
+            {
+                Enabled = value.Enabled,
+                SmoothPosition = value.SmoothPosition,
+                SmoothRotation = value.SmoothRotation,
+                LinkStrengths = value.LinkStrengths,
+                PositionStrength = value.PositionStrength,
+                RotationStrength = value.RotationStrength
             };
         }
 
@@ -1648,6 +1756,9 @@ namespace TrackSwap
                 LoadOffsetFields(route.PoseSourceKind == PoseSourceKind.Manual
                     ? route.ManualPose ?? PoseOffset.DefaultManualPose()
                     : route.Offset ?? PoseOffset.Identity());
+                LoadMotionSmoothingControls(
+                    route.MotionSmoothing ?? new MotionSmoothingConfiguration(),
+                    !route.PendingDeletion);
                 SelectedProxyText.Text = route.Mode == RouteMode.Unspecified
                     ? Tr.Get("route.show_selected_route.select_mode")
                     : route.Mode == RouteMode.VirtualController
@@ -1798,7 +1909,7 @@ namespace TrackSwap
             }
             if (_workingRoutes.Count >= ProtocolConstants.MaximumRoutes)
             {
-                AppDialog.Show(this, Tr.Get("route.limit.prefix") + ProtocolConstants.MaximumRoutes + Tr.Get("route.add_route_button_click.item"), Tr.Get("route.add_route_button_click.cannot"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(this, Tr.Format("route.limit.message", ProtocolConstants.MaximumRoutes), Tr.Get("route.add_route_button_click.cannot"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -1827,7 +1938,7 @@ namespace TrackSwap
             }
             for (int index = 1; ; index++)
             {
-                string candidate = Tr.Get("route.default_name_numbered_prefix") + index.ToString(CultureInfo.InvariantCulture) + ")";
+                string candidate = Tr.Format("route.default_name_numbered", index);
                 if (!names.Contains(candidate))
                 {
                     return candidate;
@@ -1871,7 +1982,25 @@ namespace TrackSwap
                   left.Mode == RouteMode.ReplaceTarget &&
                     string.Equals(left.TargetDevicePath, right.TargetDevicePath, StringComparison.Ordinal)) &&
                 PoseOffsetsMatch(left.Offset, right.Offset) &&
-                PoseOffsetsMatch(left.ManualPose, right.ManualPose);
+                PoseOffsetsMatch(left.ManualPose, right.ManualPose) &&
+                MotionSmoothingMatches(left.MotionSmoothing, right.MotionSmoothing);
+        }
+
+        private static bool MotionSmoothingMatches(
+            MotionSmoothingConfiguration left,
+            MotionSmoothingConfiguration right)
+        {
+            if (left == null || right == null)
+            {
+                return left == right;
+            }
+            const double tolerance = 1e-9;
+            return left.Enabled == right.Enabled &&
+                left.SmoothPosition == right.SmoothPosition &&
+                left.SmoothRotation == right.SmoothRotation &&
+                left.LinkStrengths == right.LinkStrengths &&
+                Math.Abs(left.PositionStrength - right.PositionStrength) <= tolerance &&
+                Math.Abs(left.RotationStrength - right.RotationStrength) <= tolerance;
         }
 
         private static bool PoseOffsetsMatch(PoseOffset left, PoseOffset right)
@@ -1960,11 +2089,16 @@ namespace TrackSwap
 
         private void ShowSettingsSection(SettingsSection section)
         {
+            bool enteringLanguageSection = section == SettingsSection.Language && _settingsSection != SettingsSection.Language;
             if (section != SettingsSection.XInput)
             {
                 CancelXInputCapture();
             }
             _settingsSection = section;
+            if (enteringLanguageSection)
+            {
+                SetLanguageIssuesExpanded(false);
+            }
             RuntimeSettingsPanel.Visibility = section == SettingsSection.Runtime ? Visibility.Visible : Visibility.Collapsed;
             SteamVrSettingsPanel.Visibility = section == SettingsSection.SteamVr ? Visibility.Visible : Visibility.Collapsed;
             DeviceSettingsPanel.Visibility = section == SettingsSection.Devices ? Visibility.Visible : Visibility.Collapsed;
@@ -2007,44 +2141,96 @@ namespace TrackSwap
                 LanguageComboBox.SelectedItem = _localizationService.Languages.FirstOrDefault(option =>
                     string.Equals(option.Locale, _localizationService.CurrentLocale, StringComparison.OrdinalIgnoreCase));
 
-                var issueItems = _localizationService.Issues
-                    .Select(issue => new LanguageIssueListItem(
-                        issue.Key,
-                        GetLocalizationIssueLabel(issue.Kind),
-                        GetLocalizationIssueBrush(issue.Kind),
-                        _localizationService.Translate("language.copy_hint")))
-                    .ToList();
-                LanguageIssuesItemsControl.ItemsSource = issueItems;
-                bool hasIssues = issueItems.Count != 0;
+                bool hasIssues = _localizationService.Issues.Count != 0;
                 LanguageIssuesEmptyText.Visibility = hasIssues ? Visibility.Collapsed : Visibility.Visible;
                 LanguageIssuesHeader.Visibility = hasIssues ? Visibility.Visible : Visibility.Collapsed;
                 LanguageIssuesItemsControl.Visibility = hasIssues ? Visibility.Visible : Visibility.Collapsed;
-
-                if (_localizationService.IsOfficialLanguage)
+                UpdateLanguageIssuesToggleButton();
+                if (_languageIssuesExpanded)
                 {
-                    LanguagePackStatusText.Text = string.Format(
-                        CultureInfo.CurrentCulture,
-                        _localizationService.Translate("language.status.official"),
-                        _localizationService.CatalogCount);
+                    PopulateLanguageIssueItems();
                 }
                 else
                 {
-                    int missing = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Missing);
-                    int invalid = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Invalid);
-                    int unknown = _localizationService.Issues.Count(issue => issue.Kind == LocalizationIssueKind.Stale);
-                    LanguagePackStatusText.Text = string.Format(
-                        CultureInfo.CurrentCulture,
-                        _localizationService.Translate("language.status.external"),
-                        _localizationService.CurrentLocale,
-                        missing,
-                        invalid,
-                        unknown);
+                    LanguageIssuesItemsControl.ItemsSource = null;
                 }
+
             }
             finally
             {
                 _loadingLanguageSelection = false;
             }
+        }
+
+        private void LanguageIssuesToggleButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_languageIssuesTogglePending)
+            {
+                return;
+            }
+
+            _languageIssuesTogglePending = true;
+            LanguageIssuesToggleButton.IsEnabled = false;
+            LanguageIssuesToggleButton.Content = _localizationService.Translate("language.issues.updating");
+            bool expanded = !_languageIssuesExpanded;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    SetLanguageIssuesExpanded(expanded);
+                }
+                finally
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        _languageIssuesTogglePending = false;
+                        LanguageIssuesToggleButton.IsEnabled = true;
+                        UpdateLanguageIssuesToggleButton();
+                    }), System.Windows.Threading.DispatcherPriority.ContextIdle);
+                }
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        private void SetLanguageIssuesExpanded(bool expanded)
+        {
+            _languageIssuesExpanded = expanded;
+            if (LanguageIssuesContentPanel == null)
+            {
+                return;
+            }
+
+            LanguageIssuesContentPanel.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            if (expanded)
+            {
+                PopulateLanguageIssueItems();
+            }
+            else
+            {
+                LanguageIssuesItemsControl.ItemsSource = null;
+            }
+            UpdateLanguageIssuesToggleButton();
+        }
+
+        private void PopulateLanguageIssueItems()
+        {
+            LanguageIssuesItemsControl.ItemsSource = _localizationService.Issues
+                .Select(issue => new LanguageIssueListItem(
+                    issue.Key,
+                    GetLocalizationIssueLabel(issue.Kind),
+                    GetLocalizationIssueBrush(issue.Kind),
+                    _localizationService.Translate("language.copy_hint")))
+                .ToList();
+        }
+
+        private void UpdateLanguageIssuesToggleButton()
+        {
+            if (LanguageIssuesToggleButton == null)
+            {
+                return;
+            }
+
+            string key = _languageIssuesExpanded ? "language.issues.collapse" : "language.issues.expand";
+            LanguageIssuesToggleButton.Content = _localizationService.Translate(key);
         }
 
         private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2369,9 +2555,11 @@ namespace TrackSwap
                 MigrationResult result = _dataMigrationService.Migrate(targetHasData);
                 AppDialog.Show(
                     this,
-                    Tr.Get("settings.files.migrate_legacy_data_button_click.migration") + result.FileCount + Tr.Get("settings.files.migrate_legacy_data_button_click.count_file") + steamVrBackupCount +
-                    Tr.Get("settings.files.migrate_legacy_data_button_click.count_steamvr_config_backup") + result.TargetDirectory +
-                    Tr.Get("settings.files.migration.restart_notice"),
+                    Tr.Format(
+                        "settings.files.migration.completed_message",
+                        result.FileCount,
+                        steamVrBackupCount,
+                        result.TargetDirectory),
                     Tr.Get("settings.files.migrate_legacy_data_button_click.migration_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -2385,7 +2573,7 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    Tr.Get("settings.files.migrate_legacy_data_button_click.cannot_migration") + exception.Message,
+                    Tr.Format("settings.files.migration.failed_message", exception.Message),
                     Tr.Get("settings.files.migrate_legacy_data_button_click.migration_failed"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
@@ -2436,8 +2624,12 @@ namespace TrackSwap
                 LegacyCleanupResult result = _dataMigrationService.CleanLegacyData();
                 AppDialog.Show(
                     this,
-                    Tr.Get("settings.files.cleanup_legacy_data_button_click.delete") + result.RemovedFileCount + Tr.Get("settings.files.cleanup_legacy_data_button_click.count_file") +
-                    (result.DirectoryRemoved ? Tr.Get("settings.files.cleanup_legacy_data_button_click.directory_clear_remove") : Tr.Get("settings.files.cleanup_legacy_data_button_click.directory_file_preserve")),
+                    Tr.Format(
+                        "settings.files.cleanup.completed_message",
+                        result.RemovedFileCount,
+                        result.DirectoryRemoved
+                            ? Tr.Get("settings.files.cleanup_legacy_data_button_click.directory_clear_remove")
+                            : Tr.Get("settings.files.cleanup_legacy_data_button_click.directory_file_preserve")),
                     Tr.Get("settings.files.cleanup_legacy_data_button_click.cleanup_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -2485,7 +2677,7 @@ namespace TrackSwap
                 : Tr.Get("settings.files.reset.confirmation");
             if (AppDialog.Show(
                     this,
-                    actionDescription + Tr.Get("app.reset_track_swap_async.cannot_ok"),
+                    Tr.Format("app.reset_track_swap_async.confirmation", actionDescription),
                     removeSteamIntegration ? Tr.Get("app.reset_track_swap_async.confirm_pre_uninstall") : Tr.Get("app.reset_track_swap_async.confirm_reset_trackswap"),
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -2533,7 +2725,7 @@ namespace TrackSwap
                 SetDestructiveCleanupOverlay(visible: false, removeSteamIntegration: removeSteamIntegration);
                 AppDialog.Show(
                     this,
-                    Tr.Get("app.reset_track_swap_async.cleanup_complete_complete_stop_down_file_location") + exception.Message,
+                    Tr.Format("app.reset_track_swap_async.cleanup_failed_message", exception.Message),
                     Tr.Get("common.error.cleanup_failed"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
@@ -2601,7 +2793,7 @@ namespace TrackSwap
                     dialog.FileName,
                     _runtimeStatus.Configuration,
                     CreateUiPreferencesSnapshot());
-                AppDialog.Show(this, Tr.Get("settings.files.backup.export_configuration_button_click.config_export") + dialog.FileName, Tr.Get("common.status.export_complete"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(this, Tr.Format("settings.files.backup.export_completed_message", dialog.FileName), Tr.Get("common.status.export_complete"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception exception) when (
                 exception is IOException ||
@@ -2637,10 +2829,11 @@ namespace TrackSwap
                     : string.Empty;
                 if (AppDialog.Show(
                         this,
-                        Tr.Get("settings.files.backup.import_configuration_button_click.backup") + routeCount + Tr.Get("settings.files.backup.import_configuration_button_click.item_config_create") +
-                        backup.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") +
-                        Tr.Get("settings.files.backup.import_overwrite_suffix") +
-                        riskText + Tr.Get("settings.files.backup.import_configuration_button_click.ok_import"),
+                        Tr.Format(
+                            "settings.files.backup.import_confirmation",
+                            routeCount,
+                            backup.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                            riskText),
                         Tr.Get("settings.files.backup.import_configuration_button_click.confirm_import_config"),
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -2729,6 +2922,7 @@ namespace TrackSwap
                 HideSourceInPreview = _hideSourceInPreview,
                 HideTargetInPreview = _hideTargetInPreview,
                 ShowProxyInPreview = _showProxyInPreview,
+                UseEulerRotationEditor = _useEulerRotationEditor,
                 RuntimeLifecycleMode = _runtimeLifecycleMode,
                 FollowSteamVrWithTrackSwap = _followSteamVrWithTrackSwap
             };
@@ -2776,7 +2970,10 @@ namespace TrackSwap
             DiagnosticSteamVrText.Foreground = FindBrush(
                 string.IsNullOrWhiteSpace(report.SteamVrPath) ? "WarningBrush" : "TextBrush");
 
-            DiagnosticDriverAndConfigText.Text = report.DriverRegistration + Tr.Get("settings.runtime.refresh_diagnostics_view.config") + report.Configuration;
+            DiagnosticDriverAndConfigText.Text = Tr.Format(
+                "settings.runtime.driver_and_config_summary",
+                report.DriverRegistration,
+                report.Configuration);
             DiagnosticDriverAndConfigText.ToolTip = report.DriverPath ?? Tr.Get("settings.runtime.refresh_diagnostics_view.openvr_driver_trackswap");
             DiagnosticDriverAndConfigText.Foreground = FindBrush(
                 string.Equals(report.DriverRegistration, Tr.Get("common.status.registered"), StringComparison.Ordinal) &&
@@ -2797,9 +2994,11 @@ namespace TrackSwap
             _diagnosticsReport.ConfigurationErrors = errors;
             _diagnosticsReport.Configuration = status?.Configuration == null
                 ? Tr.Get("service.diagnostics.inspect.runtime_read")
-                : errors.Count == 0 ? Tr.Get("common.status.passed") : errors.Count + Tr.Get("common.count.issue_suffix");
-            DiagnosticDriverAndConfigText.Text =
-                _diagnosticsReport.DriverRegistration + Tr.Get("settings.runtime.refresh_diagnostics_view.config") + _diagnosticsReport.Configuration;
+                : errors.Count == 0 ? Tr.Get("common.status.passed") : Tr.Format("common.count.issues", errors.Count);
+            DiagnosticDriverAndConfigText.Text = Tr.Format(
+                "settings.runtime.driver_and_config_summary",
+                _diagnosticsReport.DriverRegistration,
+                _diagnosticsReport.Configuration);
             DiagnosticDriverAndConfigText.Foreground = FindBrush(
                 string.Equals(_diagnosticsReport.DriverRegistration, Tr.Get("common.status.registered"), StringComparison.Ordinal) &&
                 string.Equals(_diagnosticsReport.Configuration, Tr.Get("common.status.passed"), StringComparison.Ordinal)
@@ -2828,7 +3027,7 @@ namespace TrackSwap
                 _diagnosticsService.Export(dialog.FileName, _runtimeStatus);
                 AppDialog.Show(
                     this,
-                    Tr.Get("settings.runtime.export_diagnostics_button_click.diagnostics_bundle_export") + dialog.FileName,
+                    Tr.Format("settings.runtime.export_completed_message", dialog.FileName),
                     Tr.Get("common.status.export_complete"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -2841,7 +3040,7 @@ namespace TrackSwap
             {
                 AppDialog.Show(
                     this,
-                    Tr.Get("settings.runtime.export_diagnostics_button_click.cannot_export_diagnostics_bundle") + exception.Message,
+                    Tr.Format("settings.runtime.export_failed_message", exception.Message),
                     Tr.Get("common.error.export_failed"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
@@ -3241,7 +3440,7 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        Tr.Get("app.sync_steam_vr_auto_launch_async.trackswap_steamvr_start_apply") + exception.Message,
+                        Tr.Format("app.sync_steam_vr_auto_launch_async.trackswap_steamvr_start_apply", exception.Message),
                         Tr.Get("app.sync_steam_vr_auto_launch_async.steamvr_start_settings"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
@@ -3294,6 +3493,7 @@ namespace TrackSwap
                 HideSourceInPreview = _hideSourceInPreview,
                 HideTargetInPreview = _hideTargetInPreview,
                 ShowProxyInPreview = _showProxyInPreview,
+                UseEulerRotationEditor = _useEulerRotationEditor,
                 RuntimeLifecycleMode = _runtimeLifecycleMode,
                 FollowSteamVrWithTrackSwap = _followSteamVrWithTrackSwap
             });
@@ -3505,8 +3705,9 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        Tr.Get("route.toggle_selected_route_async.cannot_enable_config_item_read_item_device_role") +
-                        string.Join(Environment.NewLine, dependencyErrors),
+                        Tr.Format(
+                            "route.toggle_selected_route_async.cannot_enable_config_item_read_item_device_role",
+                            string.Join(Environment.NewLine, dependencyErrors)),
                         Tr.Get("route.toggle_selected_route_async.pose"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
@@ -3565,7 +3766,7 @@ namespace TrackSwap
                         : Tr.Get("route.delete_route_menu_item_click.tracker");
                 if (AppDialog.Show(
                         this,
-                        Tr.Get("route.delete_route_menu_item_click.ok_delete_config") + _selectedRoute.Name + Tr.Get("route.delete.target_mapping_fragment") + outputName + Tr.Get("route.delete_route_menu_item_click.stop_output"),
+                        Tr.Format("route.delete.direct_confirmation", _selectedRoute.Name, outputName),
                         Tr.Get("route.action.delete"),
                         MessageBoxButton.OKCancel,
                         MessageBoxImage.Warning) != MessageBoxResult.OK)
@@ -3582,7 +3783,7 @@ namespace TrackSwap
 
             string message = steamVrRunning
                 ? Tr.Get("route.delete.pending_cleanup_notice")
-                : Tr.Get("route.delete_route_menu_item_click.ok_delete_config") + _selectedRoute.Name + Tr.Get("route.delete_route_menu_item_click.trackswap_cleanup");
+                : Tr.Format("route.delete.mapping_confirmation", _selectedRoute.Name);
             if (AppDialog.Show(
                     this,
                     message,
@@ -3725,7 +3926,7 @@ namespace TrackSwap
 
         private void RuntimeOffsetTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (_isLoading || _isClosing || _selectedRoute == null)
+            if (_isLoading || _isClosing || _updatingRotationEditorControls || _selectedRoute == null)
             {
                 return;
             }
@@ -3735,6 +3936,15 @@ namespace TrackSwap
                 _routeAutoApplyTimer.Stop();
                 SetRouteAutoApplyIssue(Tr.Get("route.pose_offset.invalid_format"), error);
                 return;
+            }
+
+            if (!_useEulerRotationEditor &&
+                (ReferenceEquals(sender, OffsetRotationXTextBox) ||
+                 ReferenceEquals(sender, OffsetRotationYTextBox) ||
+                 ReferenceEquals(sender, OffsetRotationZTextBox) ||
+                 ReferenceEquals(sender, OffsetRotationWTextBox)))
+            {
+                LoadEulerRotationFields(offset);
             }
 
             if (_selectedRoute.PoseSourceKind == PoseSourceKind.Manual)
@@ -3752,6 +3962,23 @@ namespace TrackSwap
                 return;
             }
             ScheduleRouteAutoApply(immediate: false);
+        }
+
+        private void RuntimeEulerTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isLoading || _isClosing || _updatingRotationEditorControls || _selectedRoute == null)
+            {
+                return;
+            }
+
+            if (!TryUpdateQuaternionFromEulerFields(out string error))
+            {
+                _routeAutoApplyTimer.Stop();
+                SetRouteAutoApplyIssue(Tr.Get("route.pose_offset.invalid_format"), error);
+                return;
+            }
+
+            RuntimeOffsetTextBox_TextChanged(null, null);
         }
 
         private void RuntimeOffsetTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
@@ -3786,6 +4013,41 @@ namespace TrackSwap
                 OffsetRotationXTextBox, OffsetRotationYTextBox, OffsetRotationZTextBox,
                 OffsetRotationWTextBox
             };
+        }
+
+        private TextBox[] GetOffsetEditorTextBoxes()
+        {
+            return GetOffsetTextBoxes().Concat(new[]
+            {
+                OffsetEulerXTextBox, OffsetEulerYTextBox, OffsetEulerZTextBox
+            }).ToArray();
+        }
+
+        private bool TryUpdateQuaternionFromEulerFields(out string error)
+        {
+            error = null;
+            if (!TryParseNumber(OffsetEulerXTextBox.Text, out double x) ||
+                !TryParseNumber(OffsetEulerYTextBox.Text, out double y) ||
+                !TryParseNumber(OffsetEulerZTextBox.Text, out double z))
+            {
+                error = Tr.Get("route.preview.try_read_offset.offset_required");
+                return false;
+            }
+
+            Quaternion rotation = PoseRotationConverter.FromEulerDegrees(x, y, z);
+            _updatingRotationEditorControls = true;
+            try
+            {
+                OffsetRotationXTextBox.Text = FormatNumber(rotation.X);
+                OffsetRotationYTextBox.Text = FormatNumber(rotation.Y);
+                OffsetRotationZTextBox.Text = FormatNumber(rotation.Z);
+                OffsetRotationWTextBox.Text = FormatNumber(rotation.W);
+            }
+            finally
+            {
+                _updatingRotationEditorControls = false;
+            }
+            return true;
         }
 
         private static string BuildProspectiveText(TextBox field, string insertedText)
@@ -4048,7 +4310,6 @@ namespace TrackSwap
                 new[] { "left", Tr.Get("viewer.eye.left") },
                 new[] { "right", Tr.Get("viewer.eye.right") },
                 new[] { "topmost", Tr.Get("viewer.topmost") },
-                new[] { "screenshot", Tr.Get("viewer.screenshot") },
                 new[] { "fullscreen", Tr.Get("viewer.fullscreen") },
                 new[] { "waiting-display", Tr.Get("viewer.waiting_display") },
                 new[] { "waiting-frame", Tr.Get("viewer.waiting_frame") },
@@ -4057,8 +4318,7 @@ namespace TrackSwap
                 new[] { "size-full-hd", Tr.Get("viewer.size.full_hd") },
                 new[] { "size-quad-hd", Tr.Get("viewer.size.quad_hd") },
                 new[] { "size-source", Tr.Get("viewer.size.source") },
-                new[] { "size-follow", Tr.Get("viewer.size.follow") },
-                new[] { "png-filter", Tr.Get("viewer.png_filter") }
+                new[] { "size-follow", Tr.Get("viewer.size.follow") }
             };
             return string.Join(" ", entries.Select(entry =>
                 "--loc-" + entry[0] + " " +
@@ -4116,13 +4376,249 @@ namespace TrackSwap
 
         private void LoadOffsetFields(PoseOffset offset)
         {
-            OffsetTranslationXTextBox.Text = FormatNumber(offset.TranslationX);
-            OffsetTranslationYTextBox.Text = FormatNumber(offset.TranslationY);
-            OffsetTranslationZTextBox.Text = FormatNumber(offset.TranslationZ);
-            OffsetRotationXTextBox.Text = FormatNumber(offset.RotationX);
-            OffsetRotationYTextBox.Text = FormatNumber(offset.RotationY);
-            OffsetRotationZTextBox.Text = FormatNumber(offset.RotationZ);
-            OffsetRotationWTextBox.Text = FormatNumber(offset.RotationW);
+            _updatingRotationEditorControls = true;
+            try
+            {
+                OffsetTranslationXTextBox.Text = FormatNumber(offset.TranslationX);
+                OffsetTranslationYTextBox.Text = FormatNumber(offset.TranslationY);
+                OffsetTranslationZTextBox.Text = FormatNumber(offset.TranslationZ);
+                OffsetRotationXTextBox.Text = FormatNumber(offset.RotationX);
+                OffsetRotationYTextBox.Text = FormatNumber(offset.RotationY);
+                OffsetRotationZTextBox.Text = FormatNumber(offset.RotationZ);
+                OffsetRotationWTextBox.Text = FormatNumber(offset.RotationW);
+                LoadEulerRotationFields(offset);
+            }
+            finally
+            {
+                _updatingRotationEditorControls = false;
+            }
+        }
+
+        private void LoadEulerRotationFields(PoseOffset offset)
+        {
+            Vector3D euler = PoseRotationConverter.ToEulerDegrees(new Quaternion(
+                offset.RotationX,
+                offset.RotationY,
+                offset.RotationZ,
+                offset.RotationW));
+            bool wasUpdating = _updatingRotationEditorControls;
+            _updatingRotationEditorControls = true;
+            try
+            {
+                OffsetEulerXTextBox.Text = FormatNumber(euler.X);
+                OffsetEulerYTextBox.Text = FormatNumber(euler.Y);
+                OffsetEulerZTextBox.Text = FormatNumber(euler.Z);
+            }
+            finally
+            {
+                _updatingRotationEditorControls = wasUpdating;
+            }
+        }
+
+        private void EulerRotationModeButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetRotationEditorMode(useEuler: true);
+        }
+
+        private void QuaternionRotationModeButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetRotationEditorMode(useEuler: false);
+        }
+
+        private void SetRotationEditorMode(bool useEuler)
+        {
+            if (_useEulerRotationEditor == useEuler)
+            {
+                return;
+            }
+
+            if (useEuler && TryReadOffset(out PoseOffset offset, out _))
+            {
+                LoadEulerRotationFields(offset);
+            }
+            else if (!useEuler)
+            {
+                TryUpdateQuaternionFromEulerFields(out _);
+            }
+
+            _useEulerRotationEditor = useEuler;
+            UpdateRotationEditorModePresentation();
+            SaveUiPreferences();
+        }
+
+        private void UpdateRotationEditorModePresentation()
+        {
+            EulerRotationFieldsGrid.Visibility = _useEulerRotationEditor
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            QuaternionRotationFieldsGrid.Visibility = _useEulerRotationEditor
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            EulerRotationModeButton.Background = FindBrush(
+                _useEulerRotationEditor ? "AccentSoftBrush" : "SurfaceRaisedBrush");
+            QuaternionRotationModeButton.Background = FindBrush(
+                _useEulerRotationEditor ? "SurfaceRaisedBrush" : "AccentSoftBrush");
+        }
+
+        private void LoadMotionSmoothingControls(
+            MotionSmoothingConfiguration smoothing,
+            bool editable)
+        {
+            _updatingMotionSmoothingControls = true;
+            try
+            {
+                MotionSmoothingPositionCheckBox.IsChecked =
+                    smoothing.Enabled && smoothing.SmoothPosition;
+                MotionSmoothingRotationCheckBox.IsChecked =
+                    smoothing.Enabled && smoothing.SmoothRotation;
+                MotionSmoothingLinkCheckBox.IsChecked = smoothing.LinkStrengths;
+                MotionSmoothingPositionSlider.Value = smoothing.PositionStrength;
+                MotionSmoothingRotationSlider.Value = smoothing.RotationStrength;
+                MotionSmoothingPositionValueText.Text = FormatSmoothingStrength(smoothing.PositionStrength);
+                MotionSmoothingRotationValueText.Text = FormatSmoothingStrength(smoothing.RotationStrength);
+                UpdateMotionSmoothingControlAvailability(smoothing, editable);
+            }
+            finally
+            {
+                _updatingMotionSmoothingControls = false;
+            }
+        }
+
+        private void UpdateMotionSmoothingControlAvailability(
+            MotionSmoothingConfiguration smoothing,
+            bool editable)
+        {
+            MotionSmoothingPositionCheckBox.IsEnabled = editable;
+            MotionSmoothingRotationCheckBox.IsEnabled = editable;
+            MotionSmoothingPositionSlider.IsEnabled =
+                editable && smoothing.Enabled && smoothing.SmoothPosition;
+            MotionSmoothingRotationSlider.IsEnabled =
+                editable && smoothing.Enabled && smoothing.SmoothRotation;
+            MotionSmoothingLinkCheckBox.IsEnabled = editable && smoothing.Enabled &&
+                smoothing.SmoothPosition && smoothing.SmoothRotation;
+        }
+
+        private MotionSmoothingConfiguration GetSelectedMotionSmoothing()
+        {
+            if (_selectedRoute.MotionSmoothing == null)
+            {
+                _selectedRoute.MotionSmoothing = new MotionSmoothingConfiguration();
+            }
+            return _selectedRoute.MotionSmoothing;
+        }
+
+        private static string FormatSmoothingStrength(double value)
+        {
+            return Math.Round(value, MidpointRounding.AwayFromZero)
+                .ToString("0", CultureInfo.InvariantCulture) + "%";
+        }
+
+        private void MotionSmoothingPositionCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            UpdateMotionSmoothingChannels();
+        }
+
+        private void MotionSmoothingRotationCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            UpdateMotionSmoothingChannels();
+        }
+
+        private void UpdateMotionSmoothingChannels()
+        {
+            if (_isLoading || _updatingMotionSmoothingControls || _selectedRoute == null)
+            {
+                return;
+            }
+
+            MotionSmoothingConfiguration smoothing = GetSelectedMotionSmoothing();
+            smoothing.SmoothPosition = MotionSmoothingPositionCheckBox.IsChecked == true;
+            smoothing.SmoothRotation = MotionSmoothingRotationCheckBox.IsChecked == true;
+            smoothing.Enabled = smoothing.SmoothPosition || smoothing.SmoothRotation;
+            LoadMotionSmoothingControls(smoothing, !_selectedRoute.PendingDeletion);
+            ScheduleRouteAutoApply(immediate: true);
+        }
+
+        private void MotionSmoothingLinkCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading || _updatingMotionSmoothingControls || _selectedRoute == null)
+            {
+                return;
+            }
+
+            MotionSmoothingConfiguration smoothing = GetSelectedMotionSmoothing();
+            smoothing.LinkStrengths = MotionSmoothingLinkCheckBox.IsChecked == true;
+            if (smoothing.LinkStrengths)
+            {
+                double averageStrength = Math.Round(
+                    (smoothing.PositionStrength + smoothing.RotationStrength) / 2.0,
+                    MidpointRounding.AwayFromZero);
+                smoothing.PositionStrength = averageStrength;
+                smoothing.RotationStrength = averageStrength;
+            }
+            LoadMotionSmoothingControls(smoothing, !_selectedRoute.PendingDeletion);
+            ScheduleRouteAutoApply(immediate: true);
+        }
+
+        private void MotionSmoothingPositionSlider_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e)
+        {
+            UpdateMotionSmoothingStrength(position: true, e.NewValue);
+        }
+
+        private void MotionSmoothingRotationSlider_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e)
+        {
+            UpdateMotionSmoothingStrength(position: false, e.NewValue);
+        }
+
+        private void UpdateMotionSmoothingStrength(bool position, double value)
+        {
+            value = Math.Round(value, MidpointRounding.AwayFromZero);
+            if (position)
+            {
+                if (MotionSmoothingPositionValueText != null)
+                    MotionSmoothingPositionValueText.Text = FormatSmoothingStrength(value);
+            }
+            else if (MotionSmoothingRotationValueText != null)
+            {
+                MotionSmoothingRotationValueText.Text = FormatSmoothingStrength(value);
+            }
+
+            if (_isLoading || _updatingMotionSmoothingControls || _selectedRoute == null)
+            {
+                return;
+            }
+
+            MotionSmoothingConfiguration smoothing = GetSelectedMotionSmoothing();
+            if (position)
+            {
+                smoothing.PositionStrength = value;
+            }
+            else
+            {
+                smoothing.RotationStrength = value;
+            }
+
+            if (smoothing.LinkStrengths)
+            {
+                smoothing.PositionStrength = value;
+                smoothing.RotationStrength = value;
+                _updatingMotionSmoothingControls = true;
+                try
+                {
+                    MotionSmoothingPositionSlider.Value = value;
+                    MotionSmoothingRotationSlider.Value = value;
+                    MotionSmoothingPositionValueText.Text = FormatSmoothingStrength(value);
+                    MotionSmoothingRotationValueText.Text = FormatSmoothingStrength(value);
+                }
+                finally
+                {
+                    _updatingMotionSmoothingControls = false;
+                }
+            }
+            ScheduleRouteAutoApply(immediate: false);
         }
 
         private async void StartRuntimeButton_Click(object sender, RoutedEventArgs e)
@@ -4142,13 +4638,7 @@ namespace TrackSwap
 
         private void SetIdentityOffsetFields()
         {
-            OffsetTranslationXTextBox.Text = "0";
-            OffsetTranslationYTextBox.Text = "0";
-            OffsetTranslationZTextBox.Text = "0";
-            OffsetRotationXTextBox.Text = "0";
-            OffsetRotationYTextBox.Text = "0";
-            OffsetRotationZTextBox.Text = "0";
-            OffsetRotationWTextBox.Text = "1";
+            LoadOffsetFields(PoseOffset.Identity());
         }
 
         private async Task ApplyRuntimeConfigurationAsync(
@@ -4213,8 +4703,7 @@ namespace TrackSwap
                 {
                     AppDialog.Show(
                         this,
-                        Tr.Get("route.validation.role_feedback_loop") +
-                        Tr.Get("route.apply_runtime_configuration_async.select_tracker_controller_pose_source"),
+                        Tr.Get("route.validation.role_feedback_loop"),
                         Tr.Get("route.validation.self_reference_detected"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
@@ -4255,16 +4744,24 @@ namespace TrackSwap
             if (confirmSourceSwitch && activeRoute != null &&
                 (positionSourceChanged || rotationSourceChanged))
             {
+                var sourceChanges = new List<string>();
+                if (positionSourceChanged)
+                {
+                    sourceChanges.Add(Tr.Format(
+                        "route.source_switch.position",
+                        DescribePoseSource(activeRoute.PoseSourceKind, activeRoute.SourceDevicePath),
+                        DescribePoseSource(source.PoseSourceKind, source.DevicePath)));
+                }
+                if (rotationSourceChanged)
+                {
+                    sourceChanges.Add(Tr.Format(
+                        "route.source_switch.rotation",
+                        activeRoute.RotationSourceDevicePath,
+                        rotationSource.DevicePath));
+                }
                 MessageBoxResult switchResult = AppDialog.Show(
                     this,
-                    Tr.Get("route.apply_runtime_configuration_async.pose_switch_pose_source") +
-                    (positionSourceChanged
-                        ? Tr.Get("route.apply_runtime_configuration_async.position") + DescribePoseSource(activeRoute.PoseSourceKind, activeRoute.SourceDevicePath) +
-                            "\n→ " + DescribePoseSource(source.PoseSourceKind, source.DevicePath) + "\n\n"
-                        : string.Empty) +
-                    (rotationSourceChanged
-                        ? Tr.Get("route.apply_runtime_configuration_async.rotation") + activeRoute.RotationSourceDevicePath + "\n→ " + rotationSource.DevicePath
-                        : string.Empty),
+                    Tr.Format("route.source_switch.confirmation", string.Join("\n\n", sourceChanges)),
                     Tr.Get("route.apply_runtime_configuration_async.confirm_switch_pose_source"),
                     MessageBoxButton.OKCancel,
                     MessageBoxImage.Warning);
@@ -4320,8 +4817,9 @@ namespace TrackSwap
                     AppDialog.Show(
                         this,
                         errors.Any(error => error.IndexOf(Tr.Get("route.apply_runtime_configuration_async.config_pose"), StringComparison.Ordinal) >= 0)
-                            ? Tr.Get("route.apply_runtime_configuration_async.cannot_apply_config_item_read_item_device_role") +
-                                string.Join(Environment.NewLine, errors)
+                            ? Tr.Format(
+                                "route.apply_runtime_configuration_async.cannot_apply_config_item_read_item_device_role",
+                                string.Join(Environment.NewLine, errors))
                             : string.Join(Environment.NewLine, errors),
                         Tr.Get("route.apply_runtime_configuration_async.config_invalid"),
                         MessageBoxButton.OK,
@@ -4484,7 +4982,7 @@ namespace TrackSwap
 
             MessageBoxResult result = AppDialog.Show(
                 this,
-                Tr.Get("app.apply_button_click.down_pose_mapping") + source.DevicePath + "\n→ " + target.TargetPath + Tr.Get("app.apply_button_click.apply_automatic_backup_raw_config"),
+                Tr.Format("settings.steamvr.apply_override_confirmation", source.DevicePath, target.TargetPath),
                 Tr.Get("app.apply_button_click.confirm_apply"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Information);
@@ -4605,7 +5103,7 @@ namespace TrackSwap
 
             MessageBoxResult result = AppDialog.Show(
                 this,
-                Tr.Get("settings.steamvr.remove_override_button_click.ok_remove_down_pose_mapping") + mapping.SourcePath + "\n→ " + mapping.TargetPath + Tr.Get("settings.steamvr.remove_override_button_click.remove_automatic_backup_raw_config"),
+                Tr.Format("settings.steamvr.remove_override_confirmation", mapping.SourcePath, mapping.TargetPath),
                 Tr.Get("settings.steamvr.remove_override_button_click.confirm_remove"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Warning);
@@ -5155,24 +5653,24 @@ namespace TrackSwap
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model_manual_pose")
                 : _hideSourceInPreview
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model_hide")
-                : models[0] == null ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model") : Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model_steamvr") + models[0].Name;
+                : models[0] == null ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model") : Tr.Format("route.preview.refresh_preview_device_models_async.position_source_model_steamvr", models[0].Name);
             string rotationSourceMode = !_selectedRoute.SplitPoseSource
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model_position_source")
                 : _hideSourceInPreview
                     ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model_hide")
                     : models[1] == null
                         ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model")
-                        : Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model_steamvr") + models[1].Name;
+                        : Tr.Format("route.preview.refresh_preview_device_models_async.rotation_source_model_steamvr", models[1].Name);
             string targetMode = !replacesTarget
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model_output")
                 : _hideTargetInPreview
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model_hide")
-                : models[2] == null ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model") : Tr.Get("route.preview.refresh_preview_device_models_async.target_model_steamvr") + models[2].Name;
+                : models[2] == null ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model") : Tr.Format("route.preview.refresh_preview_device_models_async.target_model_steamvr", models[2].Name);
             string proxyMode = !showProxy
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.model_hide")
                 : models[3] == null
                     ? Tr.Get("route.preview.refresh_preview_device_models_async.model")
-                    : Tr.Get("route.preview.refresh_preview_device_models_async.model_steamvr") + models[3].Name;
+                    : Tr.Format("route.preview.refresh_preview_device_models_async.model_steamvr", models[3].Name);
             _previewModelDescription = sourceMode + "\n" + rotationSourceMode + "\n" + targetMode + "\n" + proxyMode;
             PreviewStatusText.ToolTip = _previewModelDescription;
         }
@@ -5265,7 +5763,7 @@ namespace TrackSwap
                     ? Tr.Get("preview.telemetry.retrying")
                     : Tr.Get("preview.telemetry.paused");
                 PreviewStatusText.Foreground = FindBrush("WarningBrush");
-                PreviewStatusText.ToolTip = Tr.Get("route.preview.refresh_telemetry_async.preserve") + exception.Message;
+                PreviewStatusText.ToolTip = Tr.Format("route.preview.refresh_telemetry_async.preserve", exception.Message);
             }
             finally
             {
@@ -5279,31 +5777,43 @@ namespace TrackSwap
 
             PreviewStatusText.Text = Tr.Get("preview.status.live");
             PreviewStatusText.Foreground = FindBrush("SuccessBrush");
-            string healthText = Tr.Get("route.preview.render_telemetry.output") + PoseHealth(snapshot.Output) +
-                (_selectedRoute?.PoseSourceKind == PoseSourceKind.Manual
-                    ? Tr.Get("route.preview.render_telemetry.manual_pose")
-                    : Tr.Get("route.preview.render_telemetry.position_source") + PoseHealth(snapshot.Source)) +
-                (_selectedRoute?.SplitPoseSource == true
-                    ? Tr.Get("route.preview.render_telemetry.rotation_source") + PoseHealth(snapshot.RotationSource)
-                    : string.Empty) +
-                Tr.Get("route.preview.render_telemetry.target") + PoseHealth(snapshot.Target) + Tr.Get("route.preview.render_telemetry.source");
+            string healthText = _selectedRoute?.PoseSourceKind == PoseSourceKind.Manual
+                ? Tr.Format(
+                    "route.preview.telemetry_summary.manual",
+                    PoseHealth(snapshot.Output),
+                    PoseHealth(snapshot.Target))
+                : _selectedRoute?.SplitPoseSource == true
+                    ? Tr.Format(
+                        "route.preview.telemetry_summary.split",
+                        PoseHealth(snapshot.Output),
+                        PoseHealth(snapshot.Source),
+                        PoseHealth(snapshot.RotationSource),
+                        PoseHealth(snapshot.Target))
+                    : Tr.Format(
+                        "route.preview.telemetry_summary",
+                        PoseHealth(snapshot.Output),
+                        PoseHealth(snapshot.Source),
+                        PoseHealth(snapshot.Target));
             string diagnosticText = healthText;
             if (IsRenderablePose(snapshot.Source) && IsRenderablePose(snapshot.Output) &&
                 TryGetRelativePoseMatrix(snapshot.Source, snapshot.Output, out Matrix3D actualOutputMatrix))
             {
-                healthText += Tr.Get("route.preview.render_telemetry.offset") +
-                    actualOutputMatrix.OffsetX.ToString("F3", CultureInfo.InvariantCulture) + ", " +
-                    actualOutputMatrix.OffsetY.ToString("F3", CultureInfo.InvariantCulture) + ", " +
-                    actualOutputMatrix.OffsetZ.ToString("F3", CultureInfo.InvariantCulture) + ") m";
+                healthText = Tr.Format(
+                    "route.preview.telemetry_with_offset",
+                    healthText,
+                    actualOutputMatrix.OffsetX.ToString("F3", CultureInfo.InvariantCulture),
+                    actualOutputMatrix.OffsetY.ToString("F3", CultureInfo.InvariantCulture),
+                    actualOutputMatrix.OffsetZ.ToString("F3", CultureInfo.InvariantCulture));
                 string targetDistanceText = string.Empty;
                 if (IsRenderablePose(snapshot.Target))
                 {
                     double dx = snapshot.Output.PositionX - snapshot.Target.PositionX;
                     double dy = snapshot.Output.PositionY - snapshot.Target.PositionY;
                     double dz = snapshot.Output.PositionZ - snapshot.Target.PositionZ;
-                    targetDistanceText = Tr.Get("route.preview.render_telemetry.output_target") +
+                    targetDistanceText = Tr.Format(
+                        "route.preview.output_target_distance",
                         Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz))
-                            .ToString("F4", CultureInfo.InvariantCulture) + " m";
+                            .ToString("F4", CultureInfo.InvariantCulture));
                 }
                 diagnosticText = healthText + targetDistanceText;
             }
@@ -6003,34 +6513,75 @@ namespace TrackSwap
             }
         }
 
-        private void ClearDeviceHistoryButton_Click(object sender, RoutedEventArgs e)
+        private void EditDeviceMetadataButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBoxResult result = AppDialog.Show(
+            if (!((sender as Button)?.Tag is DeviceHistoryListItem item))
+            {
+                return;
+            }
+
+            var dialog = new DeviceMetadataWindow(
                 this,
-                Tr.Get("settings.devices.clear_history.confirmation"),
-                Tr.Get("settings.devices.clear_history"),
-                MessageBoxButton.OKCancel,
-                MessageBoxImage.Warning);
-            if (result != MessageBoxResult.OK)
+                item.DisplayName,
+                item.DevicePath,
+                item.Record.CustomDisplayName,
+                item.Record.Note);
+            if (dialog.ShowDialog() != true)
             {
                 return;
             }
 
             try
             {
-                _deviceHistoryService.Clear();
+                _deviceHistoryService.UpdateDeviceMetadata(
+                    item.DevicePath,
+                    dialog.CustomDisplayName,
+                    dialog.Note);
                 RefreshAll();
-                if (_selectedRoute != null)
-                {
-                    ShowSelectedRoute(_selectedRoute);
-                }
             }
             catch (Exception exception)
             {
                 AppDialog.Show(
                     this,
                     exception.Message,
-                    Tr.Get("settings.devices.clear_device_history_button_click.cannot_clear_device_history"),
+                    Tr.Get("settings.devices.metadata.save_failed"),
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private void EditReceiverMetadataButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!((sender as Button)?.Tag is ReceiverHistoryListItem item))
+            {
+                return;
+            }
+
+            var dialog = new DeviceMetadataWindow(
+                this,
+                item.DisplayName,
+                item.ReceiverId,
+                item.Record.CustomDisplayName,
+                item.Record.Note);
+            if (dialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            try
+            {
+                _deviceHistoryService.UpdateReceiverMetadata(
+                    item.ReceiverId,
+                    dialog.CustomDisplayName,
+                    dialog.Note);
+                RefreshAll();
+            }
+            catch (Exception exception)
+            {
+                AppDialog.Show(
+                    this,
+                    exception.Message,
+                    Tr.Get("settings.devices.metadata.save_failed"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -7197,20 +7748,96 @@ namespace TrackSwap
 
         private sealed class DeviceHistoryListItem
         {
-            public DeviceHistoryListItem(string displayName, string devicePath, bool isOnline)
+            public DeviceHistoryListItem(
+                ManagedDeviceRecord record,
+                bool isOnline,
+                string currentReceiverDisplayName,
+                string lastReceiverDisplayName)
             {
-                DisplayName = displayName;
-                DevicePath = devicePath;
+                Record = record;
+                DisplayName = record.DisplayName;
+                HardwareDisplayName = record.HardwareDisplayName;
+                DevicePath = record.DevicePath;
+                Note = record.Note;
                 IsOnline = isOnline;
+                CurrentReceiverDisplayName = currentReceiverDisplayName;
+                LastReceiverDisplayName = lastReceiverDisplayName;
+                IdentityText = string.Equals(DisplayName, HardwareDisplayName, StringComparison.Ordinal)
+                    ? DevicePath
+                    : HardwareDisplayName + " · " + DevicePath;
+                ReceiverSummary = Tr.Format(
+                    "settings.devices.device_receiver_summary",
+                    CurrentReceiverDisplayName,
+                    LastReceiverDisplayName);
+                NoteDisplay = string.IsNullOrWhiteSpace(Note)
+                    ? Tr.Get("settings.devices.no_note")
+                    : Tr.Format("settings.devices.note", Note);
             }
 
+            public ManagedDeviceRecord Record { get; }
             public string DisplayName { get; }
-
+            public string HardwareDisplayName { get; }
             public string DevicePath { get; }
-
+            public string Note { get; }
             public bool IsOnline { get; }
-
+            public string CurrentReceiverDisplayName { get; }
+            public string LastReceiverDisplayName { get; }
+            public string IdentityText { get; }
+            public string ReceiverSummary { get; }
+            public string NoteDisplay { get; }
             public string StateText => IsOnline ? Tr.Get("common.status.online") : Tr.Get("common.status.offline");
+        }
+
+        private sealed class ReceiverHistoryListItem
+        {
+            public ReceiverHistoryListItem(
+                ManagedReceiverRecord record,
+                IReadOnlyList<string> connectedDevices)
+            {
+                Record = record;
+                DisplayName = record.DisplayName;
+                ReceiverId = record.ReceiverId;
+                Note = record.Note;
+                IsInUse = connectedDevices.Count > 0;
+                ConnectedDevices = IsInUse
+                    ? string.Join("、", connectedDevices)
+                    : Tr.Get("settings.devices.receiver_not_in_use");
+                ConnectionSummary = IsInUse
+                    ? Tr.Format("settings.devices.receiver_in_use", ConnectedDevices)
+                    : ConnectedDevices;
+                NoteDisplay = string.IsNullOrWhiteSpace(Note)
+                    ? Tr.Get("settings.devices.no_note")
+                    : Tr.Format("settings.devices.note", Note);
+            }
+
+            public ManagedReceiverRecord Record { get; }
+            public string DisplayName { get; }
+            public string ReceiverId { get; }
+            public string Note { get; }
+            public bool IsInUse { get; }
+            public string ConnectedDevices { get; }
+            public string ConnectionSummary { get; }
+            public string NoteDisplay { get; }
+        }
+
+        private sealed class DeviceConnectionListItem
+        {
+            public DeviceConnectionListItem(
+                string deviceDisplayName,
+                string currentReceiverDisplayName,
+                string lastReceiverDisplayName,
+                bool hasCurrentConnection)
+            {
+                DeviceDisplayName = deviceDisplayName;
+                CurrentReceiverDisplayName = currentReceiverDisplayName;
+                LastReceiverDisplayName = lastReceiverDisplayName;
+                HasCurrentConnection = hasCurrentConnection;
+            }
+
+            public string DeviceDisplayName { get; }
+            public string CurrentReceiverDisplayName { get; }
+            public string LastReceiverDisplayName { get; }
+            public bool HasCurrentConnection { get; }
         }
 
         private sealed class RuntimeLifecycleOption

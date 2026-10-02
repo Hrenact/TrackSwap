@@ -6,15 +6,15 @@ version review.
 
 ## Components
 
-### TrackSwap UI
+### TrackSwap VR UI
 
 The `src/TrackSwap` WPF application contains two deliberately separate tabs:
 the v002 runtime route surface and the retained v001 static configuration
-surface. The runtime tab sends bounded control requests to TrackSwap Runtime
+surface. The runtime tab sends bounded control requests to TrackSwap VR Runtime
 and polls low-frequency status. UI lifetime and frame rate are never part of
 pose submission.
 
-### TrackSwap Runtime
+### TrackSwap VR Runtime
 
 `src/TrackSwap.Runtime` owns persistent v002 configuration, validation and IPC.
 It exposes `applyConfiguration` and `getStatus` over the local control pipe and

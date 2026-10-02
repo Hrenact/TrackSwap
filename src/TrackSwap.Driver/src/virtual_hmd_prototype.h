@@ -9,6 +9,7 @@
 
 #include "control_protocol.h"
 #include "pose_math.h"
+#include "pose_smoothing.h"
 
 namespace trackswap
 {
@@ -18,7 +19,8 @@ public:
     static constexpr const char* SerialNumber = "TRKSWAP-HMD";
 
     bool QueueSnapshot(bool enabled, std::uint8_t logicalSlot, bool manualPose, const char* sourceDevicePath,
-        const char* rotationSourceDevicePath, const pose_math::RigidOffset& offset, std::uint64_t revision);
+        const char* rotationSourceDevicePath, const pose_math::RigidOffset& offset,
+        const pose_smoothing::Configuration& smoothing, std::uint64_t revision);
     control_protocol::TelemetrySnapshot GetTelemetry() const;
     std::uint8_t LogicalSlot() const;
     vr::TrackedDeviceIndex_t SourceDeviceId() const;
@@ -57,6 +59,9 @@ private:
     std::array<char, MaximumDevicePathBytes> pendingRotationSourceDevicePath_{};
     pose_math::RigidOffset activeOffset_ = pose_math::IdentityOffset();
     pose_math::RigidOffset pendingOffset_ = pose_math::IdentityOffset();
+    pose_smoothing::Configuration activeSmoothing_{};
+    pose_smoothing::Configuration pendingSmoothing_{};
+    pose_smoothing::PoseSmoother poseSmoother_{};
     std::array<vr::TrackedDevicePose_t, vr::k_unMaxTrackedDeviceCount> rawPoses_{};
     vr::TrackedDeviceIndex_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     vr::VRInputComponentHandle_t proximityHandle_ = vr::k_ulInvalidInputComponentHandle;

@@ -37,7 +37,8 @@ void TrackerRegistry::AttachVirtualHmd(VirtualHmd* virtualHmd)
 
 bool TrackerRegistry::QueueHmdSnapshot(bool enabled, std::uint8_t logicalSlot, bool manualPose,
     const char* sourceDevicePath, const char* rotationSourceDevicePath,
-    bool hidePhysicalSource, const pose_math::RigidOffset& offset, std::uint64_t revision)
+    bool hidePhysicalSource, const pose_math::RigidOffset& offset,
+    const pose_smoothing::Configuration& smoothing, std::uint64_t revision)
 {
     if (virtualHmd_ == nullptr || (enabled && logicalSlot >= control_protocol::MaximumRoutes)) return false;
     {
@@ -55,7 +56,7 @@ bool TrackerRegistry::QueueHmdSnapshot(bool enabled, std::uint8_t logicalSlot, b
         }
     }
     return virtualHmd_->QueueSnapshot(enabled, logicalSlot, manualPose, sourceDevicePath,
-        rotationSourceDevicePath, offset, revision);
+        rotationSourceDevicePath, offset, smoothing, revision);
 }
 
 bool TrackerRegistry::QueueControllerSnapshot(
@@ -68,6 +69,7 @@ bool TrackerRegistry::QueueControllerSnapshot(
     bool hidePhysicalSource,
     std::int32_t handSelectionPriority,
     const pose_math::RigidOffset& offset,
+    const pose_smoothing::Configuration& smoothing,
     std::uint64_t revision)
 {
     const std::size_t index = hand == ControllerHand::Left ? 0U : hand == ControllerHand::Right ? 1U : 2U;
@@ -119,6 +121,7 @@ bool TrackerRegistry::QueueControllerSnapshot(
         rotationSourceDevicePath,
         handSelectionPriority,
         offset,
+        smoothing,
         revision);
 }
 
@@ -172,6 +175,7 @@ bool TrackerRegistry::QueueSnapshot(
     const char* targetDevicePath,
     bool hidePhysicalSource,
     const pose_math::RigidOffset& offset,
+    const pose_smoothing::Configuration& smoothing,
     std::uint64_t revision)
 {
     if (slot >= directTrackers_.size())
@@ -215,6 +219,7 @@ bool TrackerRegistry::QueueSnapshot(
         rotationSourceDevicePath,
         targetDevicePath,
         offset,
+        smoothing,
         revision);
     const bool inactiveQueued = inactive->QueueSnapshot(
         false,
@@ -223,6 +228,7 @@ bool TrackerRegistry::QueueSnapshot(
         "",
         "",
         offset,
+        smoothing,
         revision);
     return activeQueued && inactiveQueued;
 }
@@ -421,8 +427,8 @@ void TrackerRegistry::RunFrame()
                 vr::TrackedDeviceClass_GenericTracker,
                 directTrackers_[slot].get());
             vr::VRDriverLog()->Log(directRegistered_[slot]
-                ? "TrackSwap registered a requested direct virtual tracker."
-                : "TrackSwap failed to register a requested direct virtual tracker.");
+                ? "TrackSwap VR registered a requested direct virtual tracker."
+                : "TrackSwap VR failed to register a requested direct virtual tracker.");
         }
         if (directRegistered_[slot])
         {
@@ -439,8 +445,8 @@ void TrackerRegistry::RunFrame()
                 vr::TrackedDeviceClass_TrackingReference,
                 proxyTrackers_[slot].get());
             vr::VRDriverLog()->Log(proxyRegistered_[slot]
-                ? "TrackSwap registered a requested replacement proxy."
-                : "TrackSwap failed to register a requested replacement proxy.");
+                ? "TrackSwap VR registered a requested replacement proxy."
+                : "TrackSwap VR failed to register a requested replacement proxy.");
         }
         if (proxyRegistered_[slot])
         {
@@ -456,8 +462,8 @@ void TrackerRegistry::RunFrame()
                 vr::TrackedDeviceClass_Controller,
                 controllers_[index].get());
             vr::VRDriverLog()->Log(controllerRegistered_[index]
-                ? "TrackSwap registered a requested virtual controller."
-                : "TrackSwap failed to register a requested virtual controller.");
+                ? "TrackSwap VR registered a requested virtual controller."
+                : "TrackSwap VR failed to register a requested virtual controller.");
         }
         if (controllerRegistered_[index]) controllers_[index]->Update();
     }

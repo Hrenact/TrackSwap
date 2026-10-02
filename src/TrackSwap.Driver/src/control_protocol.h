@@ -7,7 +7,7 @@ namespace trackswap::control_protocol
 {
 constexpr wchar_t PipePath[] = LR"(\\.\pipe\TrackSwap.Driver.v1)";
 constexpr std::uint32_t Magic = 0x50575354;
-constexpr std::uint16_t Version = 11;
+constexpr std::uint16_t Version = 12;
 constexpr std::uint16_t SetSourceMessageType = 1;
 constexpr std::uint16_t SetOffsetMessageType = 2;
 constexpr std::uint16_t ApplySnapshotMessageType = 3;

@@ -68,7 +68,7 @@ internal sealed class DiagnosticOptions
 
     private static void PrintHelp()
     {
-        Console.WriteLine("TrackSwap 手机振动诊断器");
+        Console.WriteLine("TrackSwap VR 手机振动诊断器");
         Console.WriteLine("  --udp-port <端口>       OSC 接收端口，默认 9016");
         Console.WriteLine("  --http-port <端口>      手机网页端口，默认 9017");
         Console.WriteLine("  --host-address <IPv4>   二维码使用的本机局域网地址");

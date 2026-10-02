@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using Newtonsoft.Json;
 using TrackSwap.Localization;
+using TrackSwap.Models;
 
 namespace TrackSwap.Tests;
 
@@ -30,8 +33,8 @@ public sealed class LocalizationServiceTests : IDisposable
         service.SetLanguage("en-US");
 
         Assert.Equal("Valid", service.Translate("valid.key"));
-        Assert.Equal("⟦missing.key⟧", service.Translate("missing.key"));
-        Assert.Equal("⟦invalid.key⟧", service.Translate("invalid.key"));
+        Assert.Equal("[missing.key]", service.Translate("missing.key"));
+        Assert.Equal("[invalid.key]", service.Translate("invalid.key"));
         Assert.Contains(service.Issues, issue => issue.Key == "missing.key" && issue.Kind == LocalizationIssueKind.Missing);
         Assert.Contains(service.Issues, issue => issue.Key == "invalid.key" && issue.Kind == LocalizationIssueKind.Invalid);
         Assert.Contains(service.Issues, issue => issue.Key == "stale.key" && issue.Kind == LocalizationIssueKind.Stale);
@@ -82,7 +85,28 @@ public sealed class LocalizationServiceTests : IDisposable
 
         Assert.True(service.IsOfficialLanguage);
         Assert.True(service.CatalogCount > 0);
+        Assert.Equal("TrackSwap VR", service.Translate("app.title"));
         Assert.Equal("语言", service.Translate("language.title"));
+    }
+
+    [Fact]
+    public void FormatAllowsTranslationsToReorderAndRepeatPlaceholders()
+    {
+        LocalizationManager.Initialize(CreateService());
+
+        string formatted = Tr.Format("format.key", "first", "second");
+
+        Assert.Equal("second / first / second", formatted);
+    }
+
+    [Fact]
+    public void DeviceBaseNameStripsStatusTemplateWhenPlaceholderIsReordered()
+    {
+        LocalizationManager.Initialize(CreateService());
+
+        string displayName = DeviceOption.BaseDisplayName("Tracker · online");
+
+        Assert.Equal("Tracker", displayName);
     }
 
     [Fact]
@@ -116,13 +140,53 @@ public sealed class LocalizationServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public void MissingLocalizedControlDoesNotInterceptPointerInput()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                LocalizationManager.Initialize(CreateService());
+                var button = new Button();
+                Localize.SetKey(button, "missing.key");
+                var mouseEvent = new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+                {
+                    RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent
+                };
+
+                button.RaiseEvent(mouseEvent);
+
+                Assert.False(mouseEvent.Handled);
+                Assert.Null(button.ToolTip);
+                Assert.Null(button.Cursor);
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure != null)
+        {
+            throw failure;
+        }
+    }
+
     private LocalizationService CreateService()
     {
         return new LocalizationService(_root, new Dictionary<string, string>
         {
             ["valid.key"] = "有效",
             ["missing.key"] = "缺失",
-            ["invalid.key"] = "当前原文"
+            ["invalid.key"] = "当前原文",
+            ["format.key"] = "{1} / {0} / {1}",
+            ["device.status.online"] = "{0} · online",
+            ["device.status.offline"] = "{0} · offline",
+            ["device.status.saved"] = "{0} · saved"
         });
     }
 

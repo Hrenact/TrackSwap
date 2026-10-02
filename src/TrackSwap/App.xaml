@@ -12,6 +12,10 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#5B9CFF" />
         <SolidColorBrush x:Key="AccentSoftBrush" Color="#182538" />
         <SolidColorBrush x:Key="AccentBorderMutedBrush" Color="#3B5F8A" />
+        <SolidColorBrush x:Key="SliderTrackBrush" Color="#34383D" />
+        <SolidColorBrush x:Key="SliderProgressBrush" Color="#4A6F99" />
+        <SolidColorBrush x:Key="SliderThumbBrush" Color="#20252B" />
+        <SolidColorBrush x:Key="SliderThumbBorderBrush" Color="#7F9AB8" />
         <SolidColorBrush x:Key="SuccessBrush" Color="#4ED18B" />
         <SolidColorBrush x:Key="WarningBrush" Color="#F2B84B" />
         <SolidColorBrush x:Key="DestructiveBrush" Color="#F07878" />
@@ -99,6 +103,79 @@
 
         <Style TargetType="Slider">
             <Setter Property="Height" Value="24" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track"
+                                   Height="24"
+                                   VerticalAlignment="Center"
+                                   IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Focusable="False"
+                                                  IsHitTestVisible="False"
+                                                  Command="{x:Static Slider.DecreaseLarge}"
+                                                  CommandTarget="{Binding RelativeSource={RelativeSource AncestorType={x:Type Slider}}}">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border x:Name="CompletedTrack"
+                                                        Height="4"
+                                                        VerticalAlignment="Center"
+                                                        Background="{StaticResource SliderProgressBrush}"
+                                                        CornerRadius="2" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Focusable="False"
+                                                  IsHitTestVisible="False"
+                                                  Command="{x:Static Slider.IncreaseLarge}"
+                                                  CommandTarget="{Binding RelativeSource={RelativeSource AncestorType={x:Type Slider}}}">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Height="4"
+                                                        VerticalAlignment="Center"
+                                                        Background="{StaticResource SliderTrackBrush}"
+                                                        CornerRadius="2" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="14" Height="14" Cursor="Hand">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="ThumbBody"
+                                                        Background="{StaticResource SliderThumbBrush}"
+                                                        BorderBrush="{StaticResource SliderThumbBorderBrush}"
+                                                        BorderThickness="2"
+                                                        CornerRadius="7" />
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbBody" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                                        <Setter TargetName="ThumbBody" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThresholdMarkerSliderStyle" TargetType="Slider">
+            <Setter Property="Height" Value="24" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Focusable" Value="True" />
             <Setter Property="Background" Value="{StaticResource WindowBrush}" />
@@ -139,8 +216,7 @@
                                         </RepeatButton>
                                     </Track.IncreaseRepeatButton>
                                     <Track.Thumb>
-                                        <Thumb Width="1.5"
-                                               Height="24">
+                                        <Thumb Width="1.5" Height="24">
                                             <Thumb.Template>
                                                 <ControlTemplate TargetType="Thumb">
                                                     <Border Background="{StaticResource MutedTextBrush}" />

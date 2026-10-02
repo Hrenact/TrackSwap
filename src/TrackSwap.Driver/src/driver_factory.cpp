@@ -39,28 +39,28 @@ public:
                 vr::TrackedDeviceClass_HMD,
                 &virtualHmd_);
             vr::VRDriverLog()->Log(virtualHmdRegistered_
-                ? "TrackSwap registered the virtual HMD."
-                : "TrackSwap failed to register the virtual HMD.");
+                ? "TrackSwap VR registered the virtual HMD."
+                : "TrackSwap VR failed to register the virtual HMD.");
             vr::VRDriverLog()->Log(virtualDisplayRedirectRegistered_
-                ? "TrackSwap registered the virtual display redirect."
-                : "TrackSwap failed to register the virtual display redirect.");
+                ? "TrackSwap VR registered the virtual display redirect."
+                : "TrackSwap VR failed to register the virtual display redirect.");
         }
         if (!controlServer_.Start(&trackerRegistry_))
         {
-            vr::VRDriverLog()->Log("TrackSwap failed to start its driver control endpoint.");
+            vr::VRDriverLog()->Log("TrackSwap VR failed to start its driver control endpoint.");
             return vr::VRInitError_Driver_Failed;
         }
 
         if (trackswap::LaunchRuntimeForSteamVrSession())
         {
-            vr::VRDriverLog()->Log("TrackSwap requested its Runtime for this SteamVR session.");
+            vr::VRDriverLog()->Log("TrackSwap VR requested its Runtime for this SteamVR session.");
         }
         else
         {
-            vr::VRDriverLog()->Log("TrackSwap Runtime executable was not found beside the installed package.");
+            vr::VRDriverLog()->Log("TrackSwap VR Runtime executable was not found beside the installed package.");
         }
 
-        vr::VRDriverLog()->Log("TrackSwap multi-route driver initialized; proxies will be registered on demand.");
+        vr::VRDriverLog()->Log("TrackSwap VR multi-route driver initialized; proxies will be registered on demand.");
         return vr::VRInitError_None;
     }
 

@@ -90,6 +90,7 @@ bool VirtualTracker::QueueSnapshot(
     const char* rotationSourceDevicePath,
     const char* targetDevicePath,
     const pose_math::RigidOffset& offset,
+    const pose_smoothing::Configuration& smoothing,
     std::uint64_t revision)
 {
     std::lock_guard<std::mutex> lock(pendingSourceMutex_);
@@ -130,8 +131,10 @@ bool VirtualTracker::QueueSnapshot(
             _TRUNCATE);
     }
     pendingOffset_ = offset;
+    pendingSmoothing_ = smoothing;
     hasPendingSource_ = true;
     hasPendingOffset_ = true;
+    hasPendingSmoothing_ = true;
     hasPendingSnapshotRevision_ = true;
     pendingSnapshotRevision_ = revision;
     latestAcceptedSnapshotRevision_ = revision;
@@ -152,7 +155,7 @@ vr::EVRInitError VirtualTracker::Activate(std::uint32_t objectId)
     vr::VRProperties()->SetStringProperty(
         properties,
         vr::Prop_ModelNumber_String,
-        proxyDevice_ ? "TrackSwap Proxy Tracker" : "TrackSwap Virtual Tracker");
+        proxyDevice_ ? "TrackSwap VR Proxy Tracker" : "TrackSwap VR Virtual Tracker");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
     SetRenderModelVisible(!proxyDevice_, true);
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
@@ -202,6 +205,7 @@ vr::EVRInitError VirtualTracker::Activate(std::uint32_t objectId)
 
 void VirtualTracker::Deactivate()
 {
+    poseSmoother_.Reset();
     objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
@@ -248,6 +252,7 @@ void VirtualTracker::Update()
 
     if (!activeEnabled_)
     {
+        poseSmoother_.Reset();
         lastPose_ = pose_math::MakeInvalidPose();
         SetHealth(false);
         PublishTelemetry();
@@ -328,11 +333,13 @@ void VirtualTracker::Update()
     if (activeManualPose_)
     {
         lastPose_ = pose_math::ApplyOffset(pose_math::MakeValidIdentityPose(), activeOffset_);
+        lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
         SetHealth(true);
     }
     else if (sourceId_ == vr::k_unTrackedDeviceIndexInvalid ||
         (splitSource && rotationSourceId_ == vr::k_unTrackedDeviceIndexInvalid))
     {
+        poseSmoother_.Reset();
         // Keep an enabled proxy registered while its physical source is absent.
         // Reporting the proxy itself as disconnected can make SteamVR discard the
         // active TrackingOverrides attachment, which does not reliably recover in
@@ -351,6 +358,7 @@ void VirtualTracker::Update()
                 pose_math::ConvertPose(rawPoses_[rotationSourceId_]));
         }
         lastPose_ = pose_math::ApplyOffset(basePose, activeOffset_);
+        lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
         SetHealth(lastPose_.deviceIsConnected && lastPose_.poseIsValid);
         if (!lastPose_.deviceIsConnected)
         {
@@ -380,6 +388,7 @@ void VirtualTracker::ApplyPendingSource()
     pose_math::RigidOffset pendingOffset = pose_math::IdentityOffset();
     bool sourceChanged = false;
     bool offsetChanged = false;
+    bool smoothingChanged = false;
     bool snapshotRevisionChanged = false;
     bool enabledChanged = false;
     bool pendingEnabled = false;
@@ -404,6 +413,11 @@ void VirtualTracker::ApplyPendingSource()
             hasPendingOffset_ = false;
             offsetChanged = true;
         }
+        if (hasPendingSmoothing_)
+        {
+            hasPendingSmoothing_ = false;
+            smoothingChanged = true;
+        }
         if (hasPendingSnapshotRevision_)
         {
             pendingRevision = pendingSnapshotRevision_;
@@ -420,6 +434,7 @@ void VirtualTracker::ApplyPendingSource()
 
     if (sourceChanged)
     {
+        poseSmoother_.Reset();
         ConfigureSource(pending.data());
         rotationSourceDevicePath_ = pendingRotation;
         rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
@@ -433,12 +448,19 @@ void VirtualTracker::ApplyPendingSource()
         targetSearchCountdown_ = 0;
         lastPose_ = pose_math::MakeInvalidPose();
         SetHealth(false);
-        vr::VRDriverLog()->Log("TrackSwap accepted a live source switch.");
+        vr::VRDriverLog()->Log("TrackSwap VR accepted a live source switch.");
     }
     if (offsetChanged)
     {
         activeOffset_ = pendingOffset;
-        vr::VRDriverLog()->Log("TrackSwap applied a live pose offset.");
+        poseSmoother_.Reset();
+        vr::VRDriverLog()->Log("TrackSwap VR applied a live pose offset.");
+    }
+    if (smoothingChanged)
+    {
+        activeSmoothing_ = pendingSmoothing_;
+        poseSmoother_.Reset();
+        vr::VRDriverLog()->Log("TrackSwap VR applied live motion smoothing settings.");
     }
     if (snapshotRevisionChanged)
     {
@@ -482,12 +504,12 @@ void VirtualTracker::SetRenderModelVisible(bool visible, bool force)
     {
         renderModelVisible_ = visible;
         vr::VRDriverLog()->Log(visible
-            ? "TrackSwap switched the proxy to its visible render model."
-            : "TrackSwap switched the proxy to its hidden render model.");
+            ? "TrackSwap VR switched the proxy to its visible render model."
+            : "TrackSwap VR switched the proxy to its hidden render model.");
     }
     else
     {
-        vr::VRDriverLog()->Log("TrackSwap failed to switch the proxy render model.");
+        vr::VRDriverLog()->Log("TrackSwap VR failed to switch the proxy render model.");
     }
 }
 
@@ -535,7 +557,7 @@ void VirtualTracker::FindSource()
         if (rawPoses_[index].bDeviceIsConnected && DevicePathMatches(index, sourceDevicePath_.data()))
         {
             sourceId_ = index;
-            vr::VRDriverLog()->Log("TrackSwap source device connected.");
+            vr::VRDriverLog()->Log("TrackSwap VR source device connected.");
             return;
         }
     }
@@ -553,7 +575,7 @@ void VirtualTracker::FindRotationSource()
             DevicePathMatches(index, rotationSourceDevicePath_.data()))
         {
             rotationSourceId_ = index;
-            vr::VRDriverLog()->Log("TrackSwap rotation source device connected.");
+            vr::VRDriverLog()->Log("TrackSwap VR rotation source device connected.");
             return;
         }
     }
@@ -654,7 +676,7 @@ void VirtualTracker::SetHealth(bool healthy)
 
     lastHealth_ = healthy;
     vr::VRDriverLog()->Log(healthy
-        ? "TrackSwap virtual tracker is receiving a valid source pose."
-        : "TrackSwap source pose became invalid or disconnected.");
+        ? "TrackSwap VR virtual tracker is receiving a valid source pose."
+        : "TrackSwap VR source pose became invalid or disconnected.");
 }
 } // namespace trackswap

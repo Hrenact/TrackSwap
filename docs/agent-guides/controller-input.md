@@ -1,19 +1,19 @@
-# TrackSwap Virtual-Controller Input
+# TrackSwap VR Virtual-Controller Input
 
 Read this guide before changing the fixed `TRKSWAP-CONTROLLER-L` / `TRKSWAP-CONTROLLER-R` devices, virtual-controller profiles, OSC, XInput, haptics, or synthesized skeletons.
 
 ## Controller Identity and OpenVR Surface
 
-- Retain TrackSwap-owned serials and identity while exposing an Oculus Touch-compatible surface. Left face buttons are `/input/x` and `/input/y`; right face buttons are `/input/a` and `/input/b`; both hands expose `/input/joystick`, `/input/trigger`, `/input/grip`, and standard Touch skeletal paths.
+- Retain TrackSwap VR-owned serials and identity while exposing an Oculus Touch-compatible surface. Left face buttons are `/input/x` and `/input/y`; right face buttons are `/input/a` and `/input/b`; both hands expose `/input/joystick`, `/input/trigger`, `/input/grip`, and standard Touch skeletal paths.
 - Trigger and grip expose `value` and `touch`, never synthetic `click`. Expose `/input/system` only on the left and merge the two configured menu states with logical OR. Do not expose Knuckles-only trackpads, force sensors, or per-finger scalar inputs.
 - Create and update real `/pose/openxr_aim` and `/pose/openxr_grip` driver components for both hands. Align their local offsets with SteamVR's Quest 2 render models, including mirrored handed X translation.
-- The TrackSwap profile includes handed binding images and a `binding_image_point` for every exposed input/pose source. It may reference installed Oculus Touch art, legacy binding, and models while advertising only implemented capabilities.
-- Localize the controller type as `TrackSwap Controller` / `TrackSwap 控制器`. Declare `oculus_touch` using `compatibility_mode_controller_type`; do not also attach the Oculus remapping file, ship app-specific defaults, or impersonate Oculus identities.
+- The TrackSwap VR profile includes handed binding images and a `binding_image_point` for every exposed input/pose source. It may reference installed Oculus Touch art, legacy binding, and models while advertising only implemented capabilities.
+- Localize the controller type as `TrackSwap VR Controller` / `TrackSwap VR 控制器`. Declare `oculus_touch` using `compatibility_mode_controller_type`; do not also attach the Oculus remapping file, ship app-specific defaults, or impersonate Oculus identities.
 - Default `Prop_ControllerHandSelectionPriority_Int32` to `0`. Expose the shared signed 32-bit setting under Advanced Settings with restore-default. Disabled controllers submit disconnected poses so physical controllers can regain roles.
 
 ## OSC
 
-- Accept numeric values only for TrackSwap's fixed built-in addresses. Do not persist per-control addresses in `runtime-config.json`; ignore legacy address fields while loading. Clamp joystick axes to `[-1, 1]`, trigger/grip to `[0, 1]`, and treat button values above `0.5` as pressed.
+- Accept numeric values only for TrackSwap VR's fixed built-in addresses. Do not persist per-control addresses in `runtime-config.json`; ignore legacy address fields while loading. Clamp joystick axes to `[-1, 1]`, trigger/grip to `[0, 1]`, and treat button values above `0.5` as pressed.
 - Provide fixed touch-assist addresses `/trackswap/{left|right}/touch/thumb` and `/trackswap/{left|right}/touch/index`. Values above `0.5` temporarily invert the configured idle contact state. Real face/menu/joystick activity and nonzero trigger/grip values take priority.
 - Runtime initializes and periodically refreshes a complete explicit touch snapshot so defaults work before packets arrive and after UI exit.
 - Keep left/right state independent. A valid packet refreshes only matched hands. Apply all values in a packet, then send at most one snapshot per changed hand. Repeated unchanged values still refresh receiver health but cause no immediate driver IPC.

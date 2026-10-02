@@ -42,6 +42,56 @@ public sealed class ConfigurationStoreTests
     }
 
     [Fact]
+    public void MissingMotionSmoothingConfigurationUsesDisabledDefaults()
+    {
+        RouteConfiguration route = JsonConvert.DeserializeObject<RouteConfiguration>("{}")!;
+
+        Assert.False(route.MotionSmoothing.Enabled);
+        Assert.True(route.MotionSmoothing.SmoothPosition);
+        Assert.True(route.MotionSmoothing.SmoothRotation);
+        Assert.True(route.MotionSmoothing.LinkStrengths);
+        Assert.Equal(0.0, route.MotionSmoothing.PositionStrength);
+        Assert.Equal(0.0, route.MotionSmoothing.RotationStrength);
+    }
+
+    [Fact]
+    public void LoadRoundsLegacyFractionalMotionSmoothingStrengths()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "trackswap-tests", Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "runtime.json");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var configuration = new RuntimeConfiguration();
+            configuration.Routes.Add(new RouteConfiguration
+            {
+                RouteId = "smoothing-rounding",
+                VirtualDeviceSlot = 0,
+                Mode = RouteMode.DirectProxy,
+                PoseSourceKind = PoseSourceKind.Manual,
+                MotionSmoothing = new MotionSmoothingConfiguration
+                {
+                    Enabled = true,
+                    SmoothPosition = true,
+                    SmoothRotation = true,
+                    PositionStrength = 45.5,
+                    RotationStrength = 39.4
+                }
+            });
+            File.WriteAllText(path, JsonConvert.SerializeObject(configuration, RuntimeJson.Settings));
+
+            RuntimeConfiguration loaded = new ConfigurationStore(path).Load();
+
+            Assert.Equal(46.0, loaded.Routes[0].MotionSmoothing.PositionStrength);
+            Assert.Equal(39.0, loaded.Routes[0].MotionSmoothing.RotationStrength);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadIgnoresLegacyOscAddressMappings()
     {
         string directory = Path.Combine(Path.GetTempPath(), "trackswap-tests", Guid.NewGuid().ToString("N"));

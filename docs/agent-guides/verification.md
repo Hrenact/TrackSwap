@@ -33,12 +33,11 @@ Before a release, document hardening for install, upgrade, disable, uninstall, S
 
 ## Process Locks and Lifecycle
 
-- If TrackSwap UI or Runtime locks Release outputs, the maintainer authorizes closing those TrackSwap-owned processes without another prompt. Prefer graceful shutdown; terminate only exact remaining TrackSwap processes and report what was closed.
+- If TrackSwap VR UI or Runtime locks Release outputs, the maintainer authorizes closing those TrackSwap VR-owned processes without another prompt. Prefer graceful shutdown; terminate only exact remaining TrackSwap processes and report what was closed.
 - SteamVR lifecycle authorization is recorded in the repository root guide. Always verify exact processes, avoid unrelated applications, and announce lifecycle changes in progress updates.
 
-## Maintainer Test Machine
+## Maintainer Hardware Checks
 
-SteamVR has previously been located at `D:\Program Files (x86)\Steam\steamapps\common\SteamVR` and settings at `D:\Program Files (x86)\Steam\config\steamvr.vrsettings`. These are test references only; product code must discover paths dynamically.
+Discover SteamVR and its settings dynamically on the active test machine; never copy a maintainer-specific absolute path into product code, diagnostics, documentation, or release artifacts.
 
 At a hardware boundary, give the maintainer exact setup, expected outcome, and recovery instructions. Never infer tracking correctness from a successful build alone.
-

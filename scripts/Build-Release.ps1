@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]{3}$')]
-    [string]$Version = 'v010',
+    [string]$Version = 'v011',
     [switch]$Clean
 )
 
@@ -29,13 +29,15 @@ if (Test-Path -LiteralPath $stageDirectory) {
 }
 New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
 
-dotnet build (Join-Path $repositoryRoot 'TrackSwap.sln') -c Release
+dotnet build (Join-Path $repositoryRoot 'TrackSwap.sln') -c Release `
+    -p:DebugType=None -p:DebugSymbols=false
 if ($LASTEXITCODE -ne 0) { throw "Managed build failed with exit code $LASTEXITCODE." }
 dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.Protocol.Tests\TrackSwap.Protocol.Tests.csproj') -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw "Protocol tests failed with exit code $LASTEXITCODE." }
 dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.Tests\TrackSwap.Tests.csproj') -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw "UI storage tests failed with exit code $LASTEXITCODE." }
-dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.Runtime.Tests\TrackSwap.Runtime.Tests.csproj') -c Release
+dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.Runtime.Tests\TrackSwap.Runtime.Tests.csproj') `
+    -c Release -p:DebugType=None -p:DebugSymbols=false
 if ($LASTEXITCODE -ne 0) { throw "Runtime tests failed with exit code $LASTEXITCODE." }
 dotnet test (Join-Path $repositoryRoot 'tests\TrackSwap.HapticPhoneDiagnostic.Tests\TrackSwap.HapticPhoneDiagnostic.Tests.csproj') -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw "Phone haptic diagnostic tests failed with exit code $LASTEXITCODE." }
@@ -51,11 +53,12 @@ if ($LASTEXITCODE -ne 0) { throw "Installer registration tests failed with exit 
     -Clean:$Clean
 
 dotnet publish (Join-Path $repositoryRoot 'src\TrackSwap\TrackSwap.csproj') `
-    -c Release --no-build -o $stageDirectory
+    -c Release --no-build -p:DebugType=None -p:DebugSymbols=false -o $stageDirectory
 if ($LASTEXITCODE -ne 0) { throw "UI publish failed with exit code $LASTEXITCODE." }
 $runtimeDirectory = Join-Path $stageDirectory 'runtime'
 dotnet publish (Join-Path $repositoryRoot 'src\TrackSwap.Runtime\TrackSwap.Runtime.csproj') `
-    -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $runtimeDirectory
+    -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false `
+    -p:DebugType=None -p:DebugSymbols=false -o $runtimeDirectory
 if ($LASTEXITCODE -ne 0) { throw "Runtime publish failed with exit code $LASTEXITCODE." }
 
 # Symbols are useful in CI artifacts, but the end-user ZIP and Steam depot must

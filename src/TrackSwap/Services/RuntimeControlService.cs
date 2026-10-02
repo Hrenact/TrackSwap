@@ -111,7 +111,7 @@ namespace TrackSwap.Services
             string executable = FindRuntimeExecutablePath();
             if (executable == null)
             {
-                error = Tr.Get("service.runtime_control.try_start_runtime.program_directory_trackswap_runtime_exe_complete_v010");
+                error = Tr.Get("service.runtime_control.try_start_runtime.program_directory_trackswap_runtime_exe_complete_v011");
                 return false;
             }
 
@@ -263,7 +263,9 @@ namespace TrackSwap.Services
             {
             }
 
-            return new InvalidDataException(Tr.Get("service.runtime_control.create_unexpected_response_exception.runtime") + response.MessageType);
+            return new InvalidDataException(Tr.Format(
+                "service.runtime_control.create_unexpected_response_exception.runtime",
+                response.MessageType));
         }
 
         private sealed class AppliedRevision

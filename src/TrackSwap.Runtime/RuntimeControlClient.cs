@@ -26,7 +26,7 @@ internal static class RuntimeControlClient
         }
         catch (OperationCanceledException exception)
         {
-            throw new TimeoutException("连接 TrackSwap Runtime 超时。", exception);
+            throw new TimeoutException("连接 TrackSwap VR Runtime 超时。", exception);
         }
         string requestJson = JsonConvert.SerializeObject(request, RuntimeJson.Settings) + "\n";
         byte[] requestBytes = Encoding.UTF8.GetBytes(requestJson);
@@ -44,7 +44,7 @@ internal static class RuntimeControlClient
         }
         catch (OperationCanceledException exception)
         {
-            throw new TimeoutException("等待 TrackSwap Runtime 响应超时。", exception);
+            throw new TimeoutException("等待 TrackSwap VR Runtime 响应超时。", exception);
         }
         if (responseJson == null)
         {

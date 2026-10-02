@@ -41,7 +41,7 @@ internal sealed class SteamVrStaticMappingService
             {
                 return StaticMappingReconciliationResult.Completed;
             }
-            throw new FileNotFoundException("找不到 steamvr.vrsettings，无法整理 TrackSwap 静态映射。", settingsPath);
+            throw new FileNotFoundException("找不到 steamvr.vrsettings，无法整理 TrackSwap VR 静态映射。", settingsPath);
         }
 
         JObject root = JObject.Parse(File.ReadAllText(settingsPath));

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 
 namespace TrackSwap.Localization
@@ -93,7 +92,7 @@ namespace TrackSwap.Localization
 
             if (LocalizationManager.Current.IsMissing(key))
             {
-                EnterMissingState(element, key);
+                EnterMissingState(element);
             }
             else
             {
@@ -101,13 +100,12 @@ namespace TrackSwap.Localization
             }
         }
 
-        private static void EnterMissingState(FrameworkElement element, string key)
+        private static void EnterMissingState(FrameworkElement element)
         {
             if (!VisualStates.TryGetValue(element, out MissingVisualState state))
             {
                 state = new MissingVisualState(element);
                 VisualStates.Add(element, state);
-                element.PreviewMouseLeftButtonDown += MissingElement_PreviewMouseLeftButtonDown;
             }
             Brush warning = Application.Current?.TryFindResource("WarningBrush") as Brush ?? Brushes.Orange;
             if (element is TextBlock textBlock)
@@ -120,8 +118,6 @@ namespace TrackSwap.Localization
                 control.Foreground = warning;
                 control.FontFamily = new FontFamily("Consolas");
             }
-            element.Cursor = Cursors.Hand;
-            element.ToolTip = Tr.Get("language.copy_tooltip") + key;
         }
 
         private static void LeaveMissingState(FrameworkElement element)
@@ -131,31 +127,13 @@ namespace TrackSwap.Localization
                 return;
             }
             state.Restore(element);
-            element.PreviewMouseLeftButtonDown -= MissingElement_PreviewMouseLeftButtonDown;
             VisualStates.Remove(element);
-        }
-
-        private static void MissingElement_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (!(sender is FrameworkElement element))
-            {
-                return;
-            }
-            string key = GetKey(element);
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                return;
-            }
-            Clipboard.SetText(key);
-            e.Handled = true;
         }
 
         private sealed class MissingVisualState
         {
             private readonly object _foreground;
             private readonly object _fontFamily;
-            private readonly object _cursor;
-            private readonly object _toolTip;
 
             public MissingVisualState(FrameworkElement element)
             {
@@ -169,8 +147,6 @@ namespace TrackSwap.Localization
                     _foreground = control.ReadLocalValue(Control.ForegroundProperty);
                     _fontFamily = control.ReadLocalValue(Control.FontFamilyProperty);
                 }
-                _cursor = element.ReadLocalValue(FrameworkElement.CursorProperty);
-                _toolTip = element.ReadLocalValue(FrameworkElement.ToolTipProperty);
             }
 
             public void Restore(FrameworkElement element)
@@ -185,8 +161,6 @@ namespace TrackSwap.Localization
                     RestoreValue(control, Control.ForegroundProperty, _foreground);
                     RestoreValue(control, Control.FontFamilyProperty, _fontFamily);
                 }
-                RestoreValue(element, FrameworkElement.CursorProperty, _cursor);
-                RestoreValue(element, FrameworkElement.ToolTipProperty, _toolTip);
             }
 
             private static void RestoreValue(DependencyObject element, DependencyProperty property, object value)

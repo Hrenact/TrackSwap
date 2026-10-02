@@ -18,13 +18,13 @@ internal static class TrackSwapUiLauncher
         {
             if (IsRunning(executable))
             {
-                WriteDiagnostic("TrackSwap UI observed: " + executable);
+                WriteDiagnostic("TrackSwap VR UI observed: " + executable);
                 return;
             }
 
             bool started = Start(executable);
             WriteDiagnostic((started ? "Requested" : "Failed to request") +
-                " TrackSwap UI: " + executable);
+                " TrackSwap VR UI: " + executable);
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
         }
     }

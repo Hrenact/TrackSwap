@@ -67,8 +67,10 @@ namespace TrackSwap.Services
                     }
                     if (modelError != EVRRenderModelError.None || nativeModelPointer == IntPtr.Zero)
                     {
-                        throw new InvalidDataException(
-                            Tr.Get("service.open_vr_render_model.load_core.steamvr_cannot_model") + renderModelName + Tr.Get("service.open_vr_interop.get_interface.error_code") + (int)modelError);
+                        throw new InvalidDataException(Tr.Format(
+                            "service.open_vr_render_model.load_core.failed",
+                            renderModelName,
+                            (int)modelError));
                     }
                 }
 

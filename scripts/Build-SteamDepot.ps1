@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]{3}$')]
-    [string]$Version = 'v010',
+    [string]$Version = 'v011',
 
     [Parameter(Mandatory = $true)]
     [ValidateRange(1, [uint32]::MaxValue)]

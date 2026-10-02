@@ -1,4 +1,4 @@
-# TrackSwap UI Guidelines
+# TrackSwap VR UI Guidelines
 
 Read this guide before changing the WPF UI, dialogs, previews, selectors, settings pages, or visual assets. For user-facing text, also read [`../localization.md`](../localization.md).
 
@@ -34,10 +34,12 @@ Read this guide before changing the WPF UI, dialogs, previews, selectors, settin
 
 ## Visual Language and Shared Controls
 
+- Use `TrackSwap VR` as the product name in windows, dialogs, settings copy, SteamVR-visible labels, and other user-facing surfaces. Keep technical compatibility identifiers named `TrackSwap` as required by the distribution guide.
 - Preserve the **Dark Utility** language: neutral charcoal/graphite surfaces, low-contrast layers, compact 4/8 px spacing, restrained sans-serif hierarchy, subtle 1 px separators, 2–6 px radii, compact rectangular controls, and one clear blue accent.
 - Avoid blue-tinted backgrounds, gradients, glass, decorative shadows, giant rounded cards, pill buttons, oversized headings, and marketing-style empty space.
 - All standard `ComboBox` controls use the shared template and a fixed `30 px` arrow column. Do not restore `38 px` or add page-specific arrow widths.
 - Preserve natural compact-control height. Fix local stretch/alignment problems locally instead of globally enlarging already-correct controls.
+- Passive labels beside checkboxes must remain separate text: only the visible checkbox square toggles the option, never its label or the rest of the row. Ordinary sliders use the shared subdued blue-gray track and dark thumb, and adjust only by dragging the thumb; clicking the track must not jump or increment the value. Specialized controls such as the XInput threshold marker may define an explicit, documented hit target.
 - Request a dark native title bar for every app-owned window/dialog. Unsupported DWM attributes are a harmless fallback.
 - Explicitly theme tooltips, context menus, popups, drop-downs, and dialogs. Inspect rendered popup contrast because the implicit `TextBlock` style can otherwise cause white-on-white or black-on-black text.
 - Use shared `AppDialog` for all application messages and confirmations. Do not add `System.Windows.MessageBox`. Preserve compact geometry, application icon, semantic status color, Windows system sound, keyboard defaults, and dark title bar.
@@ -53,6 +55,8 @@ Read this guide before changing the WPF UI, dialogs, previews, selectors, settin
 
 - Keep the selected route's 3D preview always visible and beside the numeric local-pose editor. Do not restore automatic-calibration UI.
 - Store and display `PoseOffset` translation in centimetres. Convert to metres only at the driver-control boundary; raw OpenVR math and telemetry stay in metres. Do not add migration or dual-unit interpretation.
+- Edit rotation through a compact `欧拉角 / 四元数` segmented selector in the local-pose card. Euler is the default and shows equal-width X/Y/Z degree fields; quaternion retains the compact X/Y/Z/W grid. Persist this as one global UI preference, never per route. Switching the editor changes presentation only: it must not alter the represented pose, create a route revision, or auto-apply. The quaternion remains the stored source of truth. Euler composition is X then Y then Z, exactly `q = qZ * qY * qX`; conversion back uses a stable canonical representation at gimbal lock. Reset displays `0 / 0 / 0` in Euler mode and `0 / 0 / 0 / 1` in quaternion mode.
+- Keep the selected route's compact `运动平滑` card above `局部位姿偏移` in the left preview column, while the taller 3D preview occupies the right column beside both cards. Expose the persisted linked-adjustment option first, followed by independent position/rotation switches and ordinary shared-theme sliders; do not add a redundant master switch. Strengths are integer percentages from `0%` to `100%` and default to `0%`; enabling linked adjustment rounds the two-channel average to the nearest integer (halves away from zero), assigns it to both channels, and subsequent edits move them together. Selecting either channel enables smoothing, and clearing both channels disables it. Follow the shared checkbox and slider hit-target rules: the linked-adjustment label is passive, and strength changes require dragging a slider thumb.
 - The `调整工具` selector is ordered `隐藏`, `移动`, `旋转`, defaulting to `隐藏`. Hiding it does not clear offsets. Dragging updates fields and local preview continuously; release persists through auto-apply. Shift enables fine adjustment.
 - Anchor the gizmo only to the configured virtual output in its local axes. Its visibility, pose, and framing do not depend on proxy-model rendering and it never moves to the source or final target.
 - Prefer OpenVR-registered render models but retain built-in HMD/controller/tracker/generic fallbacks. Model loading is UI-only and observational.
@@ -62,8 +66,9 @@ Read this guide before changing the WPF UI, dialogs, previews, selectors, settin
 ## Device Selectors and Physical-Source Hiding
 
 - Device selectors use dots only: green for connected and orange for remembered/disconnected, including currently referenced devices. Do not prefix entries with `当前`, `历史`, `在线`, or `离线`.
-- Persist discovered physical-device metadata in a small local JSON file, exclude TrackSwap virtual devices, deduplicate by exact OpenVR path, and let Settings clear unreferenced records while preserving route choices.
-- Refresh the physical-device catalog automatically at low frequency. Rebuild controls only when the catalog changes, defer while related drop-downs are open, and retain the last successful catalog across transient enumeration failures.
+- Persist discovered physical-device metadata in a small versioned local JSON file, exclude TrackSwap virtual devices, deduplicate by exact OpenVR path, and let Settings clear records while preserving route choices. `设备管理` may assign a TrackSwap VR-only display name and note to devices and observed wireless receivers; aliases never modify SteamVR or device firmware and should be used consistently in device selectors.
+- Read the current receiver relationship from OpenVR's `Prop_ConnectedWirelessDongle_String`. List only receivers that TrackSwap VR has actually observed through a connected device; do not infer or claim enumeration of idle, never-observed receivers from private SteamVR files. Persist the last observed receiver per device. Clearly disclose that UI-only observation does not record changes made while the UI is closed.
+- Refresh the physical-device catalog automatically once per second. Rebuild controls only when the catalog or receiver relationship changes, defer while related drop-downs are open, and retain the last successful catalog across transient enumeration failures.
 - Physical-source hiding is an opt-in Advanced Runtime feature. Its global switch reveals the per-route `隐藏物理位姿来源设备` request. Disabling globally clears all requests; changing a source clears that route's request; TrackSwap-owned devices may never be hidden. Warn separately before hiding an HMD.
 - Runtime owns requests and the driver hook remains active after UI exit. The hook fails open on conflict/partial failure, and route output uses the pre-hidden source pose while subtracting TrackSwap's hiding displacement.
 - Preserve target input from the original target device: TrackSwap replaces pose, not controller input.

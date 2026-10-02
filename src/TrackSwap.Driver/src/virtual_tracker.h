@@ -9,6 +9,7 @@
 
 #include "control_protocol.h"
 #include "pose_math.h"
+#include "pose_smoothing.h"
 
 namespace trackswap
 {
@@ -29,6 +30,7 @@ public:
         const char* rotationSourceDevicePath,
         const char* targetDevicePath,
         const pose_math::RigidOffset& offset,
+        const pose_smoothing::Configuration& smoothing,
         std::uint64_t revision);
     control_protocol::TelemetrySnapshot GetTelemetry() const;
     vr::TrackedDeviceIndex_t SourceDeviceId() const;
@@ -63,6 +65,9 @@ private:
     std::array<char, MaximumDevicePathBytes> pendingTargetDevicePath_{};
     pose_math::RigidOffset activeOffset_ = pose_math::IdentityOffset();
     pose_math::RigidOffset pendingOffset_ = pose_math::IdentityOffset();
+    pose_smoothing::Configuration activeSmoothing_{};
+    pose_smoothing::Configuration pendingSmoothing_{};
+    pose_smoothing::PoseSmoother poseSmoother_{};
     std::array<vr::TrackedDevicePose_t, vr::k_unMaxTrackedDeviceCount> rawPoses_{};
     vr::TrackedDeviceIndex_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     vr::TrackedDeviceIndex_t sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
@@ -80,6 +85,7 @@ private:
     bool hasPendingEnabled_ = false;
     bool hasPendingSource_ = false;
     bool hasPendingOffset_ = false;
+    bool hasPendingSmoothing_ = false;
     bool hasPendingSnapshotRevision_ = false;
     std::uint64_t pendingSnapshotRevision_ = 0;
     std::uint64_t latestAcceptedSnapshotRevision_ = 0;

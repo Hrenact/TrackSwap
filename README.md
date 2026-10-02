@@ -1,16 +1,16 @@
-# TrackSwap
+# TrackSwap VR
 
-TrackSwap 是一款面向 SteamVR 的 Windows 位姿路由工具。它可以把一台设备的位置与旋转输出为虚拟 Tracker、虚拟控制器或虚拟头显，或用来替换另一台设备的定位，同时保留目标设备原有的按键输入。
+TrackSwap VR 是一款面向 SteamVR 的 Windows 位姿路由工具。它可以把一台设备的位置与旋转输出为虚拟 Tracker、虚拟控制器或虚拟头显，或用来替换另一台设备的定位，同时保留目标设备原有的按键输入。
 
-当前开发版本：**v010**
+当前版本：**v011**
 
-[下载已发布版本](https://github.com/Hrenact/TrackSwap/releases) · [查看 v010 更新说明](docs/releases/v010.md)
+[下载已发布版本](https://github.com/Hrenact/TrackSwap/releases) · [查看 v011 更新说明](docs/releases/v011.md)
 
-<!-- TODO: 在这里补充一张 TrackSwap 主界面截图。 -->
+<!-- TODO: 在这里补充一张 TrackSwap VR 主界面截图。 -->
 
 ## 它可以做什么
 
-- 把 VIVE Tracker 等实体设备输出为稳定的 TrackSwap 虚拟 Tracker。
+- 把 VIVE Tracker 等实体设备输出为稳定的 TrackSwap VR 虚拟 Tracker。
 - 使用 Tracker 的定位替换实体手柄的位姿，同时保留手柄原有按键和摇杆。
 - 使用 Tracker、头显或手柄的位姿驱动虚拟左手或右手控制器。
 - 通过 XInput 游戏手柄或 OSC 为虚拟控制器提供按键、摇杆和触摸输入。
@@ -24,18 +24,18 @@ TrackSwap 是一款面向 SteamVR 的 Windows 位姿路由工具。它可以把�
 - SteamVR
 - .NET Framework 4.8
 
-TrackSwap 直接使用 SteamVR 自带的 OpenVR 运行库，不需要另外安装 OpenVR SDK。
+TrackSwap VR 直接使用 SteamVR 自带的 OpenVR 运行库，不需要另外安装 OpenVR SDK。
 
 ## 下载与安装
 
 推荐从 [GitHub Releases](https://github.com/Hrenact/TrackSwap/releases) 下载 Windows 安装程序。
 
 1. 完全退出 SteamVR。
-2. 运行 TrackSwap 安装程序。
+2. 运行 TrackSwap VR 安装程序。
 3. 按照向导完成安装；安装程序会自动注册随附的 SteamVR 驱动。
-4. 安装完成后启动 TrackSwap。
+4. 安装完成后启动 TrackSwap VR。
 
-安装过程默认不需要管理员权限。Runtime 会按照“设置 → 高级选项 → Runtime 启停行为”自动由 TrackSwap 或 SteamVR 托管，无需日常手动启动。
+安装过程默认不需要管理员权限。Runtime 会按照“设置 → 高级选项 → Runtime 启停行为”自动由 TrackSwap VR 或 SteamVR 托管，无需日常手动启动。
 
 当前 Windows 安装程序尚未进行代码签名，SmartScreen 可能显示提醒。请只从本仓库的正式 Release 页面下载安装包。
 
@@ -59,7 +59,7 @@ TrackSwap 直接使用 SteamVR 自带的 OpenVR 运行库，不需要另外安�
 ## 快速开始
 
 1. 打开要使用的头显、手柄或 Tracker。
-2. 启动 SteamVR，等待设备连接，然后打开 TrackSwap。
+2. 启动 SteamVR，等待设备连接，然后打开 TrackSwap VR。
 3. 点击左侧“新增”，选择运行模式。
 4. 选择物理位姿来源，并完成该模式要求的其它选项。
 5. 在“局部位姿偏移”中输入精确数值，或在右侧 3D 预览中使用“移动”和“旋转”工具。
@@ -81,33 +81,33 @@ TrackSwap 直接使用 SteamVR 自带的 OpenVR 运行库，不需要另外安�
 - 停用或删除需要清理静态映射的配置
 - 首次启用、停用或删除虚拟头显配置
 
-出现“待映射”或“待删除”时，完全退出 SteamVR 即可。Runtime 会在后台完成处理，不要求 TrackSwap 界面保持打开。
+出现“待映射”或“待删除”时，完全退出 SteamVR 即可。Runtime 会在后台完成处理，不要求 TrackSwap VR 界面保持打开。
 
-虚拟头显当前使用固定的 60 Hz、约 90° 视野和 63 mm IPD。没有可用实体设备时，可以把位置来源设为“手动位姿”，先以站立空间中的固定绝对位姿启动虚拟头显，再让 SteamVR 完成 Tracker 枚举；TrackSwap 不会自动猜测来源。手动位姿也可用于虚拟 Tracker、替换代理和虚拟控制器，默认位于原点，并与实体来源的局部偏移分别保存。部分 SteamVR 版本仍可能显示“启用直接显示模式”的提示；TrackSwap 使用独立虚拟显示，不会占用实体显示器。
+虚拟头显当前使用固定的 60 Hz、约 90° 视野和 63 mm IPD。没有可用实体设备时，可以把位置来源设为“手动位姿”，先以站立空间中的固定绝对位姿启动虚拟头显，再让 SteamVR 完成 Tracker 枚举；TrackSwap VR 不会自动猜测来源。手动位姿也可用于虚拟 Tracker、替换代理和虚拟控制器，默认位于原点，并与实体来源的局部偏移分别保存。部分 SteamVR 版本仍可能显示“启用直接显示模式”的提示；TrackSwap VR 使用独立虚拟显示，不会占用实体显示器。
 
-选择虚拟头显配置后，可以点击页面右上角的“打开 VR 视图”查看 SteamVR 最终合成画面。查看器支持双眼、左眼和右眼显示，固定输出尺寸、始终置顶、无边框全屏与 PNG 截图。截图由用户选择保存路径。查看器是独立的观察工具：关闭、最小化或来不及显示时只会跳过旧画面，不会降低 SteamVR 或虚拟头显的刷新率。
+选择虚拟头显配置后，可以点击页面右上角的“打开 VR 视图”查看 SteamVR 最终合成画面。查看器支持双眼、左眼和右眼显示、固定输出尺寸、始终置顶与无边框全屏。查看器是独立的观察工具：关闭、最小化或来不及显示时只会跳过旧画面，不会降低 SteamVR 或虚拟头显的刷新率。
 
 ## 常用功能
 
 ### 局部位姿偏移
 
-TrackSwap 按 `来源位姿 × 局部偏移` 计算最终输出。位置使用厘米，旋转使用四元数。可以在左侧数值区精调，也可以在 3D 预览中直接拖动；按住 Shift 可进行更细微的调整。
+TrackSwap VR 按 `来源位姿 × 局部偏移` 计算最终输出。位置使用厘米，旋转可以用欧拉角（度）或四元数编辑，底层统一保存为四元数。可以在左侧数值区精调，也可以在 3D 预览中直接拖动；按住 Shift 可进行更细微的调整。
 
 ### 拆分位置与旋转来源
 
 启用“拆分来源”后，可以分别选择位置来源和旋转来源。例如使用 Tracker 提供位置、手柄提供旋转。
 
-TrackSwap 不会自动选择旋转来源。两台来源设备必须不同，任意一台掉线或位姿无效时，输出会一并失效，不会静默回退。
+TrackSwap VR 不会自动选择旋转来源。两台来源设备必须不同，任意一台掉线或位姿无效时，输出会一并失效，不会静默回退。
 
 ### 隐藏物理位姿来源设备
 
 该实验性功能可以把物理来源移出正常游玩范围，避免它被 FBT 系统当作额外设备绑定。需要先在“设置 → 高级选项”中启用全局开关，再为具体配置启用。
 
-它可能与 Space Calibrator 等同样修改定位数据的软件冲突。状态栏中的“设备隐藏”会显示当前状态；红色表示注入失败，此时 TrackSwap 会保持物理设备原始位姿，不会提交半完成的隐藏结果。
+它可能与 Space Calibrator 等同样修改定位数据的软件冲突。状态栏中的“设备隐藏”会显示当前状态；红色表示注入失败，此时 TrackSwap VR 会保持物理设备原始位姿，不会提交半完成的隐藏结果。
 
 ### 虚拟控制器输入
 
-虚拟控制器采用 Oculus Touch 兼容输入布局，同时保留 TrackSwap 自有设备身份。最多创建一只左手和一只右手虚拟控制器。
+虚拟控制器采用 Oculus Touch 兼容输入布局，同时保留 TrackSwap VR 自有设备身份。最多创建一只左手和一只右手虚拟控制器。
 
 - **无**：只有位姿，所有按键和模拟输入保持中立。
 - **XInput**：使用标准 Xbox 布局游戏手柄，可以自定义每项绑定、操作手柄直接捕获按键，并把 SteamVR 震动反馈回传到游戏手柄。
@@ -121,7 +121,7 @@ TrackSwap 不会自动选择旋转来源。两台来源设备必须不同，任�
 - 每条配置都有独立名称、来源、模式、输出槽位和局部偏移。
 - 同一物理来源默认只能被一条配置使用；测试场景可在高级选项中允许复用。
 - 重复左右手、重复目标、循环路由和来源覆盖自身会被拒绝。
-- 关闭 TrackSwap 界面后，已配置功能仍由 Runtime 继续运行。
+- 关闭 TrackSwap VR 界面后，已配置功能仍由 Runtime 继续运行。
 - 底部状态栏会显示 SteamVR、Runtime、OSC、XInput 和设备隐藏状态；将鼠标移到状态项上可以查看详情。
 
 状态颜色含义：
@@ -133,9 +133,9 @@ TrackSwap 不会自动选择旋转来源。两台来源设备必须不同，任�
 
 ## 文件、备份与卸载
 
-“设置 → 文件管理”会列出 TrackSwap 创建或修改的文件、实际保存路径，以及它们是否位于安装目录内，并提供快速定位操作。
+“设置 → 文件管理”会列出 TrackSwap VR 创建或修改的文件、实际保存路径，以及它们是否位于安装目录内，并提供快速定位操作。
 
-TrackSwap 默认把配置、偏好、日志和自动备份保存到程序目录下的 `UserData`。如果安装目录不可写，则回退到：
+TrackSwap VR 默认把配置、偏好、日志和自动备份保存到程序目录下的 `UserData`。如果安装目录不可写，则回退到：
 
 ```text
 %LOCALAPPDATA%\TrackSwap
@@ -145,16 +145,16 @@ TrackSwap 默认把配置、偏好、日志和自动备份保存到程序目录�
 
 可以手动导出完整配置备份，并保存到自己选择的位置。备份包含路由、OSC、XInput、高级选项和界面偏好，不包含日志、诊断包、设备历史或共享的 SteamVR 配置。
 
-导入会覆盖当前全部设置。TrackSwap 会先验证备份、要求二次确认并创建自动回滚副本。备份可能包含物理设备路径，请勿公开分享。
+导入会覆盖当前全部设置。TrackSwap VR 会先验证备份、要求二次确认并创建自动回滚副本。备份可能包含物理设备路径，请勿公开分享。
 
 ### 从旧版迁移
 
-检测到 v009 或更早版本的数据时，TrackSwap 会继续使用旧目录，不会自动搬动。可以在“文件管理”中主动迁移，确认新位置运行正常后再清理旧版文件；未知文件不会被删除。
+检测到 v009 或更早版本的数据时，TrackSwap VR 会继续使用旧目录，不会自动搬动。可以在“文件管理”中主动迁移，确认新位置运行正常后再清理旧版文件；未知文件不会被删除。
 
 ### 重置与预卸载
 
-- **重置数据**：清除 TrackSwap 用户数据与 TrackSwap 创建的位姿映射，但保留 SteamVR 驱动和应用集成。重新打开后可以从初始状态继续使用。
-- **预卸载准备**：清除用户数据，并移除 TrackSwap 驱动注册、应用清单、自动启动记录和位姿映射。完成后程序退出，再由用户自行卸载。
+- **重置数据**：清除 TrackSwap VR 用户数据与 TrackSwap VR 创建的位姿映射，但保留 SteamVR 驱动和应用集成。重新打开后可以从初始状态继续使用。
+- **预卸载准备**：清除用户数据，并移除 TrackSwap VR 驱动注册、应用清单、自动启动记录和位姿映射。完成后程序退出，再由用户自行卸载。
 
 两项操作都要求 SteamVR 完全停止，也不会自动启动卸载器或删除程序文件。
 
@@ -176,13 +176,13 @@ TrackSwap 默认把配置、偏好、日志和自动备份保存到程序目录�
 
 ### 替换目标没有跟随
 
-“替换现有设备位姿”依赖目标设备驱动对 SteamVR `TrackingOverrides` 的支持，不同厂商和驱动版本的表现可能不同。请先通过 SteamVR 和 TrackSwap 的 3D 预览确认结果。
+“替换现有设备位姿”依赖目标设备驱动对 SteamVR `TrackingOverrides` 的支持，不同厂商和驱动版本的表现可能不同。请先通过 SteamVR 和 TrackSwap VR 的 3D 预览确认结果。
 
 ### 跨定位系统组合后出现偏移
 
-不同驱动提供的坐标空间可能不一致。TrackSwap 可以添加局部刚性偏移，但它不等同于完整的跨空间持续校准工具。
+不同驱动提供的坐标空间可能不一致。TrackSwap VR 可以添加局部刚性偏移，但它不等同于完整的跨空间持续校准工具。
 
-### 可以关闭 TrackSwap 界面吗？
+### 可以关闭 TrackSwap VR 界面吗？
 
 可以。界面只用于编辑、调整、检查和测试配置；实际位姿路由、输入、震动反馈、设备隐藏以及待处理映射均由 Runtime 执行。
 
@@ -196,7 +196,7 @@ TrackSwap 默认把配置、偏好、日志和自动备份保存到程序目录�
 
 ## 开发者信息
 
-TrackSwap UI 使用 WPF 和 .NET Framework 4.8，Runtime 使用 .NET 8，SteamVR 驱动为原生 OpenVR 驱动。
+TrackSwap VR UI 使用 WPF 和 .NET Framework 4.8，Runtime 使用 .NET 8，SteamVR 驱动为原生 OpenVR 驱动。
 
 - [Runtime 架构](docs/v002-architecture.md)
 - [驱动开发](docs/driver-development.md)
@@ -212,13 +212,13 @@ dotnet build TrackSwap.sln -c Release
 生成完整发布包：
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version v010 -Clean
+.\scripts\Build-Release.ps1 -Version v011 -Clean
 ```
 
-`main` 保留稳定的 v001 历史；v010 发行线位于 `v002-runtime`。版本使用连续编号 `v001`、`v002`、`v003`……，不使用语义化版本号。
+`main` 保留稳定的 v001 历史；v011 发行线位于 `v002-runtime`。版本使用连续编号 `v001`、`v002`、`v003`……，不使用语义化版本号。
 
 ## 许可证与声明
 
-TrackSwap 由 Hrenact 以 [MIT License](LICENSE) 开源。
+TrackSwap VR 由 Hrenact 以 [MIT License](LICENSE) 开源。
 
-第三方组件及其许可证请参阅 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。TrackSwap 是非官方项目，与 Valve Corporation 或 SteamVR 没有隶属、授权或认可关系。
+第三方组件及其许可证请参阅 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。TrackSwap VR 是非官方项目，与 Valve Corporation 或 SteamVR 没有隶属、授权或认可关系。

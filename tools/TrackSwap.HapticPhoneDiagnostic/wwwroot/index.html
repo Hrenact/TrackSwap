@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>TrackSwap 手机振动诊断器</title>
+  <title>TrackSwap VR 手机振动诊断器</title>
   <style>
     :root { color-scheme: dark; --bg:#0f1011; --panel:#191a1c; --panel2:#111315; --line:#2d3033; --text:#e6e9ee; --muted:#969da6; --blue:#5b9bff; --green:#51d195; --orange:#f0bd55; --red:#ee6a68; }
     * { box-sizing:border-box; }
@@ -42,7 +42,7 @@
 </head>
 <body>
 <main>
-  <h1>TrackSwap 手机振动诊断器</h1>
+  <h1>TrackSwap VR 手机振动诊断器</h1>
   <p class="subtitle">验证 OSC 包确实离开 Runtime、到达接收器，并让支持的手机浏览器执行振动。</p>
   <div class="grid">
     <section class="card full">
@@ -82,7 +82,7 @@
 
     <section class="card full">
       <h2>结果怎么读</h2>
-      <p class="note">“UDP 已收到”证明 TrackSwap 的 OSC 发送路径和端口有效；“网页已收到”证明桥接正常；“浏览器已接受”仅表示 <code>navigator.vibrate()</code> 接受了请求，系统静音、勿扰模式或硬件限制仍可能阻止实际振动。</p>
+      <p class="note">“UDP 已收到”证明 TrackSwap VR 的 OSC 发送路径和端口有效；“网页已收到”证明桥接正常；“浏览器已接受”仅表示 <code>navigator.vibrate()</code> 接受了请求，系统静音、勿扰模式或硬件限制仍可能阻止实际振动。</p>
       <p class="note warning">网页 API 只能控制振动/暂停时长。这里用脉冲疏密近似频率、用占空比近似强度，不能把手机当作精确的触觉执行器。</p>
     </section>
   </div>

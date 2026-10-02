@@ -24,7 +24,7 @@ internal sealed class OscHapticListenerService : BackgroundService
             UdpReceiveResult received = await receiver.ReceiveAsync(stoppingToken).ConfigureAwait(false);
             if (!OscHapticPacketParser.TryParse(received.Buffer, out OscHapticPacket packet))
             {
-                Console.WriteLine($"忽略来自 {received.RemoteEndPoint} 的非 TrackSwap 触觉 OSC 包（{received.Buffer.Length} 字节）。");
+                Console.WriteLine($"忽略来自 {received.RemoteEndPoint} 的非 TrackSwap VR 触觉 OSC 包（{received.Buffer.Length} 字节）。");
                 continue;
             }
 

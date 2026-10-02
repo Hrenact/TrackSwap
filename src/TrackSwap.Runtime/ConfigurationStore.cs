@@ -33,12 +33,15 @@ internal sealed class ConfigurationStore
         bool normalizedManualPoseDefault = NormalizeLegacyManualPoseDefault(root);
         RuntimeConfiguration? configuration = root.ToObject<RuntimeConfiguration>(
             JsonSerializer.Create(RuntimeJson.Settings));
+        bool normalizedMotionSmoothingStrengths =
+            NormalizeMotionSmoothingStrengths(configuration);
         EnsureValid(configuration);
         bool expectedOscEnabled = OscConfiguration.IsRequiredForRoutes(configuration!.Routes);
         bool normalizedOscEnabled = configuration.Osc.Enabled != expectedOscEnabled;
         configuration.Osc.Enabled = expectedOscEnabled;
         if (removedLegacyOscSettings || addedXInputTouchAssistDefaults ||
-            migratedVirtualHmdManualPose || normalizedManualPoseDefault || normalizedOscEnabled)
+            migratedVirtualHmdManualPose || normalizedManualPoseDefault ||
+            normalizedMotionSmoothingStrengths || normalizedOscEnabled)
         {
             Save(configuration);
         }
@@ -181,6 +184,38 @@ internal sealed class ConfigurationStore
                 Read("rotationW", 1.0) == 1.0)
             {
                 route["manualPose"] = JObject.FromObject(PoseOffset.DefaultManualPose());
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private static bool NormalizeMotionSmoothingStrengths(RuntimeConfiguration? configuration)
+    {
+        if (configuration == null)
+        {
+            return false;
+        }
+
+        bool changed = false;
+        foreach (RouteConfiguration route in configuration.Routes)
+        {
+            MotionSmoothingConfiguration? smoothing = route.MotionSmoothing;
+            if (smoothing == null)
+            {
+                continue;
+            }
+
+            double position = Math.Round(
+                smoothing.PositionStrength,
+                MidpointRounding.AwayFromZero);
+            double rotation = Math.Round(
+                smoothing.RotationStrength,
+                MidpointRounding.AwayFromZero);
+            if (position != smoothing.PositionStrength || rotation != smoothing.RotationStrength)
+            {
+                smoothing.PositionStrength = position;
+                smoothing.RotationStrength = rotation;
                 changed = true;
             }
         }

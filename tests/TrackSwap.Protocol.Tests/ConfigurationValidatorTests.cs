@@ -325,10 +325,10 @@ public sealed class ConfigurationValidatorTests
     {
         Assert.Equal(0x50575354U, DriverControlProtocol.Magic);
         Assert.Equal(20, DriverControlProtocol.HeaderBytes);
-        Assert.Equal(11, DriverControlProtocol.Version);
-        Assert.Equal(74, DriverControlProtocol.ApplySnapshotFixedBytes);
-        Assert.Equal(77, DriverControlProtocol.ApplyControllerSnapshotFixedBytes);
-        Assert.Equal(72, DriverControlProtocol.ApplyHmdSnapshotFixedBytes);
+        Assert.Equal(12, DriverControlProtocol.Version);
+        Assert.Equal(91, DriverControlProtocol.ApplySnapshotFixedBytes);
+        Assert.Equal(94, DriverControlProtocol.ApplyControllerSnapshotFixedBytes);
+        Assert.Equal(89, DriverControlProtocol.ApplyHmdSnapshotFixedBytes);
         Assert.Equal(260, DriverControlProtocol.PhysicalSourceHidingStatusBytes);
         Assert.Equal(
             0x8001,
@@ -343,7 +343,7 @@ public sealed class ConfigurationValidatorTests
             0x8004,
             DriverControlProtocol.GetTelemetryMessageType | DriverControlProtocol.ResponseFlag);
         Assert.Equal(264, DriverControlProtocol.TelemetrySnapshotBytes);
-        Assert.Equal(8118, DriverControlProtocol.MaximumCombinedDevicePathBytes);
+        Assert.Equal(8101, DriverControlProtocol.MaximumCombinedDevicePathBytes);
         Assert.Equal(4225, DriverControlProtocol.TelemetryBatchBytes);
     }
 
@@ -462,7 +462,32 @@ public sealed class ConfigurationValidatorTests
 
         IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
 
-        Assert.Contains(errors, error => error.Contains("不能隐藏 TrackSwap 自己创建的虚拟设备", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("不能隐藏 TrackSwap VR 自己创建的虚拟设备", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidatesMotionSmoothingChannelsAndStrengths()
+    {
+        RuntimeConfiguration configuration = CreateConfiguration();
+        MotionSmoothingConfiguration smoothing = configuration.Routes[0].MotionSmoothing;
+        smoothing.Enabled = true;
+        smoothing.SmoothPosition = false;
+        smoothing.SmoothRotation = false;
+
+        IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
+        Assert.Contains(errors, error => error.Contains("至少选择位置或旋转", StringComparison.Ordinal));
+
+        smoothing.SmoothPosition = true;
+        smoothing.PositionStrength = 100.1;
+        errors = ConfigurationValidator.Validate(configuration);
+        Assert.Contains(errors, error => error.Contains("0 到 100", StringComparison.Ordinal));
+
+        smoothing.PositionStrength = 45.5;
+        errors = ConfigurationValidator.Validate(configuration);
+        Assert.Contains(errors, error => error.Contains("整数", StringComparison.Ordinal));
+
+        smoothing.PositionStrength = 100.0;
+        Assert.Empty(ConfigurationValidator.Validate(configuration));
     }
 
     private static RuntimeConfiguration CreateConfiguration()
