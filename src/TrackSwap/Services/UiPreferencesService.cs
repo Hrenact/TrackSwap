@@ -68,17 +68,13 @@ namespace TrackSwap.Services
     {
         public string LanguageLocale { get; set; } = "zh-CN";
 
+        public string LanguagePackFileName { get; set; }
+
         public bool ShowSteamVrRoleTargets { get; set; }
 
-        public bool AllowDuplicatePoseSources { get; set; }
 
         public int ControllerHandSelectionPriority { get; set; } = ProtocolConstants.DefaultControllerHandSelectionPriority;
 
-        public bool HideSourceInPreview { get; set; }
-
-        public bool HideTargetInPreview { get; set; }
-
-        public bool ShowProxyInPreview { get; set; }
 
         public bool UseEulerRotationEditor { get; set; } = true;
 

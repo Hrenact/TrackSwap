@@ -2,6 +2,31 @@
 
 TrackSwap includes or interoperates with the following third-party software.
 
+## Microsoft .NET Runtime
+
+Project: https://github.com/dotnet/runtime
+
+TrackSwap's background Runtime is distributed as a self-contained Microsoft
+.NET 8 application. Each release package includes the unmodified license and
+third-party notices from the exact `Microsoft.NETCore.App.Runtime.win-x64`
+runtime pack used to build that release at
+`runtime/DOTNET-LICENSE.txt` and
+`runtime/DOTNET-THIRD-PARTY-NOTICES.txt`. Those packaged files are authoritative
+for the runtime version shipped in that release.
+
+## SteamVR
+
+Product: https://store.steampowered.com/app/250820/SteamVR/
+
+TrackSwap interoperates with the user's installed copy of SteamVR. Its device
+viewer can load render models and the selected background directly from that
+local installation. The viewer's floor reference grid is an independent
+implementation based on observed SteamVR behavior, including its ten-sector
+angular layout and orientation. TrackSwap does not redistribute SteamVR render
+models, backgrounds, shaders, or program files. SteamVR and Valve are
+trademarks and/or registered trademarks of Valve Corporation; TrackSwap is not
+affiliated with, endorsed by, or sponsored by Valve.
+
 ## OpenVR Space Calibrator
 
 Project: https://github.com/hyblocker/OpenVR-SpaceCalibrator
@@ -151,7 +176,7 @@ https://jrsoftware.org/
 
 Project: https://github.com/JamesNK/Newtonsoft.Json
 
-TrackSwap distributes Newtonsoft.Json with its binary releases.
+TrackSwap distributes Newtonsoft.Json 13.0.3 with its binary releases.
 
 ```text
 The MIT License (MIT)

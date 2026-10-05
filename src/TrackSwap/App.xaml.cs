@@ -57,9 +57,11 @@ namespace TrackSwap
             }
 
             var preferencesService = new UiPreferencesService();
-            string locale = preferencesService.Load().LanguageLocale;
+            UiPreferences preferences = preferencesService.Load();
             var localizationService = new LocalizationService();
-            localizationService.SetLanguage(locale);
+            localizationService.SetLanguage(
+                preferences.LanguageLocale,
+                preferences.LanguagePackFileName);
             LocalizationManager.Initialize(localizationService);
 
             base.OnStartup(e);

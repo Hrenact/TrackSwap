@@ -118,10 +118,10 @@ public sealed class ConfigurationValidatorTests
     }
 
     [Fact]
-    public void AdvancedOptionAllowsTwoControllerHandsToReuseOnePoseSource()
+    public void TwoControllerHandsMayReuseOnePoseSourceWithoutGlobalOptIn()
     {
         var configuration = CreateConfiguration();
-        configuration.AllowDuplicatePoseSources = true;
+        configuration.AllowDuplicatePoseSources = false;
         configuration.Routes.Clear();
         configuration.Routes.Add(new RouteConfiguration
         {
@@ -441,21 +441,21 @@ public sealed class ConfigurationValidatorTests
     }
 
     [Fact]
-    public void PhysicalSourceHidingRequiresGlobalOptIn()
+    public void PhysicalSourceHidingDoesNotRequireGlobalOptIn()
     {
         RuntimeConfiguration configuration = CreateConfiguration();
+        configuration.PhysicalSourceHidingEnabled = false;
         configuration.Routes[0].HidePhysicalSource = true;
 
         IReadOnlyList<string> errors = ConfigurationValidator.Validate(configuration);
 
-        Assert.Contains(errors, error => error.Contains("全局设备隐藏功能尚未启用", StringComparison.Ordinal));
+        Assert.Empty(errors);
     }
 
     [Fact]
     public void PhysicalSourceHidingRejectsTrackSwapVirtualSources()
     {
         RuntimeConfiguration configuration = CreateConfiguration();
-        configuration.PhysicalSourceHidingEnabled = true;
         configuration.Routes[0].HidePhysicalSource = true;
         configuration.Routes[0].SourceDevicePath =
             "/devices/trackswap/" + ProtocolConstants.GetTrackerSerial(4);

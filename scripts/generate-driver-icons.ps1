@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $iconDirectory = Join-Path $RepositoryRoot 'src\TrackSwap.Driver\resources\icons'
 $appIconPath = Join-Path $RepositoryRoot 'src\TrackSwap\Assets\TrackSwap.svg'
 $controllerIconPath = Join-Path $RepositoryRoot 'src\TrackSwap.Driver\assets\trackswap_controller.png'
+$hmdIconPath = Join-Path $RepositoryRoot 'src\TrackSwap.Driver\assets\trackswap_hmd.png'
 New-Item -ItemType Directory -Path $iconDirectory -Force | Out-Null
 
 $edgeCandidates = @(
@@ -98,7 +99,7 @@ foreach ($entry in $states.GetEnumerator()) {
     Export-SteamVrStatusIcon -Svg $svg -FileName $entry.Key
 }
 
-$controllerStates = @($states.GetEnumerator() | ForEach-Object {
+$statusStates = @($states.GetEnumerator() | ForEach-Object {
     @{
         name = [System.IO.Path]::GetFileNameWithoutExtension($_.Key).Replace('trackswap_device_v3_', '')
         outline = $_.Value[0]
@@ -159,9 +160,75 @@ for hand in ("right", "left"):
         )
 '@
 
-$controllerPython | py - $controllerIconPath $iconDirectory $controllerStates
+$controllerPython | py - $controllerIconPath $iconDirectory $statusStates
 if ($LASTEXITCODE -ne 0) {
     throw 'Failed to generate virtual-controller status icons.'
+}
+
+$hmdPython = @'
+from pathlib import Path
+import json
+import sys
+from PIL import Image
+
+source_path = Path(sys.argv[1])
+output_directory = Path(sys.argv[2])
+states = json.loads(sys.argv[3])
+source = Image.open(source_path).convert("RGBA")
+
+def parse_hex(value):
+    value = value.lstrip("#")
+    return tuple(int(value[index:index + 2], 16) for index in (0, 2, 4))
+
+source_pixels = list(source.getdata())
+pixel_roles = []
+for red, green, blue, alpha in source_pixels:
+    if alpha == 0:
+        pixel_roles.append("transparent")
+    elif green > red + 40 and green > blue + 20:
+        pixel_roles.append("indicator")
+    elif min(red, green, blue) > 200 and max(red, green, blue) - min(red, green, blue) < 24:
+        pixel_roles.append("detail")
+    else:
+        pixel_roles.append("outline")
+
+for state in states:
+    outline = parse_hex(state["outline"])
+    indicator = parse_hex(state["indicator"])
+    pixels = []
+    for role, (_, _, _, alpha) in zip(pixel_roles, source_pixels):
+        if role == "transparent":
+            pixels.append((0, 0, 0, 0))
+        elif role == "indicator":
+            pixels.append((*indicator, alpha))
+        elif role == "detail":
+            pixels.append((255, 255, 255, alpha))
+        else:
+            pixels.append((*outline, alpha))
+
+    rendered = Image.new("RGBA", source.size)
+    rendered.putdata(pixels)
+    if rendered.getchannel("A").getbbox() is None:
+        raise RuntimeError("The virtual-HMD icon has no visible pixels.")
+    rendered = rendered.convert("RGBa").resize((50, 32), Image.Resampling.LANCZOS).convert("RGBA")
+    rendered.save(
+        output_directory / f"trackswap_hmd_v3_{state['name']}.png",
+        optimize=True,
+    )
+'@
+
+foreach ($state in ($statusStates | ConvertFrom-Json)) {
+    foreach ($obsoleteVersion in 'v1', 'v2') {
+        $obsoleteHmdIcon = Join-Path $iconDirectory ("trackswap_hmd_{0}_{1}.png" -f $obsoleteVersion, $state.name)
+        if (Test-Path -LiteralPath $obsoleteHmdIcon) {
+            Remove-Item -LiteralPath $obsoleteHmdIcon -Force
+        }
+    }
+}
+
+$hmdPython | py - $hmdIconPath $iconDirectory $statusStates
+if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to generate virtual-HMD status icons.'
 }
 
 Write-Host "Generated SteamVR driver status icons in $iconDirectory"

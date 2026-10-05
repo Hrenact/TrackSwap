@@ -65,6 +65,9 @@ private:
     std::array<vr::TrackedDevicePose_t, vr::k_unMaxTrackedDeviceCount> rawPoses_{};
     vr::TrackedDeviceIndex_t objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     vr::VRInputComponentHandle_t proximityHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t rawPoseHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t systemClickHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t systemTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::TrackedDeviceIndex_t sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     vr::TrackedDeviceIndex_t rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     std::uint32_t searchCountdown_ = 0;

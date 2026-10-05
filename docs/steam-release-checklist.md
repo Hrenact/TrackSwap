@@ -1,11 +1,11 @@
 # TrackSwap VR Steam 发布清单
 
-这份清单用于 v011 的 Steam 上架准备。它不包含 Steamworks 凭据、AppID、DepotID 或未公开商店资料。
+这份清单用于 v012 的 Steam 上架准备。它不包含 Steamworks 凭据、AppID、DepotID 或未公开商店资料。
 
 ## Depot 与启动项
 
-- 使用 `scripts/Build-SteamDepot.ps1 -Version v011 -AppId <AppID> -DepotId <DepotID> -Clean` 生成 SteamPipe 内容与预览配置。
-- 脚本默认写入 `"Preview" "1"`，先检查 `artifacts/steam/v011/output` 的文件清单，再显式移除预览标记并上传。
+- 使用 `scripts/Build-SteamDepot.ps1 -Version v012 -AppId <AppID> -DepotId <DepotID> -Clean` 生成 SteamPipe 内容与预览配置。
+- 脚本默认写入 `"Preview" "1"`，先检查 `artifacts/steam/v012/output` 的文件清单，再显式移除预览标记并上传。
 - Steamworks 的默认 Windows 启动项指向 `TrackSwap.exe`，启动目录使用 depot 安装根目录。
 - `UserData` 必须始终排除在 depot 之外。它由程序运行时创建，更新、验证和普通卸载不会管理它。
 - `installscript.vdf` 在首次运行时注册 OpenVR 驱动与 TrackSwap VR 应用清单；卸载时移除这些集成，但保留 `UserData`。
@@ -40,6 +40,9 @@
 
 ## 发布前门槛
 
+- 逐项审计所有第三方代码、二进制、素材、带再分发义务的工具和参考实现；核对 `THIRD-PARTY-NOTICES.md` 中的项目、版本、固定修订及要求随包附带的原始许可文件。发现遗漏、过期、含糊或许可文件不匹配时，立即停止发布并向用户列出全部待更新项，禁止继续打标签、打包或上传。
+- 运行 `scripts/Test-ThirdPartyNotices.ps1`。自动检查通过仅是最低门槛，不能代替上述人工审计。
+- 确认自包含 Runtime 中的 `DOTNET-LICENSE.txt` 与 `DOTNET-THIRD-PARTY-NOTICES.txt` 来自本次发布实际解析的 `Microsoft.NETCore.App.Runtime.win-x64` 精确版本，并通过发布脚本的逐字节校验。
 - Debug 与 Release 全量构建零警告。
 - Protocol、Runtime、手机震动诊断与安装注册测试全部通过。
 - SteamPipe Preview 文件清单不包含 `UserData`、PDB、临时文件、诊断包或开发者本机路径。

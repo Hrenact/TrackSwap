@@ -33,6 +33,7 @@ internal sealed class ConfigurationStore
         bool normalizedManualPoseDefault = NormalizeLegacyManualPoseDefault(root);
         RuntimeConfiguration? configuration = root.ToObject<RuntimeConfiguration>(
             JsonSerializer.Create(RuntimeJson.Settings));
+        bool normalizedRemovedAdvancedOptions = NormalizeRemovedAdvancedOptions(configuration);
         bool normalizedMotionSmoothingStrengths =
             NormalizeMotionSmoothingStrengths(configuration);
         EnsureValid(configuration);
@@ -41,7 +42,7 @@ internal sealed class ConfigurationStore
         configuration.Osc.Enabled = expectedOscEnabled;
         if (removedLegacyOscSettings || addedXInputTouchAssistDefaults ||
             migratedVirtualHmdManualPose || normalizedManualPoseDefault ||
-            normalizedMotionSmoothingStrengths || normalizedOscEnabled)
+            normalizedRemovedAdvancedOptions || normalizedMotionSmoothingStrengths || normalizedOscEnabled)
         {
             Save(configuration);
         }
@@ -50,6 +51,7 @@ internal sealed class ConfigurationStore
 
     public void Save(RuntimeConfiguration configuration)
     {
+        NormalizeRemovedAdvancedOptions(configuration);
         EnsureValid(configuration);
         string? directory = System.IO.Path.GetDirectoryName(Path);
         if (string.IsNullOrWhiteSpace(directory))
@@ -219,6 +221,20 @@ internal sealed class ConfigurationStore
                 changed = true;
             }
         }
+        return changed;
+    }
+
+    private static bool NormalizeRemovedAdvancedOptions(RuntimeConfiguration? configuration)
+    {
+        if (configuration == null)
+        {
+            return false;
+        }
+
+        bool changed = !configuration.AllowDuplicatePoseSources ||
+            !configuration.PhysicalSourceHidingEnabled;
+        configuration.AllowDuplicatePoseSources = true;
+        configuration.PhysicalSourceHidingEnabled = true;
         return changed;
     }
 

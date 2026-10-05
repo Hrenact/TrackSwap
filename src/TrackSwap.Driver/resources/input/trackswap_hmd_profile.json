@@ -1,0 +1,34 @@
+{
+  "jsonid": "input_profile",
+  "controller_type": "trackswap_hmd",
+  "device_class": "TrackedDeviceClass_HMD",
+  "resource_root": "trackswap",
+  "driver_name": "trackswap",
+  "legacy_binding": "{trackswap}/input/legacy_bindings_trackswap_hmd.json",
+  "input_bindingui_mode": "hmd",
+  "should_show_binding_errors": true,
+  "input_source": {
+    "/input/system": {
+      "type": "button",
+      "click": true,
+      "touch": true,
+      "binding_image_point": [25, 16]
+    },
+    "/pose/raw": {
+      "type": "pose",
+      "binding_image_point": [25, 16]
+    },
+    "/proximity": {
+      "type": "button",
+      "binding_image_point": [25, 16]
+    }
+  },
+  "simulation_settings": {
+    "modelnumber": "TrackSwap VR Virtual HMD",
+    "serialnumber": "TRKSWAP-HMD",
+    "rendermodel": "dk2_hmd",
+    "registered_device_type": "trackswap/TRKSWAP-HMD",
+    "tracking_system_name": "trackswap",
+    "manufacturer_name": "TrackSwap"
+  }
+}

@@ -21,13 +21,16 @@ using TrackSwap.Localization;
 using TrackSwap.Models;
 using TrackSwap.Protocol;
 using TrackSwap.Services;
+using TrackSwap.Controls;
 
 namespace TrackSwap
 {
     public partial class MainWindow : Window
     {
-        private const string ProxyRenderModelName = "{trackswap}trackswap_proxy_tracker";
-        private const string GenericHmdRenderModelName = "generic_hmd";
+        private const string TrackerRenderModelName = "{htc}vr_tracker_vive_3_0";
+        private const string BuiltInFallbackRenderModelName = "{trackswap}trackswap_proxy_tracker";
+        private const string VirtualHmdRenderModelName = "dk2_hmd";
+        private const string FixedEnglishLanguageLabel = "Language";
         private const float XInputCaptureActivationThreshold = 0.65f;
         private const ushort XInputDPadUp = 0x0001;
         private const ushort XInputDPadDown = 0x0002;
@@ -158,14 +161,10 @@ namespace TrackSwap
         private bool _languageIssuesExpanded;
         private bool _languageIssuesTogglePending;
         private string _languageLocale = LocalizationService.OfficialLocale;
+        private string _languagePackFileName;
         private SettingsSection _settingsSection = SettingsSection.Runtime;
         private bool _showSteamVrRoleTargets;
-        private bool _allowDuplicatePoseSources;
-        private bool _physicalSourceHidingEnabled;
         private int _controllerHandSelectionPriority;
-        private bool _hideSourceInPreview;
-        private bool _hideTargetInPreview;
-        private bool _showProxyInPreview;
         private bool _useEulerRotationEditor = true;
         private bool _followSteamVrWithTrackSwap;
         private bool _steamVrObservedForUiLifecycle;
@@ -179,30 +178,25 @@ namespace TrackSwap
         private bool _lastDeviceRefreshSteamVrRunning;
         private long _displayedDriverAppliedRevision = long.MinValue;
         private bool _displayedDriverConnected;
+        private DeviceViewerWindow _deviceViewerWindow;
 
         public MainWindow()
         {
             InitializeComponent();
+            RefreshLanguageCategoryLabel();
             _diagnosticsService = new DiagnosticsService(_pathService, _statusService, _runtimeControlService);
 
             UiPreferences preferences = _uiPreferencesService.Load();
             _languageLocale = _localizationService.CurrentLocale;
+            _languagePackFileName = _localizationService.CurrentPackFileName;
             _showSteamVrRoleTargets = preferences.ShowSteamVrRoleTargets;
-            _allowDuplicatePoseSources = preferences.AllowDuplicatePoseSources;
             _controllerHandSelectionPriority = preferences.ControllerHandSelectionPriority;
-            _hideSourceInPreview = preferences.HideSourceInPreview;
-            _hideTargetInPreview = preferences.HideTargetInPreview;
-            _showProxyInPreview = preferences.ShowProxyInPreview;
             _useEulerRotationEditor = preferences.UseEulerRotationEditor;
             _runtimeLifecycleMode = preferences.RuntimeLifecycleMode;
             _followSteamVrWithTrackSwap = preferences.FollowSteamVrWithTrackSwap;
             ShowSteamVrRoleTargetsCheckBox.IsChecked = _showSteamVrRoleTargets;
-            AllowDuplicatePoseSourcesCheckBox.IsChecked = _allowDuplicatePoseSources;
             ControllerHandSelectionPriorityTextBox.Text =
                 _controllerHandSelectionPriority.ToString(CultureInfo.InvariantCulture);
-            HideSourceInPreviewCheckBox.IsChecked = _hideSourceInPreview;
-            HideTargetInPreviewCheckBox.IsChecked = _hideTargetInPreview;
-            ShowProxyInPreviewCheckBox.IsChecked = _showProxyInPreview;
             FollowSteamVrWithTrackSwapCheckBox.IsChecked = _followSteamVrWithTrackSwap;
             RefreshLanguageSettingsView();
             InitializeLocalizedFixedOptions();
@@ -403,6 +397,7 @@ namespace TrackSwap
                 _runtimeLifecycleSelectionReady = false;
                 try
                 {
+                    RefreshLanguageCategoryLabel();
                     InitializeLocalizedFixedOptions();
                     InitializeLocalizedLifecycleOptions();
                     InitializeXInputMappingOptions(registerPreviews: false);
@@ -417,6 +412,13 @@ namespace TrackSwap
                     _isLoading = previousLoading;
                 }
             }), DispatcherPriority.DataBind);
+        }
+
+        private void RefreshLanguageCategoryLabel()
+        {
+            SettingsLanguageCategoryButton.Content = Tr.Format(
+                "settings.category.language",
+                FixedEnglishLanguageLabel);
         }
 
         private async Task RefreshOscMonitorAsync()
@@ -688,11 +690,7 @@ namespace TrackSwap
                         onlineDevicesByPath.TryGetValue(device.DevicePath, out DeviceOption onlineDevice);
                         return new DeviceHistoryListItem(
                             device,
-                            onlineDevice != null,
-                            onlineDevice == null || string.IsNullOrWhiteSpace(onlineDevice.ConnectedWirelessDongleId)
-                                ? Tr.Get("common.value.none")
-                                : ReceiverName(onlineDevice.ConnectedWirelessDongleId),
-                            ReceiverName(device.LastConnectedReceiverId));
+                            onlineDevice != null);
                     })
                     .OrderByDescending(device => device.IsOnline)
                     .ThenBy(device => device.DisplayName, StringComparer.CurrentCultureIgnoreCase)
@@ -1281,10 +1279,10 @@ namespace TrackSwap
                 PhysicalSourceHidingStatusDot,
                 PhysicalSourceHidingStatusText,
                 PhysicalSourceHidingStatusBadge,
-                _physicalSourceHidingEnabled && _workingRoutes.Any(route => route.Enabled && route.HidePhysicalSource)
+                _workingRoutes.Any(route => route.Enabled && route.HidePhysicalSource)
                     ? "WarningBrush"
                     : "MutedTextBrush",
-                _physicalSourceHidingEnabled && _workingRoutes.Any(route => route.Enabled && route.HidePhysicalSource)
+                _workingRoutes.Any(route => route.Enabled && route.HidePhysicalSource)
                     ? Tr.Get("app.show_runtime_offline.device_hide_waiting_runtime_driver")
                     : Tr.Get("settings.advanced.hiding.disabled"));
             RuntimeHealthText.Text = Tr.Get("common.status.offline");
@@ -1565,8 +1563,6 @@ namespace TrackSwap
             _isLoading = true;
             try
             {
-                _physicalSourceHidingEnabled = configuration.PhysicalSourceHidingEnabled;
-                PhysicalSourceHidingEnabledCheckBox.IsChecked = _physicalSourceHidingEnabled;
                 _workingOsc = CloneOscConfiguration(configuration.Osc ?? OscConfiguration.CreateDefault());
                 LoadOscFields(_workingOsc);
                 _workingXInput = CloneXInputConfiguration(configuration.XInput ?? XInputConfiguration.CreateDefault());
@@ -1776,9 +1772,7 @@ namespace TrackSwap
                 RuntimeRotationSourceComboBox.Tag = route.SplitPoseSource ? Tr.Get("common.action.select") : Tr.Get("route.rotation_source.same_as_position");
                 RuntimeModeComboBox.IsEnabled = !route.PendingDeletion;
                 RuntimeTargetComboBox.IsEnabled = !route.PendingDeletion;
-                HidePhysicalSourceCheckBox.Visibility = _physicalSourceHidingEnabled
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
+                HidePhysicalSourceCheckBox.Visibility = Visibility.Visible;
                 HidePhysicalSourceCheckBox.IsChecked = route.HidePhysicalSource;
                 HidePhysicalSourceCheckBox.IsEnabled = !route.PendingDeletion &&
                     route.PoseSourceKind == PoseSourceKind.Device &&
@@ -2051,6 +2045,59 @@ namespace TrackSwap
             UpdateContentVisibility();
         }
 
+        private void OpenDeviceViewerButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_deviceViewerWindow != null)
+            {
+                if (_deviceViewerWindow.WindowState == WindowState.Minimized)
+                {
+                    _deviceViewerWindow.WindowState = WindowState.Normal;
+                }
+                _deviceViewerWindow.Activate();
+                return;
+            }
+
+            _deviceViewerWindow = new DeviceViewerWindow();
+            _deviceViewerWindow.Closed += (_, __) => _deviceViewerWindow = null;
+            _deviceViewerWindow.Show();
+        }
+
+        private void ThirdPartyNoticesButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Legal notice text is embedded at build time and never localized or read
+            // from a mutable file in the installation directory.
+            const string resourceName = "TrackSwap.THIRD-PARTY-NOTICES.md";
+            using (Stream stream = typeof(MainWindow).Assembly.GetManifestResourceStream(resourceName))
+            {
+                string markdown;
+                if (stream == null)
+                {
+                    markdown =
+                        "# Third-Party Notices\n\nEmbedded THIRD-PARTY-NOTICES.md is unavailable.";
+                }
+                else
+                {
+                    using (var reader = new StreamReader(
+                        stream,
+                        Encoding.UTF8,
+                        true,
+                        4096,
+                        leaveOpen: false))
+                    {
+                        markdown = reader.ReadToEnd();
+                    }
+                }
+
+                ThirdPartyNoticesViewer.Document = MarkdownFlowDocumentRenderer.Render(
+                    markdown,
+                    (Brush)FindResource("TextBrush"),
+                    (Brush)FindResource("MutedTextBrush"),
+                    (Brush)FindResource("SurfaceRaisedBrush"),
+                    (Brush)FindResource("AccentBrush"));
+            }
+            ShowSettingsSection(SettingsSection.ThirdPartyNotices);
+        }
+
         private void SettingsCategoryButton_Click(object sender, RoutedEventArgs e)
         {
             if (sender == SettingsRuntimeCategoryButton)
@@ -2060,6 +2107,10 @@ namespace TrackSwap
             else if (sender == SettingsSteamVrCategoryButton)
             {
                 ShowSettingsSection(SettingsSection.SteamVr);
+            }
+            else if (sender == SettingsDeviceViewerCategoryButton)
+            {
+                ShowSettingsSection(SettingsSection.DeviceViewer);
             }
             else if (sender == SettingsDevicesCategoryButton)
             {
@@ -2101,15 +2152,24 @@ namespace TrackSwap
             }
             RuntimeSettingsPanel.Visibility = section == SettingsSection.Runtime ? Visibility.Visible : Visibility.Collapsed;
             SteamVrSettingsPanel.Visibility = section == SettingsSection.SteamVr ? Visibility.Visible : Visibility.Collapsed;
+            DeviceViewerSettingsPanel.Visibility = section == SettingsSection.DeviceViewer ? Visibility.Visible : Visibility.Collapsed;
             DeviceSettingsPanel.Visibility = section == SettingsSection.Devices ? Visibility.Visible : Visibility.Collapsed;
             FilesSettingsPanel.Visibility = section == SettingsSection.Files ? Visibility.Visible : Visibility.Collapsed;
             LanguageSettingsPanel.Visibility = section == SettingsSection.Language ? Visibility.Visible : Visibility.Collapsed;
             OscSettingsPanel.Visibility = section == SettingsSection.Osc ? Visibility.Visible : Visibility.Collapsed;
             XInputSettingsPanel.Visibility = section == SettingsSection.XInput ? Visibility.Visible : Visibility.Collapsed;
             AdvancedSettingsPanel.Visibility = section == SettingsSection.Advanced ? Visibility.Visible : Visibility.Collapsed;
+            bool showingThirdPartyNotices = section == SettingsSection.ThirdPartyNotices;
+            SettingsPanelsScrollViewer.Visibility = showingThirdPartyNotices
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            ThirdPartyNoticesViewer.Visibility = showingThirdPartyNotices
+                ? Visibility.Visible
+                : Visibility.Collapsed;
 
             UpdateSettingsCategoryButton(SettingsRuntimeCategoryButton, section == SettingsSection.Runtime);
             UpdateSettingsCategoryButton(SettingsSteamVrCategoryButton, section == SettingsSection.SteamVr);
+            UpdateSettingsCategoryButton(SettingsDeviceViewerCategoryButton, section == SettingsSection.DeviceViewer);
             UpdateSettingsCategoryButton(SettingsDevicesCategoryButton, section == SettingsSection.Devices);
             UpdateSettingsCategoryButton(SettingsFilesCategoryButton, section == SettingsSection.Files);
             UpdateSettingsCategoryButton(SettingsLanguageCategoryButton, section == SettingsSection.Language);
@@ -2139,7 +2199,12 @@ namespace TrackSwap
                 LanguageDirectoryText.Text = _localizationService.LanguageDirectory;
                 LanguageComboBox.ItemsSource = _localizationService.Languages.ToList();
                 LanguageComboBox.SelectedItem = _localizationService.Languages.FirstOrDefault(option =>
-                    string.Equals(option.Locale, _localizationService.CurrentLocale, StringComparison.OrdinalIgnoreCase));
+                    option.IsOfficial
+                        ? _localizationService.IsOfficialLanguage
+                        : string.Equals(
+                            option.FileName,
+                            _localizationService.CurrentPackFileName,
+                            StringComparison.OrdinalIgnoreCase));
 
                 bool hasIssues = _localizationService.Issues.Count != 0;
                 LanguageIssuesEmptyText.Visibility = hasIssues ? Visibility.Collapsed : Visibility.Visible;
@@ -2239,21 +2304,31 @@ namespace TrackSwap
             {
                 return;
             }
-            _localizationService.SetLanguage(option.Locale);
+            _localizationService.SetLanguage(option.Locale, option.FileName);
             _languageLocale = _localizationService.CurrentLocale;
+            _languagePackFileName = _localizationService.CurrentPackFileName;
             SaveUiPreferences();
             RefreshLanguageSettingsView();
         }
 
         private void RefreshLanguagesButton_Click(object sender, RoutedEventArgs e)
         {
+            ReloadLanguages(showFailureDialog: true, trigger: "language settings button");
+        }
+
+        private void ReloadLanguages(bool showFailureDialog, string trigger)
+        {
             try
             {
-                _localizationService.Reload(_languageLocale);
+                _localizationService.Reload(_languageLocale, _languagePackFileName);
                 _languageLocale = _localizationService.CurrentLocale;
+                _languagePackFileName = _localizationService.CurrentPackFileName;
                 SaveUiPreferences();
                 LanguageCopyStatusText.Visibility = Visibility.Collapsed;
                 RefreshLanguageSettingsView();
+                WriteUiLifecycleLog(
+                    "Language reload completed. Trigger=" + trigger + "; Locale=" + _languageLocale +
+                    "; Pack=" + (_languagePackFileName ?? "built-in") + ".");
             }
             catch (Exception exception) when (
                 exception is IOException ||
@@ -2261,12 +2336,38 @@ namespace TrackSwap
                 exception is InvalidDataException ||
                 exception is JsonException)
             {
-                AppDialog.Show(
-                    this,
-                    exception.Message,
-                    _localizationService.Translate("language.refresh.failure_title"),
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                WriteUiLifecycleLog(
+                    "Language reload failed. Trigger=" + trigger + "; Error=" + exception.Message);
+                if (showFailureDialog)
+                {
+                    AppDialog.Show(
+                        this,
+                        exception.Message,
+                        _localizationService.Translate("language.refresh.failure_title"),
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private static void WriteUiLifecycleLog(string message)
+        {
+            try
+            {
+                string dataDirectory = TrackSwapDataPaths.ActiveDataDirectory;
+                Directory.CreateDirectory(dataDirectory);
+                File.AppendAllText(
+                    Path.Combine(dataDirectory, "ui-lifecycle.log"),
+                    DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture) + " " + message + Environment.NewLine,
+                    new UTF8Encoding(false));
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is UnauthorizedAccessException ||
+                exception is System.Security.SecurityException ||
+                exception is NotSupportedException)
+            {
+                Debug.WriteLine("TrackSwap VR could not write the UI lifecycle log: " + exception.Message);
             }
         }
 
@@ -2824,7 +2925,7 @@ namespace TrackSwap
             {
                 ConfigurationBackupFile backup = _configurationBackupService.Read(dialog.FileName);
                 int routeCount = backup.RuntimeConfiguration.Routes?.Count ?? 0;
-                string riskText = backup.RuntimeConfiguration.PhysicalSourceHidingEnabled
+                string riskText = backup.RuntimeConfiguration.Routes?.Any(route => route.HidePhysicalSource) == true
                     ? Tr.Get("settings.files.backup.import_hiding_notice")
                     : string.Empty;
                 if (AppDialog.Show(
@@ -2854,7 +2955,8 @@ namespace TrackSwap
 
                 RuntimeConfiguration imported = backup.RuntimeConfiguration;
                 imported.Revision = Math.Max(DateTime.UtcNow.Ticks, previousConfiguration.Revision + 1);
-                backup.UiPreferences.AllowDuplicatePoseSources = imported.AllowDuplicatePoseSources;
+                imported.AllowDuplicatePoseSources = true;
+                imported.PhysicalSourceHidingEnabled = true;
                 backup.UiPreferences.ControllerHandSelectionPriority = imported.ControllerHandSelectionPriority;
                 bool runtimeChanged = false;
                 try
@@ -2916,12 +3018,9 @@ namespace TrackSwap
             return new UiPreferences
             {
                 LanguageLocale = _languageLocale,
+                LanguagePackFileName = _languagePackFileName,
                 ShowSteamVrRoleTargets = _showSteamVrRoleTargets,
-                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
-                HideSourceInPreview = _hideSourceInPreview,
-                HideTargetInPreview = _hideTargetInPreview,
-                ShowProxyInPreview = _showProxyInPreview,
                 UseEulerRotationEditor = _useEulerRotationEditor,
                 RuntimeLifecycleMode = _runtimeLifecycleMode,
                 FollowSteamVrWithTrackSwap = _followSteamVrWithTrackSwap
@@ -3078,133 +3177,6 @@ namespace TrackSwap
             }
         }
 
-        private void PreviewModelVisibilityCheckBox_Click(object sender, RoutedEventArgs e)
-        {
-            bool previousHideSource = _hideSourceInPreview;
-            bool previousHideTarget = _hideTargetInPreview;
-            bool previousShowProxy = _showProxyInPreview;
-            try
-            {
-                _hideSourceInPreview = HideSourceInPreviewCheckBox.IsChecked == true;
-                _hideTargetInPreview = HideTargetInPreviewCheckBox.IsChecked == true;
-                _showProxyInPreview = ShowProxyInPreviewCheckBox.IsChecked == true;
-                SaveUiPreferences();
-                if (_hideSourceInPreview && _sourcePreviewModel != null)
-                {
-                    HidePreviewModel(_sourcePreviewModel);
-                    HidePreviewModel(_rotationSourcePreviewModel);
-                }
-                if (_hideTargetInPreview && _targetPreviewModel != null)
-                {
-                    HidePreviewModel(_targetPreviewModel);
-                }
-                if (!ShouldShowProxyInPreview() && _proxyPreviewModel != null)
-                {
-                    HidePreviewModel(_proxyPreviewModel);
-                }
-                _ = RefreshPreviewDeviceModelsAsync();
-            }
-            catch (Exception exception)
-            {
-                _hideSourceInPreview = previousHideSource;
-                _hideTargetInPreview = previousHideTarget;
-                _showProxyInPreview = previousShowProxy;
-                HideSourceInPreviewCheckBox.IsChecked = previousHideSource;
-                HideTargetInPreviewCheckBox.IsChecked = previousHideTarget;
-                ShowProxyInPreviewCheckBox.IsChecked = previousShowProxy;
-                AppDialog.Show(
-                    this,
-                    exception.Message,
-                    Tr.Get("route.show_steam_vr_role_targets_check_box_click.cannot_save_advanced"),
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-        }
-
-        private void AllowDuplicatePoseSourcesCheckBox_Click(object sender, RoutedEventArgs e)
-        {
-            bool previousValue = _allowDuplicatePoseSources;
-            try
-            {
-                _allowDuplicatePoseSources = AllowDuplicatePoseSourcesCheckBox.IsChecked == true;
-                SaveUiPreferences();
-            }
-            catch (Exception exception)
-            {
-                _allowDuplicatePoseSources = previousValue;
-                AllowDuplicatePoseSourcesCheckBox.IsChecked = previousValue;
-                AppDialog.Show(
-                    this,
-                    exception.Message,
-                    Tr.Get("route.show_steam_vr_role_targets_check_box_click.cannot_save_advanced"),
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-        }
-
-        private async void PhysicalSourceHidingEnabledCheckBox_Click(object sender, RoutedEventArgs e)
-        {
-            if (_isLoading) return;
-            if (_runtimeStatus == null)
-            {
-                PhysicalSourceHidingEnabledCheckBox.IsChecked = _physicalSourceHidingEnabled;
-                AppDialog.Show(this, Tr.Get("settings.advanced.physical_source_hiding.runtime_offline"), Tr.Get("common.error.save_failed"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            bool nextValue = PhysicalSourceHidingEnabledCheckBox.IsChecked == true;
-            if (nextValue && AppDialog.Show(
-                    this,
-                    Tr.Get("settings.advanced.physical_source_hiding.confirmation"),
-                    Tr.Get("settings.advanced.physical_source_hiding_enabled_check_box_click.enable_device_hide"),
-                    MessageBoxButton.OKCancel,
-                    MessageBoxImage.Warning) != MessageBoxResult.OK)
-            {
-                PhysicalSourceHidingEnabledCheckBox.IsChecked = false;
-                return;
-            }
-
-            bool previousValue = _physicalSourceHidingEnabled;
-            var previousRouteValues = _workingRoutes.ToDictionary(route => route.RouteId, route => route.HidePhysicalSource);
-            try
-            {
-                _physicalSourceHidingEnabled = nextValue;
-                if (!nextValue)
-                {
-                    foreach (RouteConfiguration route in _workingRoutes) route.HidePhysicalSource = false;
-                }
-                if (_selectedRoute != null)
-                {
-                    HidePhysicalSourceCheckBox.Visibility = nextValue ? Visibility.Visible : Visibility.Collapsed;
-                    HidePhysicalSourceCheckBox.IsChecked = _selectedRoute.HidePhysicalSource;
-                }
-                if (!await PersistWorkingRoutesAsync())
-                {
-                    _physicalSourceHidingEnabled = previousValue;
-                    foreach (RouteConfiguration route in _workingRoutes)
-                    {
-                        if (previousRouteValues.TryGetValue(route.RouteId, out bool hidden)) route.HidePhysicalSource = hidden;
-                    }
-                    PhysicalSourceHidingEnabledCheckBox.IsChecked = previousValue;
-                    if (_selectedRoute != null)
-                    {
-                        HidePhysicalSourceCheckBox.Visibility = previousValue ? Visibility.Visible : Visibility.Collapsed;
-                        HidePhysicalSourceCheckBox.IsChecked = _selectedRoute.HidePhysicalSource;
-                    }
-                    return;
-                }
-            }
-            catch (Exception exception)
-            {
-                _physicalSourceHidingEnabled = previousValue;
-                foreach (RouteConfiguration route in _workingRoutes)
-                {
-                    if (previousRouteValues.TryGetValue(route.RouteId, out bool hidden)) route.HidePhysicalSource = hidden;
-                }
-                PhysicalSourceHidingEnabledCheckBox.IsChecked = previousValue;
-                AppDialog.Show(this, exception.Message, Tr.Get("settings.advanced.physical_source_hiding.save_failed"), MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
         private async void HidePhysicalSourceCheckBox_Click(object sender, RoutedEventArgs e)
         {
             if (_isLoading || _selectedRoute == null) return;
@@ -3352,8 +3324,8 @@ namespace TrackSwap
                     var configuration = new RuntimeConfiguration
                     {
                         Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
-                        AllowDuplicatePoseSources = active.AllowDuplicatePoseSources,
-                        PhysicalSourceHidingEnabled = active.PhysicalSourceHidingEnabled,
+                        AllowDuplicatePoseSources = true,
+                        PhysicalSourceHidingEnabled = true,
                         ControllerHandSelectionPriority = priority,
                         Routes = (active.Routes ?? new List<RouteConfiguration>())
                             .Select(CloneRoute)
@@ -3487,12 +3459,9 @@ namespace TrackSwap
             _uiPreferencesService.Save(new UiPreferences
             {
                 LanguageLocale = _languageLocale,
+                LanguagePackFileName = _languagePackFileName,
                 ShowSteamVrRoleTargets = _showSteamVrRoleTargets,
-                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
-                HideSourceInPreview = _hideSourceInPreview,
-                HideTargetInPreview = _hideTargetInPreview,
-                ShowProxyInPreview = _showProxyInPreview,
                 UseEulerRotationEditor = _useEulerRotationEditor,
                 RuntimeLifecycleMode = _runtimeLifecycleMode,
                 FollowSteamVrWithTrackSwap = _followSteamVrWithTrackSwap
@@ -3689,8 +3658,8 @@ namespace TrackSwap
                 var candidate = new RuntimeConfiguration
                 {
                     Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
-                    AllowDuplicatePoseSources = _allowDuplicatePoseSources,
-                    PhysicalSourceHidingEnabled = _physicalSourceHidingEnabled,
+                    AllowDuplicatePoseSources = true,
+                    PhysicalSourceHidingEnabled = true,
                     ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                     Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
                     Osc = CloneOscConfiguration(_workingOsc),
@@ -3808,8 +3777,8 @@ namespace TrackSwap
             var configuration = new RuntimeConfiguration
             {
                 Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
-                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
-                PhysicalSourceHidingEnabled = _physicalSourceHidingEnabled,
+                AllowDuplicatePoseSources = true,
+                PhysicalSourceHidingEnabled = true,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
                 Osc = CloneOscConfiguration(_workingOsc),
@@ -4260,9 +4229,9 @@ namespace TrackSwap
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             RuntimeTargetPanel.Visibility = replacesTarget ? Visibility.Visible : Visibility.Collapsed;
-            RuntimeTargetArrow.Visibility = replacesTarget ? Visibility.Visible : Visibility.Collapsed;
             RuntimeTargetColumn.Width = replacesTarget ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             Grid.SetColumnSpan(RuntimeProxyPanel, replacesTarget ? 1 : 3);
+            Grid.SetColumnSpan(RuntimeProxyBorder, _selectedRoute?.Mode == RouteMode.VirtualHmd ? 1 : 5);
             RuntimeControllerPanel.Visibility = virtualController ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -4349,11 +4318,15 @@ namespace TrackSwap
 
             try
             {
+                // Launch through vrmonitor instead of starting the tool executable
+                // directly. SteamVR uses this route to hand scene focus to Room
+                // Setup and dismiss the dashboard; without that transition the
+                // legacy GetControllerStateWithPose API reports every device as
+                // unavailable even when its current pose is valid.
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = roomSetupPath,
-                    WorkingDirectory = Path.GetDirectoryName(roomSetupPath),
-                    UseShellExecute = false
+                    FileName = "vrmonitor://runapp/openvr.tool.steamvr_room_setup",
+                    UseShellExecute = true
                 });
             }
             catch (Exception exception)
@@ -4369,7 +4342,7 @@ namespace TrackSwap
 
         private bool ShouldShowProxyInPreview()
         {
-            return _showProxyInPreview || _selectedRoute?.Mode == RouteMode.DirectProxy ||
+            return _selectedRoute?.Mode == RouteMode.DirectProxy ||
                 _selectedRoute?.Mode == RouteMode.VirtualController ||
                 _selectedRoute?.Mode == RouteMode.VirtualHmd;
         }
@@ -4797,8 +4770,8 @@ namespace TrackSwap
             var configuration = new RuntimeConfiguration
             {
                 Revision = revision,
-                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
-                PhysicalSourceHidingEnabled = _physicalSourceHidingEnabled,
+                AllowDuplicatePoseSources = true,
+                PhysicalSourceHidingEnabled = true,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Select(CloneRoute).ToList(),
                 Osc = CloneOscConfiguration(_workingOsc),
@@ -5600,10 +5573,10 @@ namespace TrackSwap
                         ? "oculus_quest2_controller_right"
                         : null
                 : _selectedRoute.Mode == RouteMode.VirtualHmd
-                    ? GenericHmdRenderModelName
-                    : ProxyRenderModelName;
+                    ? VirtualHmdRenderModelName
+                    : TrackerRenderModelName;
             Task<OpenVrRenderModel> proxyTask = showProxy
-                ? GetPreviewRenderModelAsync(outputRenderModel)
+                ? GetPreviewRenderModelWithFallbackAsync(outputRenderModel, BuiltInFallbackRenderModelName)
                 : Task.FromResult<OpenVrRenderModel>(null);
             OpenVrRenderModel[] models = await Task.WhenAll(
                 sourceTask,
@@ -5646,25 +5619,23 @@ namespace TrackSwap
             SetPreviewDeviceModel(
                 _proxyPreviewModel,
                 models[3],
-                _selectedRoute.Mode == RouteMode.VirtualHmd ? TrackedDeviceKind.Hmd : TrackedDeviceKind.Tracker,
+                _selectedRoute.Mode == RouteMode.VirtualHmd
+                    ? TrackedDeviceKind.Hmd
+                    : _selectedRoute.Mode == RouteMode.VirtualController
+                        ? TrackedDeviceKind.Controller
+                        : TrackedDeviceKind.Tracker,
                 (Color)ColorConverter.ConvertFromString("#5A9BFF"));
 
             string sourceMode = manualPose
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model_manual_pose")
-                : _hideSourceInPreview
-                ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model_hide")
                 : models[0] == null ? Tr.Get("route.preview.refresh_preview_device_models_async.position_source_model") : Tr.Format("route.preview.refresh_preview_device_models_async.position_source_model_steamvr", models[0].Name);
             string rotationSourceMode = !_selectedRoute.SplitPoseSource
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model_position_source")
-                : _hideSourceInPreview
-                    ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model_hide")
-                    : models[1] == null
+                : models[1] == null
                         ? Tr.Get("route.preview.refresh_preview_device_models_async.rotation_source_model")
                         : Tr.Format("route.preview.refresh_preview_device_models_async.rotation_source_model_steamvr", models[1].Name);
             string targetMode = !replacesTarget
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model_output")
-                : _hideTargetInPreview
-                ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model_hide")
                 : models[2] == null ? Tr.Get("route.preview.refresh_preview_device_models_async.target_model") : Tr.Format("route.preview.refresh_preview_device_models_async.target_model_steamvr", models[2].Name);
             string proxyMode = !showProxy
                 ? Tr.Get("route.preview.refresh_preview_device_models_async.model_hide")
@@ -5701,6 +5672,19 @@ namespace TrackSwap
             });
             _previewModelCache[renderModelName] = loadTask;
             return loadTask;
+        }
+
+        private async Task<OpenVrRenderModel> GetPreviewRenderModelWithFallbackAsync(
+            string preferredRenderModelName,
+            string fallbackRenderModelName)
+        {
+            OpenVrRenderModel preferred = await GetPreviewRenderModelAsync(preferredRenderModelName);
+            if (preferred != null || string.IsNullOrWhiteSpace(fallbackRenderModelName))
+            {
+                return preferred;
+            }
+
+            return await GetPreviewRenderModelAsync(fallbackRenderModelName);
         }
 
         private static TrackedDeviceKind InferDeviceKind(string devicePath)
@@ -5827,14 +5811,13 @@ namespace TrackSwap
             bool splitSource = _selectedRoute?.SplitPoseSource == true;
             bool manualPose = _selectedRoute?.PoseSourceKind == PoseSourceKind.Manual;
             Matrix3D targetMatrix = Matrix3D.Identity;
-            bool targetVisible = !_hideTargetInPreview &&
-                IsRenderablePose(snapshot.Source) &&
+            bool targetVisible = IsRenderablePose(snapshot.Source) &&
                 IsRenderablePose(snapshot.Target) &&
                 TryGetRelativePoseMatrix(snapshot.Source, snapshot.Target, out targetMatrix);
-            bool sourceVisible = !manualPose && !_hideSourceInPreview && IsRenderablePose(snapshot.Source);
+            bool sourceVisible = !manualPose && IsRenderablePose(snapshot.Source);
             Matrix3D sourceMatrix = Matrix3D.Identity;
             Matrix3D rotationSourceMatrix = Matrix3D.Identity;
-            bool rotationSourceVisible = splitSource && !_hideSourceInPreview &&
+            bool rotationSourceVisible = splitSource &&
                 IsRenderablePose(snapshot.Source) &&
                 IsRenderablePose(snapshot.RotationSource) &&
                 TryGetRelativePoseMatrix(snapshot.Source, snapshot.RotationSource, out rotationSourceMatrix);
@@ -6690,8 +6673,8 @@ namespace TrackSwap
             var configuration = new RuntimeConfiguration
             {
                 Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
-                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
-                PhysicalSourceHidingEnabled = _physicalSourceHidingEnabled,
+                AllowDuplicatePoseSources = true,
+                PhysicalSourceHidingEnabled = true,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
                 Osc = osc,
@@ -7192,6 +7175,13 @@ namespace TrackSwap
                 return;
             }
 
+            if (IsActive && e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                ReloadLanguages(showFailureDialog: false, trigger: "F5");
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key == Key.Escape && _xInputCaptureComboBox != null)
             {
                 CancelXInputCapture();
@@ -7545,8 +7535,8 @@ namespace TrackSwap
             var configuration = new RuntimeConfiguration
             {
                 Revision = Math.Max(DateTime.UtcNow.Ticks, _runtimeStatus.ConfigurationRevision + 1),
-                AllowDuplicatePoseSources = _allowDuplicatePoseSources,
-                PhysicalSourceHidingEnabled = _physicalSourceHidingEnabled,
+                AllowDuplicatePoseSources = true,
+                PhysicalSourceHidingEnabled = true,
                 ControllerHandSelectionPriority = _controllerHandSelectionPriority,
                 Routes = _workingRoutes.Where(IsRouteComplete).Select(CloneRoute).ToList(),
                 Osc = CloneOscConfiguration(_workingOsc),
@@ -7691,6 +7681,8 @@ namespace TrackSwap
         {
             Runtime,
             SteamVr,
+            DeviceViewer,
+            ThirdPartyNotices,
             Devices,
             Files,
             Language,
@@ -7750,9 +7742,7 @@ namespace TrackSwap
         {
             public DeviceHistoryListItem(
                 ManagedDeviceRecord record,
-                bool isOnline,
-                string currentReceiverDisplayName,
-                string lastReceiverDisplayName)
+                bool isOnline)
             {
                 Record = record;
                 DisplayName = record.DisplayName;
@@ -7760,15 +7750,9 @@ namespace TrackSwap
                 DevicePath = record.DevicePath;
                 Note = record.Note;
                 IsOnline = isOnline;
-                CurrentReceiverDisplayName = currentReceiverDisplayName;
-                LastReceiverDisplayName = lastReceiverDisplayName;
                 IdentityText = string.Equals(DisplayName, HardwareDisplayName, StringComparison.Ordinal)
                     ? DevicePath
                     : HardwareDisplayName + " · " + DevicePath;
-                ReceiverSummary = Tr.Format(
-                    "settings.devices.device_receiver_summary",
-                    CurrentReceiverDisplayName,
-                    LastReceiverDisplayName);
                 NoteDisplay = string.IsNullOrWhiteSpace(Note)
                     ? Tr.Get("settings.devices.no_note")
                     : Tr.Format("settings.devices.note", Note);
@@ -7780,10 +7764,7 @@ namespace TrackSwap
             public string DevicePath { get; }
             public string Note { get; }
             public bool IsOnline { get; }
-            public string CurrentReceiverDisplayName { get; }
-            public string LastReceiverDisplayName { get; }
             public string IdentityText { get; }
-            public string ReceiverSummary { get; }
             public string NoteDisplay { get; }
             public string StateText => IsOnline ? Tr.Get("common.status.online") : Tr.Get("common.status.offline");
         }
@@ -7799,12 +7780,9 @@ namespace TrackSwap
                 ReceiverId = record.ReceiverId;
                 Note = record.Note;
                 IsInUse = connectedDevices.Count > 0;
-                ConnectedDevices = IsInUse
-                    ? string.Join("、", connectedDevices)
-                    : Tr.Get("settings.devices.receiver_not_in_use");
                 ConnectionSummary = IsInUse
-                    ? Tr.Format("settings.devices.receiver_in_use", ConnectedDevices)
-                    : ConnectedDevices;
+                    ? Tr.Format("settings.devices.receiver_in_use", string.Join("、", connectedDevices))
+                    : string.Empty;
                 NoteDisplay = string.IsNullOrWhiteSpace(Note)
                     ? Tr.Get("settings.devices.no_note")
                     : Tr.Format("settings.devices.note", Note);
@@ -7815,7 +7793,6 @@ namespace TrackSwap
             public string ReceiverId { get; }
             public string Note { get; }
             public bool IsInUse { get; }
-            public string ConnectedDevices { get; }
             public string ConnectionSummary { get; }
             public string NoteDisplay { get; }
         }

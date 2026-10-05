@@ -78,6 +78,7 @@ private:
     std::uint32_t targetSearchCountdown_ = 0;
     bool lastHealth_ = false;
     bool renderModelVisible_ = true;
+    const char* visibleRenderModel_ = "{trackswap}trackswap_proxy_tracker";
     bool activeEnabled_ = false;
     bool pendingEnabled_ = false;
     bool activeManualPose_ = false;

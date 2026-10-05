@@ -2,6 +2,7 @@
 
 #include "pose_math.h"
 #include "pose_hiding_hook.h"
+#include "render_model_selection.h"
 
 #include <cstdio>
 #include <cstring>
@@ -156,7 +157,11 @@ vr::EVRInitError VirtualTracker::Activate(std::uint32_t objectId)
         properties,
         vr::Prop_ModelNumber_String,
         proxyDevice_ ? "TrackSwap VR Proxy Tracker" : "TrackSwap VR Virtual Tracker");
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
+    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "TrackSwap");
+    if (!proxyDevice_)
+    {
+        visibleRenderModel_ = render_models::SelectPreferredOrFallback("{htc}vr_tracker_vive_3_0", "htc");
+    }
     SetRenderModelVisible(!proxyDevice_, true);
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_tracker");
@@ -256,7 +261,8 @@ void VirtualTracker::Update()
         lastPose_ = pose_math::MakeInvalidPose();
         SetHealth(false);
         PublishTelemetry();
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
+        const auto submittedPose = lastPose_;
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, submittedPose, sizeof(submittedPose));
         return;
     }
 
@@ -367,7 +373,8 @@ void VirtualTracker::Update()
     }
 
     PublishTelemetry();
-    vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
+    const auto submittedPose = lastPose_;
+    vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, submittedPose, sizeof(submittedPose));
 }
 
 vr::TrackedDeviceIndex_t VirtualTracker::SourceDeviceId() const
@@ -493,9 +500,7 @@ void VirtualTracker::SetRenderModelVisible(bool visible, bool force)
 
     const vr::PropertyContainerHandle_t properties =
         vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
-    const char* renderModel = visible
-        ? "{trackswap}trackswap_proxy_tracker"
-        : "{trackswap}trackswap_hidden_proxy";
+    const char* renderModel = visible ? visibleRenderModel_ : render_models::HiddenProxy;
     const vr::ETrackedPropertyError error = vr::VRProperties()->SetStringProperty(
         properties,
         vr::Prop_RenderModelName_String,

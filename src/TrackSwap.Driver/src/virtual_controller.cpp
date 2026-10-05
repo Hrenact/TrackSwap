@@ -1,5 +1,6 @@
 #include "virtual_controller.h"
 #include "pose_hiding_hook.h"
+#include "render_model_selection.h"
 
 #include <array>
 #include <chrono>
@@ -125,12 +126,17 @@ vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
     const auto properties = vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
     const bool left = hand_ == ControllerHand::Left;
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, left ? "TrackSwap VR Controller Left" : "TrackSwap VR Controller Right");
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
+    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "TrackSwap");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, registeredDeviceType_.c_str());
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_controller");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_InputProfilePath_String, "{trackswap}/input/trackswap_controller_profile.json");
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_RenderModelName_String,
-        left ? "oculus_quest2_controller_left" : "oculus_quest2_controller_right");
+    const char* preferredRenderModel = left
+        ? "oculus_quest2_controller_left"
+        : "oculus_quest2_controller_right";
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_RenderModelName_String,
+        render_models::SelectPreferredOrFallback(preferredRenderModel));
     // Keep the icon asset generation in the resource name. SteamVR caches named
     // device icons by resource path, so overwriting an existing PNG can leave a
     // redesigned icon visually stale even after the driver package is updated.
@@ -184,11 +190,23 @@ vr::EVRInitError VirtualController::Activate(std::uint32_t objectId)
     }
     vr::VRDriverInput()->CreateBooleanComponent(properties, "/input/thumbrest/touch", &thumbrestTouchHandle_);
     vr::VRDriverInput()->CreateHapticComponent(properties, "/output/haptic", &hapticHandle_);
+    const auto rawPoseError = vr::VRDriverInput()->CreatePoseComponent(properties, "/pose/raw", &rawPoseHandle_);
     vr::VRDriverInput()->CreatePoseComponent(properties, "/pose/openxr_aim", &openXrAimPoseHandle_);
     vr::VRDriverInput()->CreatePoseComponent(properties, "/pose/openxr_grip", &openXrGripPoseHandle_);
+    const auto rawPose = MakeLocalPoseOffset(0.0F, 0.0F, 0.0F, 0.0F);
     const float handedX = left ? 0.007F : -0.007F;
     const auto openXrAimPose = MakeLocalPoseOffset(handedX, -0.03894766F, 0.00949694F, -39.4F);
     const auto openXrGripPose = MakeLocalPoseOffset(handedX, -0.00182941F, 0.1019482F, 20.6F);
+    const auto rawPoseUpdateError = rawPoseError == vr::VRInputError_None
+        ? vr::VRDriverInput()->UpdatePoseComponent(rawPoseHandle_, &rawPose, 0.0)
+        : rawPoseError;
+    if (rawPoseUpdateError != vr::VRInputError_None)
+    {
+        char message[160]{};
+        sprintf_s(message, "TrackSwap VR could not initialize a controller raw-pose component (error %d).",
+            static_cast<int>(rawPoseUpdateError));
+        vr::VRDriverLog()->Log(message);
+    }
     vr::VRDriverInput()->UpdatePoseComponent(openXrAimPoseHandle_, &openXrAimPose, 0.0);
     vr::VRDriverInput()->UpdatePoseComponent(openXrGripPoseHandle_, &openXrGripPose, 0.0);
     const auto skeletonError = vr::VRDriverInput()->CreateSkeletonComponent(
@@ -232,12 +250,21 @@ void VirtualController::Update()
     if (objectId_ == vr::k_unTrackedDeviceIndexInvalid) return;
     ApplyPending();
     ApplyInput();
+    if (rawPoseHandle_ != vr::k_ulInvalidInputComponentHandle)
+    {
+        // Legacy applications bind their controller pose after the device has
+        // already activated. Republish the static component transform so a
+        // newly loaded binding immediately receives a valid pose source.
+        const auto rawPose = MakeLocalPoseOffset(0.0F, 0.0F, 0.0F, 0.0F);
+        vr::VRDriverInput()->UpdatePoseComponent(rawPoseHandle_, &rawPose, 0.0);
+    }
     if (!activeEnabled_)
     {
         poseSmoother_.Reset();
         lastPose_ = pose_math::MakeInvalidPose();
         PublishTelemetry();
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
+        const auto submittedPose = lastPose_;
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, submittedPose, sizeof(submittedPose));
         return;
     }
     vr::VRServerDriverHost()->GetRawTrackedDevicePoses(0.0F, rawPoses_.data(), static_cast<std::uint32_t>(rawPoses_.size()));
@@ -296,7 +323,8 @@ void VirtualController::Update()
         lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
     }
     PublishTelemetry();
-    vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
+    const auto submittedPose = lastPose_;
+    vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, submittedPose, sizeof(submittedPose));
 }
 
 void VirtualController::ApplyPending()

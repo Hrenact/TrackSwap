@@ -5,7 +5,7 @@
   "device_class": "TrackedDeviceClass_Controller",
   "resource_root": "trackswap",
   "driver_name": "trackswap",
-  "legacy_binding": "{oculus}/input/legacy_bindings_touch.json",
+  "legacy_binding": "{trackswap}/input/legacy_bindings_trackswap_controller.json",
   "input_bindingui_mode": "controller_handed",
   "should_show_binding_errors": true,
   "input_bindingui_left": {
@@ -49,7 +49,7 @@
     "left_registered_device_type": "trackswap/TRKSWAP-CONTROLLER-L",
     "right_registered_device_type": "trackswap/TRKSWAP-CONTROLLER-R",
     "tracking_system_name": "trackswap",
-    "manufacturer_name": "Hrenact",
+    "manufacturer_name": "TrackSwap",
     "legacy_buttons": [0, 1, 2, 7, 32, 33, 34],
     "legacy_axis": [2, 3, 3, 0, 0]
   }

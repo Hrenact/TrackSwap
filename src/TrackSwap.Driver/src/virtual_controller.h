@@ -117,6 +117,7 @@ private:
     vr::VRInputComponentHandle_t thumbrestTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t hapticHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t skeletonHandle_ = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t rawPoseHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t openXrAimPoseHandle_ = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t openXrGripPoseHandle_ = vr::k_ulInvalidInputComponentHandle;
     MyHandSimulation handSimulation_;

@@ -6,8 +6,10 @@ namespace TrackSwap.Protocol
     {
         public int SchemaVersion { get; set; } = ProtocolConstants.CurrentConfigurationSchemaVersion;
         public long Revision { get; set; }
-        public bool AllowDuplicatePoseSources { get; set; }
-        public bool PhysicalSourceHidingEnabled { get; set; }
+        // Retained for backward-compatible JSON round trips. Both capabilities are
+        // unconditional now, so legacy configurations are normalized to true.
+        public bool AllowDuplicatePoseSources { get; set; } = true;
+        public bool PhysicalSourceHidingEnabled { get; set; } = true;
         public int ControllerHandSelectionPriority { get; set; } = ProtocolConstants.DefaultControllerHandSelectionPriority;
         public List<RouteConfiguration> Routes { get; set; } = new List<RouteConfiguration>();
         public OscConfiguration Osc { get; set; } = OscConfiguration.CreateDefault();

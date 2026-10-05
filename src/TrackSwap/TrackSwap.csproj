@@ -9,13 +9,13 @@
     <AssemblyName>TrackSwap</AssemblyName>
     <RootNamespace>TrackSwap</RootNamespace>
     <AssemblyTitle>TrackSwap VR</AssemblyTitle>
-    <Product>TrackSwap VR v011</Product>
+    <Product>TrackSwap VR v012</Product>
     <Description>SteamVR 位姿映射管理工具</Description>
     <Authors>Hrenact</Authors>
     <Copyright>Copyright © 2026 Hrenact</Copyright>
-    <AssemblyVersion>0.0.10.0</AssemblyVersion>
-    <FileVersion>0.0.10.0</FileVersion>
-    <InformationalVersion>v011</InformationalVersion>
+    <AssemblyVersion>0.0.11.0</AssemblyVersion>
+    <FileVersion>0.0.11.0</FileVersion>
+    <InformationalVersion>v012</InformationalVersion>
     <ApplicationIcon>Assets\TrackSwap.ico</ApplicationIcon>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
@@ -38,6 +38,9 @@
     <Content Include="TrackSwap.vrmanifest">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <EmbeddedResource Include="..\..\THIRD-PARTY-NOTICES.md"
+                      Link="THIRD-PARTY-NOTICES.md"
+                      LogicalName="TrackSwap.THIRD-PARTY-NOTICES.md" />
     <None Include="Assets\TrackSwap.svg" />
     <None Include="Assets\TrackSwap-16.png" />
     <None Include="Assets\TrackSwap-24.png" />

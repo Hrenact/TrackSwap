@@ -13,8 +13,9 @@ The following behavior must not regress:
 - The route editor uses numeric offsets and the virtual-output gizmo; legacy values are interpreted as centimetres without migration.
 - Downsampled telemetry drives a source/final-target preview outside the tracking-critical path. The proxy remains available to telemetry but is not rendered as a third user-facing device.
 - Preview loading through `IVRRenderModels_006` supports static and component-based models and falls back by device class without affecting tracking.
-- Direct outputs use the visible `trackswap_proxy_tracker` model; target-replacement carriers use `trackswap_hidden_proxy`. Hidden carriers retain valid tracking and mapping behavior.
-- Virtual devices publish TrackSwap-owned 32 px state icons; never regress to SteamVR's generic tracker icon.
+- Direct tracker outputs prefer SteamVR's installed `{htc}vr_tracker_vive_3_0` model, virtual controllers prefer the handed Quest 2 Touch models, and the virtual HMD prefers SteamVR's `dk2_hmd` model. Every visible virtual device falls back to TrackSwap's packaged square model when its preferred SteamVR model is unavailable. Target-replacement carriers always use the TrackSwap-owned `trackswap_hidden_proxy`; hidden carriers retain valid tracking and mapping behavior.
+- Virtual trackers and controllers publish their own TrackSwap-owned 32×32 state icons, and the virtual HMD publishes a TrackSwap-owned 50×32 state icon matching SteamVR's HMD layout convention; never regress any device class to SteamVR's generic tracker icon.
+- The virtual HMD disables SteamVR head-model translation so an identity manual pose remains at the same standing-space origin as identity tracker and controller routes, including in observational OpenVR clients.
 - Deletion while SteamVR is stopped removes only that route's static mapping. Deletion while running remains pending only when a mapping exists, preserves live tracking, and automatically finishes after SteamVR stops. Routes without mappings delete immediately.
 - Hardware verification has confirmed tracker-to-hand pose replacement while the original controller retains input.
 

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -62,6 +64,72 @@ public sealed class LocalizationServiceTests : IDisposable
     }
 
     [Fact]
+    public void PacksWithTheSameLocaleCoexistAndAreSelectedByFileName()
+    {
+        Directory.CreateDirectory(_root);
+        WritePack(
+            "en-US-machine.json",
+            "en-US",
+            "English",
+            "Machine",
+            new Dictionary<string, string> { ["valid.key"] = "Machine" });
+        WritePack(
+            "en-US-refined.json",
+            "en-US",
+            "English",
+            "Editor",
+            new Dictionary<string, string> { ["valid.key"] = "Refined" });
+        var service = CreateService();
+
+        LanguageOption[] englishOptions = service.Languages
+            .Where(option => string.Equals(option.Locale, "en-US", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Assert.Equal(2, englishOptions.Length);
+        Assert.Contains(englishOptions, option =>
+            option.Label.IndexOf("en-US-machine.json", StringComparison.Ordinal) >= 0);
+        Assert.Contains(englishOptions, option =>
+            option.Label.IndexOf("en-US-refined.json", StringComparison.Ordinal) >= 0);
+
+        service.SetLanguage("en-US", "en-US-refined.json");
+        Assert.Equal("Refined", service.Translate("valid.key"));
+        Assert.Equal("en-US-refined.json", service.CurrentPackFileName);
+        service.Reload();
+        Assert.Equal("Refined", service.Translate("valid.key"));
+        Assert.Equal("en-US-refined.json", service.CurrentPackFileName);
+
+        service.SetLanguage("en-US", "en-US-machine.json");
+        Assert.Equal("Machine", service.Translate("valid.key"));
+        Assert.Equal("en-US-machine.json", service.CurrentPackFileName);
+    }
+
+    [Fact]
+    public void CommunityPackMayShareTheBuiltInLocale()
+    {
+        Directory.CreateDirectory(_root);
+        WritePack(
+            "zh-CN Dev.json",
+            "zh-CN",
+            "简体中文",
+            "Hrenact-Dev",
+            new Dictionary<string, string> { ["valid.key"] = "开发版" });
+        var service = CreateService();
+
+        LanguageOption communityOption = Assert.Single(service.Languages, option =>
+            !option.IsOfficial &&
+            string.Equals(option.Locale, LocalizationService.OfficialLocale, StringComparison.OrdinalIgnoreCase));
+        Assert.True(communityOption.ShowFileName);
+        Assert.True(communityOption.Label.IndexOf("zh-CN Dev.json", StringComparison.Ordinal) >= 0);
+
+        service.SetLanguage("zh-CN", "zh-CN Dev.json");
+        Assert.False(service.IsOfficialLanguage);
+        Assert.Equal("开发版", service.Translate("valid.key"));
+
+        service.SetLanguage("zh-CN");
+        Assert.True(service.IsOfficialLanguage);
+        Assert.Equal("有效", service.Translate("valid.key"));
+    }
+
+    [Fact]
     public void ExportedTemplateUsesFlatKeyValueStrings()
     {
         var service = CreateService();
@@ -97,6 +165,32 @@ public sealed class LocalizationServiceTests : IDisposable
         string formatted = Tr.Format("format.key", "first", "second");
 
         Assert.Equal("second / first / second", formatted);
+    }
+
+    [Fact]
+    public void FormatSupportsCompositeNumericFormats()
+    {
+        LocalizationManager.Initialize(CreateService());
+        CultureInfo originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+
+            Assert.Equal("72.5 Hz", Tr.Format("formatted.frequency", 72.5));
+            Assert.Equal("1.25–7 m", Tr.Format("formatted.range", 1.25, 7.0));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
+    public void MalformedLocalizedFormatDoesNotCrashTheCaller()
+    {
+        LocalizationManager.Initialize(CreateService());
+
+        Assert.Equal("{0", Tr.Format("malformed.format", 1));
     }
 
     [Fact]
@@ -184,6 +278,9 @@ public sealed class LocalizationServiceTests : IDisposable
             ["missing.key"] = "缺失",
             ["invalid.key"] = "当前原文",
             ["format.key"] = "{1} / {0} / {1}",
+            ["formatted.frequency"] = "{0:0.##} Hz",
+            ["formatted.range"] = "{0:0.##}–{1:0.##} m",
+            ["malformed.format"] = "{0",
             ["device.status.online"] = "{0} · online",
             ["device.status.offline"] = "{0} · offline",
             ["device.status.saved"] = "{0} · saved"
@@ -192,17 +289,27 @@ public sealed class LocalizationServiceTests : IDisposable
 
     private void WritePack(string locale, Dictionary<string, string> strings)
     {
+        WritePack(locale + ".json", locale, "English", "Test", strings);
+    }
+
+    private void WritePack(
+        string fileName,
+        string locale,
+        string displayName,
+        string author,
+        Dictionary<string, string> strings)
+    {
         var document = new LanguagePackDocument
         {
             SchemaVersion = 1,
             Locale = locale,
-            DisplayName = "English",
-            Author = "Test",
+            DisplayName = displayName,
+            Author = author,
             TargetTrackSwapVersion = "v011",
             Strings = strings
         };
         File.WriteAllText(
-            Path.Combine(_root, locale + ".json"),
+            Path.Combine(_root, fileName),
             JsonConvert.SerializeObject(document));
     }
 

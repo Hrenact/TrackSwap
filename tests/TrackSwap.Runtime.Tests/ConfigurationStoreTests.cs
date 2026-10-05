@@ -55,6 +55,38 @@ public sealed class ConfigurationStoreTests
     }
 
     [Fact]
+    public void LoadNormalizesRemovedAdvancedCapabilityFlagsToEnabled()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "trackswap-tests", Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "runtime.json");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var configuration = new RuntimeConfiguration
+            {
+                AllowDuplicatePoseSources = false,
+                PhysicalSourceHidingEnabled = false
+            };
+            File.WriteAllText(path, JsonConvert.SerializeObject(configuration, RuntimeJson.Settings));
+
+            RuntimeConfiguration loaded = new ConfigurationStore(path).Load();
+
+            Assert.True(loaded.AllowDuplicatePoseSources);
+            Assert.True(loaded.PhysicalSourceHidingEnabled);
+            JObject persisted = JObject.Parse(File.ReadAllText(path));
+            Assert.True(persisted["allowDuplicatePoseSources"]?.Value<bool>());
+            Assert.True(persisted["physicalSourceHidingEnabled"]?.Value<bool>());
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void LoadRoundsLegacyFractionalMotionSmoothingStrengths()
     {
         string directory = Path.Combine(Path.GetTempPath(), "trackswap-tests", Guid.NewGuid().ToString("N"));

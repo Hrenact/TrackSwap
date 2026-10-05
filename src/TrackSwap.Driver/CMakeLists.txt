@@ -70,6 +70,8 @@ add_library(driver_trackswap SHARED
     src/pose_math.h
     src/pose_smoothing.cpp
     src/pose_smoothing.h
+    src/render_model_selection.cpp
+    src/render_model_selection.h
     src/pose_hiding_hook.cpp
     src/pose_hiding_hook.h
     src/runtime_launcher.cpp

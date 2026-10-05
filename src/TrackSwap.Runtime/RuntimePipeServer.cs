@@ -307,16 +307,14 @@ internal sealed class RuntimePipeServer
         RuntimeConfiguration configuration,
         DriverSynchronizationStatus driverStatus)
     {
-        int requestedCount = configuration.PhysicalSourceHidingEnabled
-            ? configuration.Routes
-                .Where(route => route.Enabled && !route.PendingDeletion && route.HidePhysicalSource)
-                .SelectMany(route => route.SplitPoseSource
-                    ? new[] { route.SourceDevicePath, route.RotationSourceDevicePath }
-                    : new[] { route.SourceDevicePath })
-                .Where(path => !string.IsNullOrWhiteSpace(path))
-                .Distinct(StringComparer.Ordinal)
-                .Count()
-            : 0;
+        int requestedCount = configuration.Routes
+            .Where(route => route.Enabled && !route.PendingDeletion && route.HidePhysicalSource)
+            .SelectMany(route => route.SplitPoseSource
+                ? new[] { route.SourceDevicePath, route.RotationSourceDevicePath }
+                : new[] { route.SourceDevicePath })
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
         if (requestedCount == 0)
         {
             return new PhysicalSourceHidingStatus();
@@ -397,6 +395,8 @@ internal sealed class RuntimePipeServer
 
     private void CommitConfiguration(RuntimeConfiguration candidate)
     {
+        candidate.AllowDuplicatePoseSources = true;
+        candidate.PhysicalSourceHidingEnabled = true;
         candidate.Osc.Enabled = OscConfiguration.IsRequiredForRoutes(candidate.Routes);
         IReadOnlyList<string> errors = ConfigurationValidator.Validate(candidate);
         if (errors.Count != 0)

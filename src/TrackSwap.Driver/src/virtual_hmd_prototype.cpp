@@ -1,8 +1,10 @@
 #include "virtual_hmd_prototype.h"
 #include "pose_hiding_hook.h"
+#include "render_model_selection.h"
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 namespace
 {
@@ -15,6 +17,15 @@ constexpr std::uint32_t RenderHeightPerEye = 1920;
 constexpr float DisplayFrequencyHz = 60.0F;
 constexpr float UserIpdMeters = 0.063F;
 constexpr std::uint64_t UniverseId = 0x54535750ULL;
+
+vr::HmdMatrix34_t MakeIdentityComponentTransform()
+{
+    vr::HmdMatrix34_t result{};
+    result.m[0][0] = 1.0F;
+    result.m[1][1] = 1.0F;
+    result.m[2][2] = 1.0F;
+    return result;
+}
 
 trackswap::control_protocol::TelemetryPose ToTelemetryPose(const vr::DriverPose_t& pose)
 {
@@ -77,9 +88,34 @@ vr::EVRInitError VirtualHmd::Activate(std::uint32_t objectId)
     objectId_ = objectId;
     const auto properties = vr::VRProperties()->TrackedDeviceToPropertyContainer(objectId_);
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_ModelNumber_String, "TrackSwap VR Virtual HMD");
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "Hrenact");
+    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ManufacturerName_String, "TrackSwap");
     vr::VRProperties()->SetStringProperty(properties, vr::Prop_RegisteredDeviceType_String, "trackswap/TRKSWAP-HMD");
-    vr::VRProperties()->SetStringProperty(properties, vr::Prop_RenderModelName_String, "generic_hmd");
+    vr::VRProperties()->SetStringProperty(properties, vr::Prop_ControllerType_String, "trackswap_hmd");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_InputProfilePath_String,
+        "{trackswap}/input/trackswap_hmd_profile.json");
+    vr::VRProperties()->SetStringProperty(
+        properties,
+        vr::Prop_RenderModelName_String,
+        render_models::SelectPreferredOrFallback("dk2_hmd"));
+    // Keep the icon asset generation in the resource name. SteamVR caches named
+    // device icons by resource path, so a redesigned HMD icon needs a new prefix.
+    constexpr const char* IconPrefix = "{trackswap}/icons/trackswap_hmd_v3_";
+    const auto setNamedIcon = [&](vr::ETrackedDeviceProperty property, const char* state)
+    {
+        const std::string path = std::string(IconPrefix) + state + ".png";
+        vr::VRProperties()->SetStringProperty(properties, property, path.c_str());
+    };
+    setNamedIcon(vr::Prop_NamedIconPathDeviceOff_String, "off");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceSearching_String, "searching");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceSearchingAlert_String, "searching_alert");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceReady_String, "ready");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceReadyAlert_String, "ready_alert");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceNotReady_String, "not_ready");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceStandby_String, "standby");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceAlertLow_String, "alert_low");
+    setNamedIcon(vr::Prop_NamedIconPathDeviceStandbyAlert_String, "standby_alert");
     vr::VRProperties()->SetUint64Property(properties, vr::Prop_CurrentUniverseId_Uint64, UniverseId);
     vr::VRProperties()->SetFloatProperty(properties, vr::Prop_UserIpdMeters_Float, UserIpdMeters);
     vr::VRProperties()->SetFloatProperty(properties, vr::Prop_DisplayFrequency_Float, DisplayFrequencyHz);
@@ -100,6 +136,26 @@ vr::EVRInitError VirtualHmd::Activate(std::uint32_t objectId)
         proximityHandle_ = vr::k_ulInvalidInputComponentHandle;
         vr::VRDriverLog()->Log("TrackSwap VR virtual HMD could not create the proximity component.");
     }
+    const auto rawPoseError = vr::VRDriverInput()->CreatePoseComponent(properties, "/pose/raw", &rawPoseHandle_);
+    if (rawPoseError != vr::VRInputError_None)
+    {
+        rawPoseHandle_ = vr::k_ulInvalidInputComponentHandle;
+        vr::VRDriverLog()->Log("TrackSwap VR virtual HMD could not create the raw-pose component.");
+    }
+    const auto systemError = vr::VRDriverInput()->CreateBooleanComponent(
+        properties, "/input/system/click", &systemClickHandle_);
+    if (systemError != vr::VRInputError_None)
+    {
+        systemClickHandle_ = vr::k_ulInvalidInputComponentHandle;
+        vr::VRDriverLog()->Log("TrackSwap VR virtual HMD could not create the system-button component.");
+    }
+    const auto systemTouchError = vr::VRDriverInput()->CreateBooleanComponent(
+        properties, "/input/system/touch", &systemTouchHandle_);
+    if (systemTouchError != vr::VRInputError_None)
+    {
+        systemTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
+        vr::VRDriverLog()->Log("TrackSwap VR virtual HMD could not create the system-touch component.");
+    }
     lastPose_ = pose_math::MakeInvalidPose(true);
     vr::VRDriverLog()->Log("TrackSwap VR virtual HMD activated.");
     return vr::VRInitError_None;
@@ -110,6 +166,9 @@ void VirtualHmd::Deactivate()
     poseSmoother_.Reset();
     objectId_ = vr::k_unTrackedDeviceIndexInvalid;
     proximityHandle_ = vr::k_ulInvalidInputComponentHandle;
+    rawPoseHandle_ = vr::k_ulInvalidInputComponentHandle;
+    systemClickHandle_ = vr::k_ulInvalidInputComponentHandle;
+    systemTouchHandle_ = vr::k_ulInvalidInputComponentHandle;
     sourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     rotationSourceId_ = vr::k_unTrackedDeviceIndexInvalid;
     lastPose_ = pose_math::MakeInvalidPose();
@@ -135,22 +194,32 @@ void VirtualHmd::Update()
         // SteamVR does not enter the idle/sleep cadence used for an unworn HMD.
         vr::VRDriverInput()->UpdateBooleanComponent(proximityHandle_, true, 0.0);
     }
+    if (rawPoseHandle_ != vr::k_ulInvalidInputComponentHandle)
+    {
+        const auto rawPose = MakeIdentityComponentTransform();
+        vr::VRDriverInput()->UpdatePoseComponent(rawPoseHandle_, &rawPose, 0.0);
+    }
+    if (systemClickHandle_ != vr::k_ulInvalidInputComponentHandle)
+        vr::VRDriverInput()->UpdateBooleanComponent(systemClickHandle_, false, 0.0);
+    if (systemTouchHandle_ != vr::k_ulInvalidInputComponentHandle)
+        vr::VRDriverInput()->UpdateBooleanComponent(systemTouchHandle_, false, 0.0);
     ApplyPending();
     if (!activeEnabled_)
     {
         poseSmoother_.Reset();
         lastPose_ = pose_math::MakeInvalidPose(true);
         PublishTelemetry();
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
+        const auto submittedPose = lastPose_;
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, submittedPose, sizeof(submittedPose));
         return;
     }
     if (activeManualPose_)
     {
-        lastPose_ = pose_math::ApplyOffset(pose_math::MakeValidIdentityPose(true), activeOffset_);
+        lastPose_ = pose_math::ApplyOffset(pose_math::MakeValidIdentityPose(), activeOffset_);
         lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
-        lastPose_.shouldApplyHeadModel = true;
         PublishTelemetry();
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
+        const auto submittedPose = lastPose_;
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, submittedPose, sizeof(submittedPose));
         return;
     }
     vr::VRServerDriverHost()->GetRawTrackedDevicePoses(0.0F, rawPoses_.data(), static_cast<std::uint32_t>(rawPoses_.size()));
@@ -185,10 +254,10 @@ void VirtualHmd::Update()
         if (split) base = pose_math::CombinePose(base, pose_math::ConvertPose(rawPoses_[rotationSourceId_]));
         lastPose_ = pose_math::ApplyOffset(base, activeOffset_);
         lastPose_ = poseSmoother_.Apply(lastPose_, activeSmoothing_);
-        lastPose_.shouldApplyHeadModel = true;
     }
     PublishTelemetry();
-    vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, lastPose_, sizeof(lastPose_));
+    const auto submittedPose = lastPose_;
+    vr::VRServerDriverHost()->TrackedDevicePoseUpdated(objectId_, submittedPose, sizeof(submittedPose));
 }
 
 void VirtualHmd::ApplyPending()
@@ -240,7 +309,7 @@ void VirtualHmd::PublishTelemetry()
     control_protocol::TelemetrySnapshot snapshot{};
     { std::lock_guard<std::mutex> lock(telemetryMutex_); snapshot.sequence = telemetry_.sequence + 1; }
     snapshot.appliedRevision = appliedRevision_;
-    if (activeManualPose_) snapshot.source = ToTelemetryPose(pose_math::MakeValidIdentityPose(true));
+    if (activeManualPose_) snapshot.source = ToTelemetryPose(pose_math::MakeValidIdentityPose());
     else if (sourceId_ != vr::k_unTrackedDeviceIndexInvalid) snapshot.source = ToTelemetryPose(pose_math::ConvertPose(rawPoses_[sourceId_]));
     if (rotationSourceDevicePath_[0] == '\0') snapshot.rotationSource = snapshot.source;
     else if (rotationSourceId_ != vr::k_unTrackedDeviceIndexInvalid)

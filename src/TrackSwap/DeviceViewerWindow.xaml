@@ -1,0 +1,208 @@
+<Window x:Class="TrackSwap.DeviceViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:i18n="clr-namespace:TrackSwap.Localization"
+        Title="{i18n:Loc Key=device_viewer.title}"
+        Icon="Assets/TrackSwap.ico"
+        Width="1100"
+        Height="720"
+        MinWidth="760"
+        MinHeight="520"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource WindowBrush}">
+    <Grid Background="{StaticResource WindowBrush}">
+        <Border x:Name="SceneInteractionSurface"
+                Background="#0F0F0F"
+                ClipToBounds="True"
+                MouseDown="SceneViewport_MouseDown"
+                MouseMove="SceneViewport_MouseMove"
+                MouseUp="SceneViewport_MouseUp"
+                MouseWheel="SceneViewport_MouseWheel"
+                LostMouseCapture="SceneViewport_LostMouseCapture">
+            <Viewport3D x:Name="SceneViewport" IsHitTestVisible="True">
+                <Viewport3D.Camera>
+                    <PerspectiveCamera x:Name="SceneCamera"
+                                       Position="2.2,1.8,2.8"
+                                       LookDirection="-2.2,-1.1,-2.8"
+                                       UpDirection="0,1,0"
+                                       FieldOfView="46" />
+                </Viewport3D.Camera>
+                <ModelVisual3D>
+                    <ModelVisual3D.Content>
+                        <Model3DGroup>
+                            <AmbientLight Color="#FFFFFF" />
+                            <DirectionalLight Color="#FFFFFF" Direction="-0.4,-1,-0.5" />
+                            <Model3DGroup x:Name="SceneRoot" />
+                        </Model3DGroup>
+                    </ModelVisual3D.Content>
+                </ModelVisual3D>
+            </Viewport3D>
+        </Border>
+
+        <Border Margin="16"
+                Padding="14,11"
+                MaxWidth="360"
+                MaxHeight="620"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="#E61A1A1A"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="3">
+            <Border.Resources>
+                <Style x:Key="DevicePropertyLabelStyle" TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+                    <Setter Property="Margin" Value="0,0,12,0" />
+                    <Setter Property="VerticalAlignment" Value="Top" />
+                </Style>
+                <Style x:Key="DevicePropertyValueStyle" TargetType="TextBlock">
+                    <Setter Property="Grid.Column" Value="1" />
+                    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                    <Setter Property="TextWrapping" Value="Wrap" />
+                    <Setter Property="VerticalAlignment" Value="Top" />
+                </Style>
+            </Border.Resources>
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock x:Name="SelectionHeadingText"
+                               Text="{i18n:Loc Key=device_viewer.heading}"
+                               FontSize="18"
+                               FontWeight="Medium" />
+                    <TextBlock x:Name="SelectionDescriptionText"
+                               Margin="0,4,0,0"
+                               Text="{i18n:Loc Key=device_viewer.description}"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               TextWrapping="Wrap" />
+
+                    <StackPanel x:Name="SelectedDevicePanel"
+                                Margin="0,12,0,0"
+                                Visibility="Collapsed">
+                        <Grid x:Name="DeviceNoteRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.note}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceNoteText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceBatteryRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.battery}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceBatteryText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceConnectionRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.connection}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceConnectionText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceRoleRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.role}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceRoleText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceManufacturerRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.manufacturer}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceManufacturerText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceModelRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.model}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceModelText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceSerialRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.serial}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceSerialText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceRefreshRateRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.refresh_rate}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceRefreshRateText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceModeRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.mode}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceModeText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+                        <Grid x:Name="DeviceTrackingRangeRow" Margin="0,0,0,7" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="{i18n:Loc Key=device_viewer.property.tracking_range}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                            <TextBlock x:Name="DeviceTrackingRangeText" Style="{StaticResource DevicePropertyValueStyle}" />
+                        </Grid>
+
+                        <Button x:Name="TechnicalDetailsButton"
+                                Margin="0,2,0,0"
+                                Padding="8,4"
+                                HorizontalAlignment="Left"
+                                Content="{i18n:Loc Key=device_viewer.technical.show}"
+                                Click="TechnicalDetailsButton_Click" />
+                        <StackPanel x:Name="TechnicalDetailsPanel"
+                                    Margin="0,9,0,0"
+                                    Visibility="Collapsed">
+                            <Grid x:Name="DevicePathRow" Margin="0,0,0,7" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{i18n:Loc Key=device_viewer.property.path}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                                <TextBlock x:Name="DevicePathText" Style="{StaticResource DevicePropertyValueStyle}" />
+                            </Grid>
+                            <Grid x:Name="DeviceIndexRow" Margin="0,0,0,7">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{i18n:Loc Key=device_viewer.property.index}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                                <TextBlock x:Name="DeviceIndexText" Style="{StaticResource DevicePropertyValueStyle}" />
+                            </Grid>
+                            <Grid x:Name="DeviceTrackingSystemRow" Margin="0,0,0,7" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{i18n:Loc Key=device_viewer.property.tracking_system}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                                <TextBlock x:Name="DeviceTrackingSystemText" Style="{StaticResource DevicePropertyValueStyle}" />
+                            </Grid>
+                            <Grid x:Name="DeviceRenderModelRow" Margin="0,0,0,7" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{i18n:Loc Key=device_viewer.property.render_model}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                                <TextBlock x:Name="DeviceRenderModelText" Style="{StaticResource DevicePropertyValueStyle}" />
+                            </Grid>
+                            <Grid x:Name="DeviceFirmwareRow" Margin="0,0,0,7" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{i18n:Loc Key=device_viewer.property.firmware}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                                <TextBlock x:Name="DeviceFirmwareText" Style="{StaticResource DevicePropertyValueStyle}" />
+                            </Grid>
+                            <Grid x:Name="DeviceHardwareRow" Margin="0,0,0,7" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{i18n:Loc Key=device_viewer.property.hardware}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                                <TextBlock x:Name="DeviceHardwareText" Style="{StaticResource DevicePropertyValueStyle}" />
+                            </Grid>
+                            <Grid x:Name="DeviceControllerTypeRow" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="82"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{i18n:Loc Key=device_viewer.property.controller_type}" Style="{StaticResource DevicePropertyLabelStyle}" />
+                                <TextBlock x:Name="DeviceControllerTypeText" Style="{StaticResource DevicePropertyValueStyle}" />
+                            </Grid>
+                            <Button x:Name="CopyAvailableInfoButton"
+                                    Margin="0,9,0,0"
+                                    Padding="8,4"
+                                    HorizontalAlignment="Left"
+                                    Content="{i18n:Loc Key=device_viewer.copy.available}"
+                                    Click="CopyAvailableInfoButton_Click" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Button Margin="16"
+                Padding="10,6"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Content="{i18n:Loc Key=device_viewer.reset_view}"
+                Click="ResetViewButton_Click" />
+
+        <Border Margin="16"
+                Padding="10,7"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Background="#E61A1A1A"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="3">
+            <TextBlock x:Name="StatusText"
+                       Text="{i18n:Loc Key=device_viewer.status.waiting}"
+                       Foreground="{StaticResource WarningBrush}" />
+        </Border>
+    </Grid>
+</Window>

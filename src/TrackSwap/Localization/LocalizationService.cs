@@ -50,13 +50,16 @@ namespace TrackSwap.Localization
 
         public string CurrentLocale { get; private set; } = OfficialLocale;
 
+        public string CurrentPackFileName { get; private set; }
+
         public IReadOnlyList<LanguageOption> Languages => _languages;
 
         public IReadOnlyList<LocalizationIssue> Issues => _issues;
 
         public int CatalogCount => _catalog.Count;
 
-        public bool IsOfficialLanguage => string.Equals(CurrentLocale, OfficialLocale, StringComparison.OrdinalIgnoreCase);
+        public bool IsOfficialLanguage => CurrentPackFileName == null &&
+            string.Equals(CurrentLocale, OfficialLocale, StringComparison.OrdinalIgnoreCase);
 
         public string Translate(string key)
         {
@@ -78,28 +81,70 @@ namespace TrackSwap.Localization
                 string.IsNullOrWhiteSpace(translated);
         }
 
-        public void Reload(string requestedLocale = null)
+        public void Reload(string requestedLocale = null, string requestedPackFileName = null)
         {
             Directory.CreateDirectory(_languageDirectory);
             _languages.Clear();
             _issues.Clear();
-            _languages.Add(new LanguageOption(OfficialLocale, "简体中文", "Hrenact", true));
+            _languages.Add(new LanguageOption(OfficialLocale, "简体中文", "Hrenact", true, null, false));
 
-            var packs = new Dictionary<string, LoadedLanguagePack>(StringComparer.OrdinalIgnoreCase);
-            foreach (string path in Directory.EnumerateFiles(_languageDirectory, "*.json", SearchOption.TopDirectoryOnly))
+            var packs = new List<LoadedLanguagePack>();
+            foreach (string path in Directory
+                .EnumerateFiles(_languageDirectory, "*.json", SearchOption.TopDirectoryOnly)
+                .OrderBy(item => Path.GetFileName(item), StringComparer.OrdinalIgnoreCase))
             {
                 TryLoadPack(path, packs);
             }
 
-            foreach (LoadedLanguagePack pack in packs.Values.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+            var duplicateLocales = new HashSet<string>(
+                packs.GroupBy(item => item.Locale, StringComparer.OrdinalIgnoreCase)
+                    .Where(group => group.Count() > 1)
+                    .Select(group => group.Key),
+                StringComparer.OrdinalIgnoreCase);
+            if (packs.Any(pack => string.Equals(
+                    pack.Locale,
+                    OfficialLocale,
+                    StringComparison.OrdinalIgnoreCase)))
             {
-                _languages.Add(new LanguageOption(pack.Locale, pack.DisplayName, pack.Author, false));
+                duplicateLocales.Add(OfficialLocale);
+            }
+            foreach (LoadedLanguagePack pack in packs
+                .OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(item => item.Author, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(item => item.FileName, StringComparer.OrdinalIgnoreCase))
+            {
+                _languages.Add(new LanguageOption(
+                    pack.Locale,
+                    pack.DisplayName,
+                    pack.Author,
+                    false,
+                    pack.FileName,
+                    duplicateLocales.Contains(pack.Locale)));
             }
 
             string desired = string.IsNullOrWhiteSpace(requestedLocale) ? CurrentLocale : requestedLocale;
-            if (string.Equals(desired, OfficialLocale, StringComparison.OrdinalIgnoreCase) || !packs.TryGetValue(desired, out LoadedLanguagePack selected))
+            string desiredPackFileName = requestedPackFileName;
+            if (requestedLocale == null && requestedPackFileName == null)
+            {
+                desiredPackFileName = CurrentPackFileName;
+            }
+            LoadedLanguagePack selected = null;
+            bool requestedSpecificPack = !string.IsNullOrWhiteSpace(desiredPackFileName);
+            if (requestedSpecificPack)
+            {
+                selected = packs.FirstOrDefault(pack =>
+                    string.Equals(pack.FileName, desiredPackFileName, StringComparison.OrdinalIgnoreCase));
+            }
+            if (selected == null && !requestedSpecificPack &&
+                !string.Equals(desired, OfficialLocale, StringComparison.OrdinalIgnoreCase))
+            {
+                selected = packs.FirstOrDefault(pack =>
+                    string.Equals(pack.Locale, desired, StringComparison.OrdinalIgnoreCase));
+            }
+            if (selected == null)
             {
                 CurrentLocale = OfficialLocale;
+                CurrentPackFileName = null;
                 _activeTranslations = _catalog.ToDictionary(
                     item => item.Key,
                     item => item.Value,
@@ -108,15 +153,16 @@ namespace TrackSwap.Localization
             else
             {
                 CurrentLocale = selected.Locale;
+                CurrentPackFileName = selected.FileName;
                 _activeTranslations = selected.Translations;
                 BuildSelectedPackIssues(selected);
             }
             LanguageChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        public void SetLanguage(string locale)
+        public void SetLanguage(string locale, string packFileName = null)
         {
-            Reload(locale);
+            Reload(locale, packFileName);
         }
 
         public void ExportTemplate(string path)
@@ -131,7 +177,7 @@ namespace TrackSwap.Localization
                 Locale = "en-US",
                 DisplayName = "English",
                 Author = string.Empty,
-                TargetTrackSwapVersion = "v011",
+                TargetTrackSwapVersion = "v012",
                 Strings = _catalog.ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal)
             };
             string fullPath = Path.GetFullPath(path);
@@ -183,7 +229,7 @@ namespace TrackSwap.Localization
             return builder.ToString();
         }
 
-        private void TryLoadPack(string path, IDictionary<string, LoadedLanguagePack> packs)
+        private void TryLoadPack(string path, ICollection<LoadedLanguagePack> packs)
         {
             string fileKey = "file:" + Path.GetFileName(path);
             try
@@ -202,17 +248,6 @@ namespace TrackSwap.Localization
                     _issues.Add(new LocalizationIssue(fileKey, LocalizationIssueKind.Invalid, "Language pack metadata is invalid."));
                     return;
                 }
-                if (string.Equals(document.Locale, OfficialLocale, StringComparison.OrdinalIgnoreCase))
-                {
-                    _issues.Add(new LocalizationIssue(fileKey, LocalizationIssueKind.Invalid, "The built-in locale cannot be replaced."));
-                    return;
-                }
-                if (packs.ContainsKey(document.Locale))
-                {
-                    _issues.Add(new LocalizationIssue(fileKey, LocalizationIssueKind.Invalid, "Another file already provides this locale."));
-                    return;
-                }
-
                 var translations = new Dictionary<string, string>(StringComparer.Ordinal);
                 var invalidKeys = new HashSet<string>(StringComparer.Ordinal);
                 var staleKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -231,7 +266,8 @@ namespace TrackSwap.Localization
                     }
                     translations[pair.Key] = pair.Value;
                 }
-                packs.Add(document.Locale, new LoadedLanguagePack(
+                packs.Add(new LoadedLanguagePack(
+                    Path.GetFileName(path),
                     document.Locale,
                     document.DisplayName.Trim(),
                     document.Author?.Trim() ?? string.Empty,
@@ -281,8 +317,9 @@ namespace TrackSwap.Localization
 
         private sealed class LoadedLanguagePack
         {
-            public LoadedLanguagePack(string locale, string displayName, string author, Dictionary<string, string> translations, HashSet<string> invalidKeys, HashSet<string> staleKeys)
+            public LoadedLanguagePack(string fileName, string locale, string displayName, string author, Dictionary<string, string> translations, HashSet<string> invalidKeys, HashSet<string> staleKeys)
             {
+                FileName = fileName;
                 Locale = locale;
                 DisplayName = displayName;
                 Author = author;
@@ -291,6 +328,7 @@ namespace TrackSwap.Localization
                 StaleKeys = staleKeys;
             }
 
+            public string FileName { get; }
             public string Locale { get; }
             public string DisplayName { get; }
             public string Author { get; }
@@ -330,19 +368,38 @@ namespace TrackSwap.Localization
 
     public sealed class LanguageOption
     {
-        public LanguageOption(string locale, string displayName, string author, bool isOfficial)
+        public LanguageOption(
+            string locale,
+            string displayName,
+            string author,
+            bool isOfficial,
+            string fileName,
+            bool showFileName)
         {
             Locale = locale;
             DisplayName = displayName;
             Author = author;
             IsOfficial = isOfficial;
+            FileName = fileName;
+            ShowFileName = showFileName;
         }
 
         public string Locale { get; }
         public string DisplayName { get; }
         public string Author { get; }
         public bool IsOfficial { get; }
-        public string Label => string.IsNullOrWhiteSpace(Author) ? DisplayName : DisplayName + " · " + Author;
+        public string FileName { get; }
+        public bool ShowFileName { get; }
+        public string Label
+        {
+            get
+            {
+                string label = string.IsNullOrWhiteSpace(Author) ? DisplayName : DisplayName + " · " + Author;
+                return ShowFileName && !string.IsNullOrWhiteSpace(FileName)
+                    ? label + "（" + FileName + "）"
+                    : label;
+            }
+        }
     }
 
     public enum LocalizationIssueKind

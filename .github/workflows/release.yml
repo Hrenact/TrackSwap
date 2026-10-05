@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: windows-latest
@@ -39,6 +43,10 @@ jobs:
         shell: pwsh
         run: choco install innosetup --yes --no-progress
 
+      - name: Audit third-party notices
+        shell: pwsh
+        run: .\scripts\Test-ThirdPartyNotices.ps1
+
       - name: Build complete release package and installer
         shell: pwsh
         run: |
@@ -57,24 +65,52 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          $tag = "${{ github.ref_name }}"
           $zip = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*.zip" | Select-Object -First 1
           $zipChecksum = Get-Item "$($zip.FullName).sha256"
           $installer = Get-ChildItem "artifacts/release/${{ github.ref_name }}/*-setup-win-x64.exe" | Select-Object -First 1
           $installerChecksum = Get-Item "$($installer.FullName).sha256"
-          $notes = "docs/releases/${{ github.ref_name }}.md"
-          $arguments = @(
-            "release", "create", "${{ github.ref_name }}",
+          $assets = @(
             $zip.FullName, $zipChecksum.FullName,
-            $installer.FullName, $installerChecksum.FullName,
-            "--title", "TrackSwap ${{ github.ref_name }}"
+            $installer.FullName, $installerChecksum.FullName
           )
-          if (Test-Path -LiteralPath $notes) {
-            $arguments += @("--notes-file", $notes)
+          $notes = "docs/releases/$tag.md"
+          $title = "TrackSwap VR $tag"
+
+          & gh release view $tag --json tagName *> $null
+          $releaseExists = $LASTEXITCODE -eq 0
+
+          if ($releaseExists) {
+            $editArguments = @("release", "edit", $tag, "--title", $title, "--latest")
+            if (Test-Path -LiteralPath $notes) {
+              $editArguments += @("--notes-file", $notes)
+            }
+            & gh @editArguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release update failed with exit code $LASTEXITCODE."
+            }
+
+            & gh release upload $tag @assets --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release asset upload failed with exit code $LASTEXITCODE."
+            }
           } else {
-            $arguments += "--generate-notes"
-          }
-          & gh @arguments
-          if ($LASTEXITCODE -ne 0) {
-            throw "GitHub Release creation failed with exit code $LASTEXITCODE."
+            $createArguments = @(
+              "release", "create", $tag,
+              $assets,
+              "--title", $title,
+              "--verify-tag",
+              "--latest"
+            )
+            if (Test-Path -LiteralPath $notes) {
+              $createArguments += @("--notes-file", $notes)
+            } else {
+              $createArguments += "--generate-notes"
+            }
+            & gh @createArguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release creation failed with exit code $LASTEXITCODE."
+            }
           }

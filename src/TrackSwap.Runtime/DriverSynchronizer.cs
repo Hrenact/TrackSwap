@@ -72,7 +72,7 @@ internal sealed class DriverSynchronizer
                         DriverControlClient.ApplySnapshot(
                             slot,
                             route,
-                            snapshot.PhysicalSourceHidingEnabled && route?.HidePhysicalSource == true,
+                            route?.HidePhysicalSource == true,
                             (ulong)snapshot.Revision,
                             TimeSpan.FromSeconds(1));
                     }
@@ -83,7 +83,7 @@ internal sealed class DriverSynchronizer
                         DriverControlClient.ApplyControllerSnapshot(
                             hand,
                             route,
-                            snapshot.PhysicalSourceHidingEnabled && route?.HidePhysicalSource == true,
+                            route?.HidePhysicalSource == true,
                             snapshot.ControllerHandSelectionPriority,
                             (ulong)snapshot.Revision,
                             TimeSpan.FromSeconds(1));
@@ -92,7 +92,7 @@ internal sealed class DriverSynchronizer
                     {
                         DriverControlClient.ApplyHmdSnapshot(
                             hmdRoute,
-                            snapshot.PhysicalSourceHidingEnabled && hmdRoute.HidePhysicalSource,
+                            hmdRoute.HidePhysicalSource,
                             (ulong)snapshot.Revision,
                             TimeSpan.FromSeconds(1));
                     }

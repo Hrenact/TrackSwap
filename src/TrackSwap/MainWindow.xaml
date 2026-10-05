@@ -56,7 +56,8 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
                         <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" Padding="12,9">
-                            <ContentPresenter />
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -189,7 +190,7 @@
                     <TextBlock x:Name="RouteCountText" Text="00 / 16" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="12" VerticalAlignment="Center" />
                     <Button Grid.Column="1" x:Name="AddRouteButton" i18n:Localize.Key="route.add" Padding="7,5" Background="Transparent" BorderThickness="0" Click="AddRouteButton_Click" />
                 </Grid>
-                <ListBox Grid.Row="2" x:Name="RouteListBox" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource SidebarRouteItemStyle}" SelectionChanged="RouteListBox_SelectionChanged" PreviewMouseRightButtonDown="RouteListBox_PreviewMouseRightButtonDown" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox Grid.Row="2" x:Name="RouteListBox" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource SidebarRouteItemStyle}" SelectionChanged="RouteListBox_SelectionChanged" PreviewMouseRightButtonDown="RouteListBox_PreviewMouseRightButtonDown" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
@@ -200,11 +201,16 @@
                                 <Ellipse Width="7" Height="7" Fill="{Binding StatusBrush}" VerticalAlignment="Top" Margin="0,5,0,0" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
-                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
-                                        <TextBlock Text="{Binding ProxyName}" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10" />
-                                        <TextBlock Text=" · " Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
-                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
-                                    </StackPanel>
+                                    <Grid Margin="0,3,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding ProxyName}" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="1" Text=" · " Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                        <TextBlock Grid.Column="2" Text="{Binding StatusText}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
+                                    </Grid>
                                 </StackPanel>
                             </Grid>
                         </DataTemplate>
@@ -218,7 +224,7 @@
                         </ContextMenu>
                     </ListBox.ContextMenu>
                 </ListBox>
-                <Button Grid.Row="3" x:Name="SettingsNavigationButton" i18n:Localize.Key="nav.settings" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Center" Click="SettingsNavigationButton_Click" />
+                <Button Grid.Row="3" x:Name="SettingsNavigationButton" i18n:Localize.Key="nav.settings" Style="{StaticResource SidebarNavigationButtonStyle}" Margin="0,18,0,0" HorizontalContentAlignment="Center" Click="SettingsNavigationButton_Click" />
             </Grid>
         </Border>
         <Grid Grid.Row="0" Grid.Column="1">
@@ -304,12 +310,12 @@
                                     <TextBlock x:Name="RuntimeRotationSourcePathText" Margin="2,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </Grid>
-                            <Grid x:Name="RuntimeOutputPanel" Margin="0,14,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="34" />
-                                    <ColumnDefinition x:Name="RuntimeTargetColumn" Width="*" />
-                                </Grid.ColumnDefinitions>
+                             <Grid x:Name="RuntimeOutputPanel" Margin="0,14,0,0">
+                                 <Grid.ColumnDefinitions>
+                                     <ColumnDefinition Width="*" />
+                                     <ColumnDefinition Width="14" />
+                                     <ColumnDefinition x:Name="RuntimeTargetColumn" Width="*" />
+                                 </Grid.ColumnDefinitions>
                                 <Grid x:Name="RuntimeProxyPanel">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -324,9 +330,9 @@
                                             <ColumnDefinition Width="14" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Border MinHeight="40" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2" Padding="10">
-                                            <TextBlock x:Name="RuntimeProxyText" Text="TRKSWAP-TRACKER-00" VerticalAlignment="Center" FontFamily="Consolas" />
-                                        </Border>
+                                         <Border x:Name="RuntimeProxyBorder" MinHeight="40" Background="{StaticResource WindowBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2" Padding="10">
+                                             <TextBlock x:Name="RuntimeProxyText" Text="TRKSWAP-TRACKER-00" VerticalAlignment="Center" FontFamily="Consolas" />
+                                         </Border>
                                         <Button x:Name="OpenSteamVrRoomSetupButton"
                                                 Grid.Column="2"
                                                 Content="{i18n:Loc Key=route.editor.open_steamvr_room_setup}"
@@ -342,9 +348,8 @@
                                                 Visibility="Collapsed"
                                                 Click="OpenVrViewButton_Click" />
                                     </Grid>
-                                </Grid>
-                                <TextBlock x:Name="RuntimeTargetArrow" Grid.Column="1" Text="→" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
-                                <StackPanel x:Name="RuntimeTargetPanel" Grid.Column="2">
+                                 </Grid>
+                                 <StackPanel x:Name="RuntimeTargetPanel" Grid.Column="2">
                                     <TextBlock Text="{i18n:Loc Key=route.editor.replacement_target}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
                                     <ComboBox x:Name="RuntimeTargetComboBox" Margin="0,7,0,0" MinHeight="40" Tag="{i18n:Loc Key=common.action.select}" ItemTemplate="{StaticResource TargetStatusOptionTemplate}" SelectionChanged="RuntimeSelection_Changed" />
                                     <TextBlock x:Name="RuntimeTargetPathText" Margin="2,6,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
@@ -551,18 +556,40 @@
                         <ColumnDefinition Width="1" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel Margin="0,0,20,0">
-                        <Button x:Name="SettingsRuntimeCategoryButton" i18n:Localize.Key="settings.category.runtime" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Click="SettingsCategoryButton_Click" />
-                        <Button x:Name="SettingsSteamVrCategoryButton" i18n:Localize.Key="settings.category.steamvr" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                        <Button x:Name="SettingsDevicesCategoryButton" i18n:Localize.Key="settings.category.devices" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                        <Button x:Name="SettingsFilesCategoryButton" i18n:Localize.Key="settings.category.files" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                        <Button x:Name="SettingsLanguageCategoryButton" i18n:Localize.Key="settings.category.language" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                        <Button x:Name="SettingsOscCategoryButton" i18n:Localize.Key="settings.category.osc" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                        <Button x:Name="SettingsXInputCategoryButton" i18n:Localize.Key="settings.category.xinput" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                        <Button x:Name="SettingsAdvancedCategoryButton" i18n:Localize.Key="settings.category.advanced" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                    </StackPanel>
+                    <Grid Margin="0,0,20,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel>
+                            <Button x:Name="SettingsRuntimeCategoryButton" i18n:Localize.Key="settings.category.runtime" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsSteamVrCategoryButton" i18n:Localize.Key="settings.category.steamvr" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsDeviceViewerCategoryButton" i18n:Localize.Key="nav.device_viewer" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsDevicesCategoryButton" i18n:Localize.Key="settings.category.devices" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsFilesCategoryButton" i18n:Localize.Key="settings.category.files" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsLanguageCategoryButton" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsOscCategoryButton" i18n:Localize.Key="settings.category.osc" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsXInputCategoryButton" i18n:Localize.Key="settings.category.xinput" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsAdvancedCategoryButton" i18n:Localize.Key="settings.category.advanced" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                        </StackPanel>
+                        <!-- Legal notice label and content are intentionally fixed English, never localized. -->
+                        <Button Grid.Row="1"
+                                Margin="0,18,0,0"
+                                Padding="0,4"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Click="ThirdPartyNoticesButton_Click">
+                            <TextBlock Text="Third-Party-Notices"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       FontSize="10"
+                                       TextAlignment="Center" />
+                        </Button>
+                    </Grid>
                     <Border Grid.Column="1" Background="{StaticResource BorderBrush}" />
-                    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="SettingsPanelsScrollViewer" Grid.Column="2" VerticalScrollBarVisibility="Auto">
                         <Grid Margin="20,0,32,0">
                             <StackPanel x:Name="RuntimeSettingsPanel">
                                 <TextBlock Text="{i18n:Loc Key=settings.category.runtime}" FontSize="18" FontWeight="Medium" />
@@ -748,6 +775,24 @@
                                 </Border>
                             </StackPanel>
 
+                            <StackPanel x:Name="DeviceViewerSettingsPanel" Visibility="Collapsed">
+                                <TextBlock Text="{i18n:Loc Key=nav.device_viewer}" FontSize="18" FontWeight="Medium" />
+                                <TextBlock Text="{i18n:Loc Key=settings.device_viewer.description}" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
+                                <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,20,0">
+                                            <TextBlock Text="{i18n:Loc Key=settings.device_viewer.window}" FontSize="15" FontWeight="Medium" />
+                                            <TextBlock Text="{i18n:Loc Key=settings.device_viewer.window_description}" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="{i18n:Loc Key=settings.device_viewer.open}" VerticalAlignment="Center" Click="OpenDeviceViewerButton_Click" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+
                             <StackPanel x:Name="DeviceSettingsPanel" Visibility="Collapsed">
                                 <TextBlock Text="{i18n:Loc Key=settings.category.devices}" FontSize="18" FontWeight="Medium" />
                                 <TextBlock Text="{i18n:Loc Key=settings.devices.device_select_connect_device}" Margin="0,4,0,14" Foreground="{StaticResource MutedTextBrush}" FontSize="11" />
@@ -757,7 +802,6 @@
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="{i18n:Loc Key=settings.devices.tracked_devices}" FontSize="15" FontWeight="Medium" />
-                                                <TextBlock Text="{i18n:Loc Key=settings.devices.tracked_devices_description}" Margin="0,4,20,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <TextBlock Grid.Column="1" x:Name="DeviceHistoryCountText" Foreground="{StaticResource MutedTextBrush}" />
                                         </Grid>
@@ -774,7 +818,6 @@
                                                             <StackPanel Grid.Column="1">
                                                                 <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
                                                                 <TextBlock Text="{Binding IdentityText}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock Text="{Binding ReceiverSummary}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
                                                                 <TextBlock Text="{Binding NoteDisplay}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
                                                             </StackPanel>
                                                             <Button Grid.Column="2" Content="{i18n:Loc Key=common.action.edit}" Tag="{Binding}" Margin="12,0,0,0" Padding="10,5" VerticalAlignment="Center" Click="EditDeviceMetadataButton_Click" />
@@ -792,7 +835,6 @@
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="{i18n:Loc Key=settings.devices.receivers}" FontSize="15" FontWeight="Medium" />
-                                                <TextBlock Text="{i18n:Loc Key=settings.devices.receivers_description}" Margin="0,4,20,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <TextBlock Grid.Column="1" x:Name="ReceiverHistoryCountText" Foreground="{StaticResource MutedTextBrush}" />
                                         </Grid>
@@ -809,7 +851,9 @@
                                                             <StackPanel Grid.Column="1">
                                                                 <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
                                                                 <TextBlock Text="{Binding ReceiverId}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock Text="{Binding ConnectionSummary}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                                                <TextBlock Text="{Binding ConnectionSummary}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap">
+                                                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsInUse}" Value="False"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                                                </TextBlock>
                                                                 <TextBlock Text="{Binding NoteDisplay}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
                                                             </StackPanel>
                                                             <Button Grid.Column="2" Content="{i18n:Loc Key=common.action.edit}" Tag="{Binding}" Margin="12,0,0,0" Padding="10,5" VerticalAlignment="Center" Click="EditReceiverMetadataButton_Click" />
@@ -824,7 +868,6 @@
                                 <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <StackPanel>
                                         <TextBlock Text="{i18n:Loc Key=settings.devices.connections}" FontSize="15" FontWeight="Medium" />
-                                        <TextBlock Text="{i18n:Loc Key=settings.devices.connections_description}" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
                                         <Grid Margin="12,16,12,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                             <TextBlock Text="{i18n:Loc Key=settings.devices.connections_device}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
@@ -1353,22 +1396,6 @@
                                     </StackPanel>
                                 </Border>
                                 <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
-                                    <StackPanel>
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.reuse_pose_source}" FontSize="15" FontWeight="Medium" />
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.allow_item_read_count_device_pose_device_driver_left_right_virtual_contr}" Margin="0,4,0,16" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
-                                        <CheckBox x:Name="AllowDuplicatePoseSourcesCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="{i18n:Loc Key=settings.advanced.allow_duplicate_pose_sources_check_box_allow_item_config_count_pose_source}" Click="AllowDuplicatePoseSourcesCheckBox_Click" />
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.source_check_left_right_replacement_target}" Margin="26,9,0,0" Foreground="{StaticResource WarningBrush}" FontSize="10" TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </Border>
-                                <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
-                                    <StackPanel>
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.pose_source_device_hide}" FontSize="15" FontWeight="Medium" />
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.pose_source_device_fbt_tracker}" Margin="0,4,0,16" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
-                                        <CheckBox x:Name="PhysicalSourceHidingEnabledCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="{i18n:Loc Key=settings.advanced.physical_source_hiding_enabled_check_box_show_hide_pose_source_device}" Click="PhysicalSourceHidingEnabledCheckBox_Click" />
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.openvr_pose_submit_modify_close_cancel_config_hide}" Margin="26,9,0,0" Foreground="{StaticResource WarningBrush}" FontSize="10" TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </Border>
-                                <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1378,7 +1405,6 @@
                                         <StackPanel Margin="0,0,24,0">
                                             <TextBlock Text="{i18n:Loc Key=settings.advanced.virtual_controller_select_priority}" FontSize="15" FontWeight="Medium" />
                                             <TextBlock Text="{i18n:Loc Key=settings.advanced.steamvr_count_left_right_controller_select_device_default_0_controller}" Margin="0,4,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
-                                            <TextBlock Text="{i18n:Loc Key=settings.advanced.change_submit_runtime_steamvr_select_controller_connect_device_restart_s}" Margin="0,8,0,0" Foreground="{StaticResource WarningBrush}" FontSize="10" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <TextBox Grid.Column="1"
                                                  x:Name="ControllerHandSelectionPriorityTextBox"
@@ -1391,16 +1417,6 @@
                                                 Content="{i18n:Loc Key=settings.advanced.restore_default}"
                                                 Click="ResetControllerHandSelectionPriorityButton_Click" />
                                     </Grid>
-                                </Border>
-                                <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
-                                    <StackPanel>
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.3_d_preview_model}" FontSize="15" FontWeight="Medium" />
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.hide_source_target_model_output_show_model_target_replace_select_show}" Margin="0,4,0,16" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" />
-                                        <CheckBox x:Name="HideSourceInPreviewCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="{i18n:Loc Key=settings.advanced.hide_source_in_preview_check_box_hide_source_model}" Click="PreviewModelVisibilityCheckBox_Click" />
-                                        <CheckBox x:Name="HideTargetInPreviewCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="{i18n:Loc Key=settings.advanced.hide_target_in_preview_check_box_hide_target_model}" Margin="0,10,0,0" Click="PreviewModelVisibilityCheckBox_Click" />
-                                        <CheckBox x:Name="ShowProxyInPreviewCheckBox" Style="{StaticResource AdvancedOptionCheckBoxStyle}" Content="{i18n:Loc Key=settings.advanced.show_proxy_in_preview_check_box_show_model}" Margin="0,10,0,0" Click="PreviewModelVisibilityCheckBox_Click" />
-                                        <TextBlock Text="{i18n:Loc Key=settings.advanced.trackswap_3_d_preview_output_steamvr_device_status}" Margin="26,9,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
-                                    </StackPanel>
                                 </Border>
                                 <Border Padding="20" Margin="0,12,0,0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <Grid>
@@ -1427,6 +1443,17 @@
                             </StackPanel>
                         </Grid>
                     </ScrollViewer>
+                    <!-- This legal notice surface must not use localization keys. -->
+                    <FlowDocumentScrollViewer x:Name="ThirdPartyNoticesViewer"
+                                              Grid.Column="2"
+                                              Margin="20,0,0,0"
+                                              Visibility="Collapsed"
+                                              Background="Transparent"
+                                              BorderThickness="0"
+                                              IsSelectionEnabled="True"
+                                              IsToolBarVisible="False"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled" />
                 </Grid>
                 <ScrollViewer x:Name="MainScrollViewer" Height="0" Visibility="Collapsed" />
             </Grid>

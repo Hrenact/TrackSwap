@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Markup;
@@ -52,13 +53,16 @@ namespace TrackSwap.Localization
         public static string Format(string key, params object[] arguments)
         {
             string value = Get(key);
-            for (int index = 0; index < arguments.Length; index++)
+            try
             {
-                value = value.Replace(
-                    "{" + index.ToString(CultureInfo.InvariantCulture) + "}",
-                    Convert.ToString(arguments[index], CultureInfo.CurrentCulture) ?? string.Empty);
+                return string.Format(CultureInfo.CurrentCulture, value, arguments);
             }
-            return value;
+            catch (FormatException exception)
+            {
+                Debug.WriteLine(
+                    "Localized format failed for key '" + key + "': " + exception.Message);
+                return value;
+            }
         }
     }
 }

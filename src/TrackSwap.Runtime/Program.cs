@@ -84,7 +84,7 @@ internal static class Program
             return ParseAndSetOffset(args);
         }
 
-        Console.WriteLine("TrackSwap VR Runtime v011");
+        Console.WriteLine("TrackSwap VR Runtime v012");
         Console.WriteLine("Use --run [config-path] [--lifecycle FollowTrackSwap|FollowSteamVr] [--owner-pid PID]");
         Console.WriteLine("to start the runtime host and IPC service. A no-argument launch is reserved for SteamVR.");
         Console.WriteLine("Use --print-contract, --validate-config <path>, --switch-source <exact-device-path>,");

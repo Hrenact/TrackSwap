@@ -43,7 +43,6 @@ namespace TrackSwap.Protocol
             var routeIds = new HashSet<string>(StringComparer.Ordinal);
             var routeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var slots = new HashSet<int>();
-            var sources = new HashSet<string>(StringComparer.Ordinal);
             var targets = new HashSet<string>(StringComparer.Ordinal);
             var controllerHands = new HashSet<ControllerHand>();
             bool hasVirtualHmd = false;
@@ -126,10 +125,6 @@ namespace TrackSwap.Protocol
                         errors.Add($"{prefix}拆分后的位置来源与旋转来源不能相同。");
                     }
                 }
-                if (route.HidePhysicalSource && !configuration.PhysicalSourceHidingEnabled)
-                {
-                    errors.Add($"{prefix}请求隐藏物理位姿来源，但全局设备隐藏功能尚未启用。");
-                }
                 if (route.HidePhysicalSource && ProtocolConstants.IsTrackSwapVirtualDevicePath(route.SourceDevicePath))
                 {
                     errors.Add($"{prefix}不能隐藏 TrackSwap VR 自己创建的虚拟设备。");
@@ -200,19 +195,6 @@ namespace TrackSwap.Protocol
                     !string.IsNullOrWhiteSpace(route.TargetDevicePath) && !targets.Add(route.TargetDevicePath))
                 {
                     errors.Add($"替换目标“{route.TargetDevicePath}”被重复使用。");
-                }
-
-                if (!configuration.AllowDuplicatePoseSources &&
-                    !string.IsNullOrWhiteSpace(route.SourceDevicePath) &&
-                    !sources.Add(route.SourceDevicePath))
-                {
-                    errors.Add($"位姿来源“{route.SourceDevicePath}”被重复使用。");
-                }
-                if (!configuration.AllowDuplicatePoseSources && route.SplitPoseSource &&
-                    !string.IsNullOrWhiteSpace(route.RotationSourceDevicePath) &&
-                    !sources.Add(route.RotationSourceDevicePath))
-                {
-                    errors.Add($"位姿来源“{route.RotationSourceDevicePath}”被重复使用。");
                 }
 
                 ValidateOffset(route.Offset, prefix, errors);

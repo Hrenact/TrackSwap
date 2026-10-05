@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]{3}$')]
-    [string]$Version = 'v011',
+    [string]$Version = 'v012',
     [switch]$Clean
 )
 
@@ -20,6 +20,8 @@ function Assert-RepositoryChild([string]$Path) {
     }
     return $resolved
 }
+
+& (Join-Path $PSScriptRoot 'Test-ThirdPartyNotices.ps1')
 
 if ($Clean -and (Test-Path -LiteralPath $releaseRoot)) {
     Remove-Item -LiteralPath (Assert-RepositoryChild $releaseRoot) -Recurse -Force
@@ -60,6 +62,42 @@ dotnet publish (Join-Path $repositoryRoot 'src\TrackSwap.Runtime\TrackSwap.Runti
     -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false `
     -p:DebugType=None -p:DebugSymbols=false -o $runtimeDirectory
 if ($LASTEXITCODE -ne 0) { throw "Runtime publish failed with exit code $LASTEXITCODE." }
+
+$runtimeConfigPath = Join-Path $runtimeDirectory 'TrackSwap.Runtime.runtimeconfig.json'
+$runtimeConfig = Get-Content -LiteralPath $runtimeConfigPath -Raw | ConvertFrom-Json
+$runtimeFramework = @($runtimeConfig.runtimeOptions.includedFrameworks) |
+    Where-Object { $_.name -eq 'Microsoft.NETCore.App' } |
+    Select-Object -First 1
+if ($null -eq $runtimeFramework -or [string]::IsNullOrWhiteSpace([string]$runtimeFramework.version)) {
+    throw "Cannot determine the resolved Microsoft.NETCore.App version from $runtimeConfigPath."
+}
+$runtimeVersion = [string]$runtimeFramework.version
+$assetsPath = Join-Path $repositoryRoot 'src\TrackSwap.Runtime\obj\project.assets.json'
+$assets = Get-Content -LiteralPath $assetsPath -Raw | ConvertFrom-Json
+$packageRoots = [System.Collections.Generic.List[string]]::new()
+if (-not [string]::IsNullOrWhiteSpace($env:NUGET_PACKAGES)) {
+    $packageRoots.Add($env:NUGET_PACKAGES)
+}
+foreach ($property in $assets.packageFolders.PSObject.Properties) {
+    $packageRoots.Add($property.Name.TrimEnd('\', '/'))
+}
+$packageRoots.Add((Join-Path ([Environment]::GetFolderPath('UserProfile')) '.nuget\packages'))
+$runtimePackDirectory = $null
+foreach ($packageRoot in $packageRoots | Select-Object -Unique) {
+    $candidate = Join-Path $packageRoot "microsoft.netcore.app.runtime.win-x64\$runtimeVersion"
+    if (Test-Path -LiteralPath $candidate -PathType Container) {
+        $runtimePackDirectory = $candidate
+        break
+    }
+}
+if ($null -eq $runtimePackDirectory) {
+    throw "Cannot find Microsoft.NETCore.App.Runtime.win-x64 $runtimeVersion in the restored NuGet package folders."
+}
+Copy-Item -LiteralPath (Join-Path $runtimePackDirectory 'LICENSE.TXT') `
+    -Destination (Join-Path $runtimeDirectory 'DOTNET-LICENSE.txt') -Force
+Copy-Item -LiteralPath (Join-Path $runtimePackDirectory 'THIRD-PARTY-NOTICES.TXT') `
+    -Destination (Join-Path $runtimeDirectory 'DOTNET-THIRD-PARTY-NOTICES.txt') -Force
+& (Join-Path $PSScriptRoot 'Test-ThirdPartyNotices.ps1') -RuntimeDirectory $runtimeDirectory
 
 # Symbols are useful in CI artifacts, but the end-user ZIP and Steam depot must
 # not ship developer PDBs or expose source-path metadata.

@@ -24,7 +24,8 @@ public sealed class ConfigurationBackupServiceTests : IDisposable
         };
         var preferences = new UiPreferences
         {
-            ShowProxyInPreview = true,
+            LanguageLocale = "en-US",
+            LanguagePackFileName = "en-US-refined.json",
             RuntimeLifecycleMode = RuntimeLifecycleMode.FollowSteamVr
         };
         var service = new ConfigurationBackupService();
@@ -34,7 +35,8 @@ public sealed class ConfigurationBackupServiceTests : IDisposable
 
         Assert.Equal(42, restored.RuntimeConfiguration.Revision);
         Assert.Equal("127.0.0.2", restored.RuntimeConfiguration.Osc.ListenAddress);
-        Assert.True(restored.UiPreferences.ShowProxyInPreview);
+        Assert.Equal("en-US", restored.UiPreferences.LanguageLocale);
+        Assert.Equal("en-US-refined.json", restored.UiPreferences.LanguagePackFileName);
         Assert.Equal(RuntimeLifecycleMode.FollowSteamVr, restored.UiPreferences.RuntimeLifecycleMode);
     }
 
