@@ -212,10 +212,10 @@ dotnet build TrackSwap.sln -c Release
 生成完整发布包：
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version v011 -Clean
+.\scripts\Build-Release.ps1 -Version v012 -Clean
 ```
 
-`main` 保留稳定的 v001 历史；v011 发行线位于 `v002-runtime`。版本使用连续编号 `v001`、`v002`、`v003`……，不使用语义化版本号。
+`main` 是当前开发分支；迁移前的稳定 v001 分支历史保留在 `old-v001`。版本使用连续编号 `v001`、`v002`、`v003`……，不使用语义化版本号。
 
 ## 许可证与声明
 
