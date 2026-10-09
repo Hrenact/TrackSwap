@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Linq;
 
 namespace TrackSwap.Services
 {
@@ -14,7 +13,26 @@ namespace TrackSwap.Services
 
         public bool IsRunning()
         {
-            return ProcessNames.Any(name => Process.GetProcessesByName(name).Length > 0);
+            foreach (string name in ProcessNames)
+            {
+                Process[] processes = Process.GetProcessesByName(name);
+                try
+                {
+                    if (processes.Length > 0)
+                    {
+                        return true;
+                    }
+                }
+                finally
+                {
+                    foreach (Process process in processes)
+                    {
+                        process.Dispose();
+                    }
+                }
+            }
+
+            return false;
         }
     }
 }

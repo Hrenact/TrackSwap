@@ -408,6 +408,11 @@ internal sealed class RuntimePipeServer
         synchronizer.Update(candidate);
         oscInput?.Update(candidate.Osc, candidate.Routes);
         xInput?.Update(candidate.XInput, candidate.Routes);
+        RuntimeEventLog.Write(
+            "Configuration.Commit",
+            "revision=" + candidate.Revision +
+            "; routes=" + candidate.Routes.Count +
+            "; enabled=" + candidate.Routes.Count(route => route.Enabled && !route.PendingDeletion));
     }
 
     private static RuntimeConfiguration CloneConfiguration(RuntimeConfiguration value)

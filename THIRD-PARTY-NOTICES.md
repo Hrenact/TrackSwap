@@ -138,8 +138,9 @@ about the font used by its Steam Deck artwork does not apply to these files.
 
 Project: https://jrsoftware.org/isinfo.php
 
-TrackSwap's optional Windows installer is built with Inno Setup. Inno Setup is
-not required to build or run the unpacked TrackSwap applications.
+TrackSwap's GitHub release installer is built with Inno Setup 6.7.1. Inno Setup
+is a build tool and is not redistributed with TrackSwap; it is not required to
+build or run the unpacked TrackSwap applications.
 
 ```text
 Inno Setup License

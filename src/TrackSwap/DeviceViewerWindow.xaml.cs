@@ -28,11 +28,16 @@ namespace TrackSwap
         private const double SelectionOutlineRebuildThreshold = 0.15;
         private static readonly TimeSpan SelectionOutlineRebuildInterval =
             TimeSpan.FromMilliseconds(100);
+        private static readonly TimeSpan SteamVrStatusRefreshInterval =
+            TimeSpan.FromSeconds(1);
+        private static readonly TimeSpan SceneRefreshRetryInterval =
+            TimeSpan.FromMilliseconds(500);
         private readonly SteamVrPathService pathService = new SteamVrPathService();
         private readonly SteamVrStatusService statusService = new SteamVrStatusService();
         private readonly OpenVrSceneService sceneService = new OpenVrSceneService();
         private readonly OpenVrRenderModelService renderModelService = new OpenVrRenderModelService();
         private readonly DeviceHistoryService deviceHistoryService = new DeviceHistoryService();
+        private readonly DispatcherTimer steamVrStatusTimer;
         private readonly DispatcherTimer minimizedRefreshTimer;
         private readonly DispatcherTimer copyFeedbackTimer;
         private readonly Dictionary<uint, DeviceVisual> deviceVisuals =
@@ -49,6 +54,10 @@ namespace TrackSwap
         private string backgroundSignature = string.Empty;
         private int backgroundVersion;
         private bool refreshPending;
+        private bool steamVrStatusRefreshPending;
+        private bool steamVrStatusInitialized;
+        private bool steamVrRunning;
+        private bool sceneUnavailable;
         private bool initialFramePending = true;
         private bool closed;
         private bool renderingSubscribed;
@@ -56,6 +65,7 @@ namespace TrackSwap
         private bool technicalDetailsVisible;
         private long lastRenderRefreshTimestamp;
         private DateTime lastDeviceHistoryRefreshUtc = DateTime.MinValue;
+        private DateTime nextSceneRefreshAttemptUtc = DateTime.MinValue;
         private uint? selectedDeviceIndex;
         private Point3D cameraTarget = new Point3D(0, 1, 0);
         private double cameraYaw = 0.67;
@@ -70,6 +80,11 @@ namespace TrackSwap
             InitializeComponent();
             SceneRoot.Children.Add(backgroundModel);
             SceneRoot.Children.Add(floorReferenceModel);
+            steamVrStatusTimer = new DispatcherTimer
+            {
+                Interval = SteamVrStatusRefreshInterval
+            };
+            steamVrStatusTimer.Tick += SteamVrStatusTimer_Tick;
             minimizedRefreshTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(100)
@@ -84,13 +99,14 @@ namespace TrackSwap
             Loaded += async (_, __) =>
             {
                 UpdateCamera();
-                UpdateRefreshSchedule();
-                await RefreshSceneAsync();
+                steamVrStatusTimer.Start();
+                await RefreshSteamVrStatusAsync();
             };
             StateChanged += (_, __) => UpdateRefreshSchedule();
             Closed += (_, __) =>
             {
                 closed = true;
+                steamVrStatusTimer.Stop();
                 minimizedRefreshTimer.Stop();
                 copyFeedbackTimer.Stop();
                 UnsubscribeRendering();
@@ -118,9 +134,63 @@ namespace TrackSwap
 
         private async void MinimizedRefreshTimer_Tick(object sender, EventArgs e)
         {
-            if (!closed && WindowState == WindowState.Minimized)
+            if (!closed && steamVrRunning && WindowState == WindowState.Minimized)
             {
                 await RefreshSceneAsync();
+            }
+        }
+
+        private async void SteamVrStatusTimer_Tick(object sender, EventArgs e)
+        {
+            await RefreshSteamVrStatusAsync();
+        }
+
+        private async Task RefreshSteamVrStatusAsync()
+        {
+            if (closed || steamVrStatusRefreshPending)
+            {
+                return;
+            }
+
+            steamVrStatusRefreshPending = true;
+            try
+            {
+                bool running = await Task.Run(() => statusService.IsRunning());
+                if (closed)
+                {
+                    return;
+                }
+
+                bool changed = !steamVrStatusInitialized || running != steamVrRunning;
+                steamVrStatusInitialized = true;
+                if (!changed)
+                {
+                    return;
+                }
+
+                steamVrRunning = running;
+                sceneUnavailable = false;
+                nextSceneRefreshAttemptUtc = DateTime.MinValue;
+                UpdateRefreshSchedule();
+                if (!running)
+                {
+                    sceneService.ResetCache();
+                    SetWaitingStatus();
+                    ClearVisibleScene();
+                    return;
+                }
+
+                await RefreshSceneAsync();
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException ||
+                exception is System.ComponentModel.Win32Exception)
+            {
+                Debug.WriteLine("Device viewer SteamVR status refresh failed: " + exception);
+            }
+            finally
+            {
+                steamVrStatusRefreshPending = false;
             }
         }
 
@@ -128,6 +198,13 @@ namespace TrackSwap
         {
             if (closed)
             {
+                return;
+            }
+
+            if (!steamVrRunning)
+            {
+                minimizedRefreshTimer.Stop();
+                UnsubscribeRendering();
                 return;
             }
 
@@ -167,16 +244,9 @@ namespace TrackSwap
 
         private async Task RefreshSceneAsync()
         {
-            if (refreshPending || closed)
+            if (refreshPending || closed || !steamVrRunning ||
+                (sceneUnavailable && DateTime.UtcNow < nextSceneRefreshAttemptUtc))
             {
-                return;
-            }
-
-            if (!statusService.IsRunning())
-            {
-                sceneService.ResetCache();
-                SetWaitingStatus();
-                ClearVisibleScene();
                 return;
             }
 
@@ -185,11 +255,13 @@ namespace TrackSwap
             {
                 string runtimePath = pathService.FindRuntimePath();
                 OpenVrSceneSnapshot snapshot = await Task.Run(() => sceneService.Capture(runtimePath));
-                if (closed)
+                if (closed || !steamVrRunning)
                 {
                     return;
                 }
                 ApplySnapshot(snapshot, runtimePath);
+                sceneUnavailable = false;
+                nextSceneRefreshAttemptUtc = DateTime.MinValue;
                 StatusText.Text = Tr.Format(
                     "device_viewer.status.live",
                     snapshot.Devices.Count(device => device.Connected));
@@ -205,10 +277,15 @@ namespace TrackSwap
                 exception is EntryPointNotFoundException)
             {
                 Debug.WriteLine("Device viewer refresh failed: " + exception);
-                StatusText.Text = Tr.Get("device_viewer.status.unavailable");
-                StatusText.Foreground = FindBrush("WarningBrush");
-                StatusText.ToolTip = exception.Message;
-                ClearVisibleScene();
+                nextSceneRefreshAttemptUtc = DateTime.UtcNow + SceneRefreshRetryInterval;
+                if (!sceneUnavailable)
+                {
+                    sceneUnavailable = true;
+                    StatusText.Text = Tr.Get("device_viewer.status.unavailable");
+                    StatusText.Foreground = FindBrush("WarningBrush");
+                    StatusText.ToolTip = exception.Message;
+                    ClearVisibleScene();
+                }
             }
             finally
             {

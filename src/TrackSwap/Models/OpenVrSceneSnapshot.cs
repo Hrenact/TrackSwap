@@ -63,6 +63,10 @@ namespace TrackSwap.Models
         public OpenVrTrackingResult TrackingResult { get; set; }
 
         public Matrix3D Transform { get; set; } = Matrix3D.Identity;
+
+        public Vector3D LinearVelocity { get; set; }
+
+        public Vector3D AngularVelocity { get; set; }
     }
 
     public enum OpenVrSceneDeviceClass

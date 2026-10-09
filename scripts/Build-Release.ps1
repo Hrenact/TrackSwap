@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]{3}$')]
-    [string]$Version = 'v012',
+    [string]$Version = 'v013',
     [switch]$Clean
 )
 
@@ -30,6 +30,11 @@ if (Test-Path -LiteralPath $stageDirectory) {
     Remove-Item -LiteralPath (Assert-RepositoryChild $stageDirectory) -Recurse -Force
 }
 New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
+
+if ($Clean) {
+    dotnet clean (Join-Path $repositoryRoot 'TrackSwap.sln') -c Release
+    if ($LASTEXITCODE -ne 0) { throw "Managed clean failed with exit code $LASTEXITCODE." }
+}
 
 dotnet build (Join-Path $repositoryRoot 'TrackSwap.sln') -c Release `
     -p:DebugType=None -p:DebugSymbols=false

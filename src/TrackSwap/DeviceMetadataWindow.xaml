@@ -29,13 +29,8 @@
 
                 <TextBlock Text="{i18n:Loc Key=settings.devices.metadata.display_name}" />
                 <TextBox x:Name="DisplayNameTextBox"
-                         Margin="0,7,0,0"
+                         Margin="0,7,0,16"
                          MaxLength="64" />
-                <TextBlock Text="{i18n:Loc Key=settings.devices.metadata.display_name_hint}"
-                           Margin="0,5,0,16"
-                           Foreground="{StaticResource MutedTextBrush}"
-                           FontSize="10"
-                           TextWrapping="Wrap" />
 
                 <TextBlock Text="{i18n:Loc Key=settings.devices.metadata.note}" />
                 <TextBox x:Name="NoteTextBox"

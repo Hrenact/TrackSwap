@@ -80,6 +80,7 @@
             <Setter Property="Padding" Value="12,9" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="ContentTemplate" Value="{StaticResource ButtonTextContentTemplate}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -109,6 +110,7 @@
             <Setter Property="MinWidth" Value="48" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="ContentTemplate" Value="{StaticResource ButtonTextContentTemplate}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -391,7 +393,6 @@
                             <Border Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                 <StackPanel>
                                     <TextBlock Text="{i18n:Loc Key=route.motion_smoothing.title}" FontSize="15" FontWeight="Medium" />
-                                    <TextBlock Text="{i18n:Loc Key=route.motion_smoothing.description}" Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
                                     <StackPanel Orientation="Horizontal" Margin="0,13,0,0">
                                         <CheckBox x:Name="MotionSmoothingLinkCheckBox"
                                                   Width="17"
@@ -562,15 +563,15 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <StackPanel>
-                            <Button x:Name="SettingsRuntimeCategoryButton" i18n:Localize.Key="settings.category.runtime" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Click="SettingsCategoryButton_Click" />
-                            <Button x:Name="SettingsSteamVrCategoryButton" i18n:Localize.Key="settings.category.steamvr" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsLanguageCategoryButton" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Click="SettingsCategoryButton_Click" />
                             <Button x:Name="SettingsDeviceViewerCategoryButton" i18n:Localize.Key="nav.device_viewer" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                             <Button x:Name="SettingsDevicesCategoryButton" i18n:Localize.Key="settings.category.devices" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                            <Button x:Name="SettingsFilesCategoryButton" i18n:Localize.Key="settings.category.files" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
-                            <Button x:Name="SettingsLanguageCategoryButton" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                             <Button x:Name="SettingsOscCategoryButton" i18n:Localize.Key="settings.category.osc" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                             <Button x:Name="SettingsXInputCategoryButton" i18n:Localize.Key="settings.category.xinput" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsSteamVrCategoryButton" i18n:Localize.Key="settings.category.steamvr" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                             <Button x:Name="SettingsAdvancedCategoryButton" i18n:Localize.Key="settings.category.advanced" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsFilesCategoryButton" i18n:Localize.Key="settings.category.files" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
+                            <Button x:Name="SettingsRuntimeCategoryButton" i18n:Localize.Key="settings.category.runtime" Style="{StaticResource SidebarNavigationButtonStyle}" HorizontalContentAlignment="Left" Margin="0,6,0,0" Click="SettingsCategoryButton_Click" />
                         </StackPanel>
                         <!-- Legal notice label and content are intentionally fixed English, never localized. -->
                         <Button Grid.Row="1"
@@ -809,20 +810,23 @@
                                         <ItemsControl x:Name="DeviceHistoryItemsControl" Margin="0,12,0,0">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Border Margin="0,0,0,6" Padding="12,9" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                            <Ellipse Width="7" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                                                <Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{StaticResource WarningBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsOnline}" Value="True"><Setter Property="Fill" Value="{StaticResource SuccessBrush}"/></DataTrigger></Style.Triggers></Style></Ellipse.Style>
-                                                            </Ellipse>
-                                                            <StackPanel Grid.Column="1">
-                                                                <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock Text="{Binding IdentityText}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock Text="{Binding NoteDisplay}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
-                                                            </StackPanel>
-                                                            <Button Grid.Column="2" Content="{i18n:Loc Key=common.action.edit}" Tag="{Binding}" Margin="12,0,0,0" Padding="10,5" VerticalAlignment="Center" Click="EditDeviceMetadataButton_Click" />
-                                                        </Grid>
-                                                    </Border>
+                                                    <Grid Margin="0,0,0,6">
+                                                        <Border Padding="12,9" Background="{StaticResource SurfaceRaisedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="2">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                                <Ellipse Width="7" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                                    <Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="{StaticResource WarningBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsOnline}" Value="True"><Setter Property="Fill" Value="{StaticResource SuccessBrush}"/></DataTrigger></Style.Triggers></Style></Ellipse.Style>
+                                                                </Ellipse>
+                                                                <StackPanel Grid.Column="1">
+                                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Text="{Binding IdentityText}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="9" TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Text="{Binding NoteDisplay}" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}" FontSize="10" TextWrapping="Wrap" />
+                                                                </StackPanel>
+                                                                <Button Grid.Column="2" Content="{i18n:Loc Key=common.action.edit}" Tag="{Binding}" Margin="12,0,0,0" Padding="10,5" VerticalAlignment="Center" Click="EditDeviceMetadataButton_Click" />
+                                                            </Grid>
+                                                        </Border>
+                                                        <controls:MotionInnerGlow Intensity="{Binding MotionIntensity}" IsHitTestVisible="False" />
+                                                    </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
@@ -868,7 +872,7 @@
                                 <Border Margin="0,14,0,0" Padding="20" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="3">
                                     <StackPanel>
                                         <TextBlock Text="{i18n:Loc Key=settings.devices.connections}" FontSize="15" FontWeight="Medium" />
-                                        <Grid Margin="12,16,12,0">
+                                        <Grid x:Name="DeviceConnectionsHeader" Margin="12,16,12,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                             <TextBlock Text="{i18n:Loc Key=settings.devices.connections_device}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />
                                             <TextBlock Grid.Column="1" Text="{i18n:Loc Key=settings.devices.connections_current}" Foreground="{StaticResource MutedTextBrush}" FontSize="10" />

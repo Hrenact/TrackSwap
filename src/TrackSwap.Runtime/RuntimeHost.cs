@@ -44,6 +44,12 @@ internal static class RuntimeHost
 
         Console.WriteLine($"TrackSwap VR Runtime listening on {ProtocolConstants.PipeName}");
         Console.WriteLine($"Configuration: {store.Path}");
+        RuntimeEventLog.Write(
+            "Runtime.Start",
+            "protocol=" + ProtocolConstants.CurrentProtocolVersion +
+            "; schema=" + ProtocolConstants.CurrentConfigurationSchemaVersion +
+            "; lifecycle=" + (lifecycleMode?.ToString() ?? "Unspecified") +
+            "; ensureUi=" + ensureTrackSwapUi);
         try
         {
             var tasks = new List<Task>
@@ -54,6 +60,12 @@ internal static class RuntimeHost
                 xInput.RunAsync(cancellation.Token),
                 hapticFeedback.RunAsync(cancellation.Token),
                 staticMappingWorker.RunAsync(cancellation.Token),
+                RuntimeStateEventMonitor.RunAsync(
+                    synchronizer,
+                    oscInput,
+                    xInput,
+                    staticMappingWorker,
+                    cancellation.Token),
                 server.RunAsync(cancellation.Token)
             };
             if (lifecycleMode.HasValue)
@@ -73,6 +85,10 @@ internal static class RuntimeHost
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+        }
+        finally
+        {
+            RuntimeEventLog.Write("Runtime.Stop", "shutdown requested");
         }
     }
 }

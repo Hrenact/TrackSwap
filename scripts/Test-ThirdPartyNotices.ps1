@@ -100,6 +100,22 @@ if ((Test-Path -LiteralPath (Join-Path $repositoryRoot 'src\TrackSwap\DeviceView
 }
 Test-NoticeText '## Microsoft .NET Runtime' 'self-contained Microsoft .NET Runtime disclosure'
 
+# The GitHub release installer must use a reproducible, explicitly pinned Inno
+# Setup version, and the legal notice must identify that exact build-tool version.
+$releaseWorkflowPath = Join-Path $repositoryRoot '.github\workflows\release.yml'
+if (Test-Path -LiteralPath $releaseWorkflowPath -PathType Leaf) {
+    $releaseWorkflow = Get-Content -LiteralPath $releaseWorkflowPath -Raw
+    $innoVersionMatch = [regex]::Match(
+        $releaseWorkflow,
+        'choco\s+install\s+innosetup\s+--version(?:=|\s+)([0-9.]+)',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $innoVersionMatch.Success) {
+        Add-AuditError 'GitHub release workflow must pin the exact Inno Setup package version.'
+    } else {
+        Test-NoticeText $innoVersionMatch.Groups[1].Value 'Inno Setup release build-tool version'
+    }
+}
+
 if (-not [string]::IsNullOrWhiteSpace($RuntimeDirectory)) {
     $resolvedRuntimeDirectory = [System.IO.Path]::GetFullPath($RuntimeDirectory)
     $runtimeConfigPath = Join-Path $resolvedRuntimeDirectory 'TrackSwap.Runtime.runtimeconfig.json'

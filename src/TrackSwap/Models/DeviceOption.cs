@@ -24,7 +24,13 @@ namespace TrackSwap.Models
             string renderModelName = null,
             TrackedDeviceKind deviceKind = TrackedDeviceKind.Unknown,
             PoseSourceKind poseSourceKind = PoseSourceKind.Device,
-            string connectedWirelessDongleId = null)
+            string connectedWirelessDongleId = null,
+            string manufacturerName = null,
+            string modelNumber = null,
+            string trackingSystemName = null,
+            string controllerType = null,
+            string hardwareRevision = null,
+            string trackingFirmwareVersion = null)
         {
             DisplayName = displayName;
             DevicePath = devicePath;
@@ -36,6 +42,12 @@ namespace TrackSwap.Models
             DeviceKind = deviceKind;
             PoseSourceKind = poseSourceKind;
             ConnectedWirelessDongleId = connectedWirelessDongleId;
+            ManufacturerName = manufacturerName;
+            ModelNumber = modelNumber;
+            TrackingSystemName = trackingSystemName;
+            ControllerType = controllerType;
+            HardwareRevision = hardwareRevision;
+            TrackingFirmwareVersion = trackingFirmwareVersion;
         }
 
         public string DisplayName { get; }
@@ -59,6 +71,18 @@ namespace TrackSwap.Models
         public PoseSourceKind PoseSourceKind { get; }
 
         public string ConnectedWirelessDongleId { get; }
+
+        public string ManufacturerName { get; }
+
+        public string ModelNumber { get; }
+
+        public string TrackingSystemName { get; }
+
+        public string ControllerType { get; }
+
+        public string HardwareRevision { get; }
+
+        public string TrackingFirmwareVersion { get; }
 
         public static string BaseDisplayName(string displayName)
         {

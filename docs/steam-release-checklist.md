@@ -1,11 +1,11 @@
 # TrackSwap VR Steam 发布清单
 
-这份清单用于 v012 的 Steam 上架准备。它不包含 Steamworks 凭据、AppID、DepotID 或未公开商店资料。
+这份清单用于 v013 的 Steam 上架准备。它不包含 Steamworks 凭据、AppID、DepotID 或未公开商店资料。
 
 ## Depot 与启动项
 
-- 使用 `scripts/Build-SteamDepot.ps1 -Version v012 -AppId <AppID> -DepotId <DepotID> -Clean` 生成 SteamPipe 内容与预览配置。
-- 脚本默认写入 `"Preview" "1"`，先检查 `artifacts/steam/v012/output` 的文件清单，再显式移除预览标记并上传。
+- 使用 `scripts/Build-SteamDepot.ps1 -Version v013 -AppId <AppID> -DepotId <DepotID> -Clean` 生成 SteamPipe 内容与预览配置。
+- 脚本默认写入 `"Preview" "1"`，先检查 `artifacts/steam/v013/output` 的文件清单，再显式移除预览标记并上传。
 - Steamworks 的默认 Windows 启动项指向 `TrackSwap.exe`，启动目录使用 depot 安装根目录。
 - `UserData` 必须始终排除在 depot 之外。它由程序运行时创建，更新、验证和普通卸载不会管理它。
 - `installscript.vdf` 在首次运行时注册 OpenVR 驱动与 TrackSwap VR 应用清单；卸载时移除这些集成，但保留 `UserData`。
@@ -32,7 +32,7 @@
 
 ## 功能回归
 
-- 三种路由模式、拆分位置/旋转来源、本地偏移、3D 预览、来源隐藏。
+- 四种运行模式、拆分位置/旋转来源、本地偏移、3D 预览、来源隐藏。
 - 虚拟控制器输入、触摸辅助、Aim/Grip 位姿、左右手震动、OSC 收发与端口冲突状态。
 - UI 关闭后 Runtime 独立运行；“跟随 SteamVR”与“跟随 TrackSwap VR”两种生命周期。
 - SteamVR 停止后的待映射、待删除与孤立代理清理，不依赖 UI。

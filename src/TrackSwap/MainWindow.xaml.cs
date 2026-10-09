@@ -58,6 +58,7 @@ namespace TrackSwap
         private readonly SteamVrStatusService _statusService = new SteamVrStatusService();
         private readonly SteamVrSettingsService _settingsService = new SteamVrSettingsService();
         private readonly OpenVrDeviceService _openVrDeviceService = new OpenVrDeviceService();
+        private readonly OpenVrSceneService _openVrSceneService = new OpenVrSceneService();
         private readonly OpenVrRenderModelService _openVrRenderModelService = new OpenVrRenderModelService();
         private readonly SteamVrApplicationService _steamVrApplicationService = new SteamVrApplicationService();
         private readonly DeviceHistoryService _deviceHistoryService = new DeviceHistoryService();
@@ -72,6 +73,7 @@ namespace TrackSwap
         private readonly DiagnosticsService _diagnosticsService;
         private readonly DispatcherTimer _statusTimer;
         private readonly DispatcherTimer _deviceRefreshTimer;
+        private readonly DispatcherTimer _deviceMotionTimer;
         private readonly DispatcherTimer _telemetryTimer;
         private readonly DispatcherTimer _oscMonitorTimer;
         private readonly DispatcherTimer _oscApplyTimer;
@@ -83,6 +85,9 @@ namespace TrackSwap
         private Model3DGroup _proxyPreviewModel;
         private Model3DGroup _targetPreviewModel;
         private Model3DGroup _gizmoPreviewModel;
+        private Model3DGroup _manualPreviewFloorModel;
+        private readonly Dictionary<uint, ManualPreviewDeviceVisual> _manualPreviewDeviceVisuals =
+            new Dictionary<uint, ManualPreviewDeviceVisual>();
         private readonly Dictionary<GeometryModel3D, GizmoAxis> _gizmoHitModels =
             new Dictionary<GeometryModel3D, GizmoAxis>();
         private GizmoMode _gizmoMode = GizmoMode.None;
@@ -105,6 +110,12 @@ namespace TrackSwap
         private readonly Dictionary<string, Task<OpenVrRenderModel>> _previewModelCache =
             new Dictionary<string, Task<OpenVrRenderModel>>(StringComparer.Ordinal);
         private int _previewModelRequestVersion;
+        private bool _manualPreviewSceneRefreshPending;
+        private bool _manualPreviewContextVisible;
+        private bool _manualPreviewDriverOutputTransformAvailable;
+        private Matrix3D _manualPreviewDriverOutputTransform = Matrix3D.Identity;
+        private Matrix3D _manualPreviewSceneCorrection = Matrix3D.Identity;
+        private int _manualPreviewSceneVersion;
 
         private string _settingsPath;
         private bool _isLoading;
@@ -114,6 +125,7 @@ namespace TrackSwap
         private long _loadedRuntimeRevision = -1;
         private bool _runtimeEditorInitialized;
         private bool _deviceRefreshPending;
+        private bool _deviceMotionRefreshPending;
         private bool _telemetryUpdatePending;
         private bool _oscMonitorUpdatePending;
         private bool _hapticTimelineRenderingAttached;
@@ -133,6 +145,11 @@ namespace TrackSwap
         private string _previewModelDescription;
         private IReadOnlyList<DeviceOption> _onlinePhysicalDevices = Array.Empty<DeviceOption>();
         private IReadOnlyList<DeviceOption> _knownPhysicalDevices = Array.Empty<DeviceOption>();
+        private readonly Dictionary<string, DeviceHistoryListItem> _deviceHistoryItemsByPath =
+            new Dictionary<string, DeviceHistoryListItem>(StringComparer.Ordinal);
+        private readonly Dictionary<string, DeviceMotionState> _deviceMotionStates =
+            new Dictionary<string, DeviceMotionState>(StringComparer.Ordinal);
+        private long _lastDeviceMotionSampleTimestamp;
         private readonly Dictionary<string, string> _knownSourceRoleTargets =
             new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly ObservableCollection<RouteListItem> _routeItems = new ObservableCollection<RouteListItem>();
@@ -162,7 +179,7 @@ namespace TrackSwap
         private bool _languageIssuesTogglePending;
         private string _languageLocale = LocalizationService.OfficialLocale;
         private string _languagePackFileName;
-        private SettingsSection _settingsSection = SettingsSection.Runtime;
+        private SettingsSection _settingsSection = SettingsSection.Language;
         private bool _showSteamVrRoleTargets;
         private int _controllerHandSelectionPriority;
         private bool _useEulerRotationEditor = true;
@@ -286,6 +303,11 @@ namespace TrackSwap
                 Interval = TimeSpan.FromSeconds(1)
             };
             _deviceRefreshTimer.Tick += async (_, __) => await RefreshDevicesAsync();
+            _deviceMotionTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(33)
+            };
+            _deviceMotionTimer.Tick += async (_, __) => await RefreshDeviceMotionAsync();
             _telemetryTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(33)
@@ -321,6 +343,7 @@ namespace TrackSwap
                 await EnsureRuntimeStartedAsync(showError: false);
                 _statusTimer.Start();
                 _deviceRefreshTimer.Start();
+                _deviceMotionTimer.Start();
                 _telemetryTimer.Start();
                 _oscMonitorTimer.Start();
                 await RefreshStatusAsync();
@@ -339,6 +362,7 @@ namespace TrackSwap
                 _previewModelRequestVersion++;
                 _statusTimer.Stop();
                 _deviceRefreshTimer.Stop();
+                _deviceMotionTimer.Stop();
                 _telemetryTimer.Stop();
                 _oscMonitorTimer.Stop();
                 _oscApplyTimer.Stop();
@@ -354,9 +378,9 @@ namespace TrackSwap
         {
             RuntimeModeComboBox.ItemsSource = new[]
             {
-                new RouteModeOption(RouteMode.DirectProxy, Tr.Get("app.initialize_localized_fixed_options.output_virtual_tracker")),
-                new RouteModeOption(RouteMode.VirtualController, Tr.Get("app.initialize_localized_fixed_options.output_virtual_controller")),
                 new RouteModeOption(RouteMode.VirtualHmd, Tr.Get("app.initialize_localized_fixed_options.output_virtual_hmd")),
+                new RouteModeOption(RouteMode.VirtualController, Tr.Get("app.initialize_localized_fixed_options.output_virtual_controller")),
+                new RouteModeOption(RouteMode.DirectProxy, Tr.Get("app.initialize_localized_fixed_options.output_virtual_tracker")),
                 new RouteModeOption(RouteMode.ReplaceTarget, Tr.Get("app.initialize_localized_fixed_options.replace_device_pose"))
             };
             RuntimeControllerHandComboBox.ItemsSource = new[]
@@ -684,7 +708,7 @@ namespace TrackSwap
                         : receiverId;
                 }
 
-                IReadOnlyList<DeviceHistoryListItem> historyItems = deviceCatalog.Devices
+                List<DeviceHistoryListItem> historyItems = deviceCatalog.Devices
                     .Select(device =>
                     {
                         onlineDevicesByPath.TryGetValue(device.DevicePath, out DeviceOption onlineDevice);
@@ -695,6 +719,15 @@ namespace TrackSwap
                     .OrderByDescending(device => device.IsOnline)
                     .ThenBy(device => device.DisplayName, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
+                _deviceHistoryItemsByPath.Clear();
+                foreach (DeviceHistoryListItem item in historyItems)
+                {
+                    _deviceHistoryItemsByPath[item.DevicePath] = item;
+                    if (_deviceMotionStates.TryGetValue(item.DevicePath, out DeviceMotionState motion))
+                    {
+                        item.SetMotionIntensity(item.IsOnline ? motion.Intensity : 0.0);
+                    }
+                }
                 DeviceHistoryCountText.Text = Tr.Format("settings.devices.device_count", historyItems.Count);
                 DeviceHistoryItemsControl.ItemsSource = historyItems;
                 EmptyDeviceHistoryText.Visibility = historyItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -737,9 +770,16 @@ namespace TrackSwap
                     .ThenBy(connection => connection.DeviceDisplayName, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
                 DeviceConnectionItemsControl.ItemsSource = connectionItems;
-                EmptyDeviceConnectionsText.Visibility = connectionItems.Count == 0
+                bool hasDeviceConnections = connectionItems.Count > 0;
+                DeviceConnectionsHeader.Visibility = hasDeviceConnections
                     ? Visibility.Visible
                     : Visibility.Collapsed;
+                DeviceConnectionItemsControl.Visibility = hasDeviceConnections
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+                EmptyDeviceConnectionsText.Visibility = hasDeviceConnections
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
                 _knownPhysicalDevices = MergeDeviceCatalog(
                     onlinePhysicalDevices,
                     rememberedDevices);
@@ -863,6 +903,103 @@ namespace TrackSwap
             finally
             {
                 _deviceRefreshPending = false;
+            }
+        }
+
+        private async Task RefreshDeviceMotionAsync()
+        {
+            if (_deviceMotionRefreshPending ||
+                !IsVisible ||
+                !_showingSettings ||
+                _settingsSection != SettingsSection.Devices)
+            {
+                return;
+            }
+
+            if (!_statusService.IsRunning())
+            {
+                _openVrSceneService.ResetCache();
+                ClearDeviceMotionHighlights();
+                return;
+            }
+
+            _deviceMotionRefreshPending = true;
+            try
+            {
+                string runtimePath = _pathService.FindRuntimePath();
+                OpenVrSceneSnapshot snapshot = await Task.Run(() =>
+                    _openVrSceneService.Capture(runtimePath));
+                if (!IsVisible ||
+                    !_showingSettings ||
+                    _settingsSection != SettingsSection.Devices)
+                {
+                    return;
+                }
+                ApplyDeviceMotionSnapshot(snapshot);
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is InvalidOperationException ||
+                exception is UnauthorizedAccessException ||
+                exception is System.ComponentModel.Win32Exception ||
+                exception is DllNotFoundException ||
+                exception is EntryPointNotFoundException)
+            {
+                Debug.WriteLine("Device motion sampling failed: " + exception);
+                ClearDeviceMotionHighlights();
+            }
+            finally
+            {
+                _deviceMotionRefreshPending = false;
+            }
+        }
+
+        private void ApplyDeviceMotionSnapshot(OpenVrSceneSnapshot snapshot)
+        {
+            long now = Stopwatch.GetTimestamp();
+            double elapsedSeconds = _lastDeviceMotionSampleTimestamp == 0
+                ? 1.0 / 30.0
+                : (now - _lastDeviceMotionSampleTimestamp) / (double)Stopwatch.Frequency;
+            _lastDeviceMotionSampleTimestamp = now;
+            var devicesByPath = (snapshot?.Devices ?? Array.Empty<OpenVrSceneDevice>())
+                .Where(device =>
+                    device.Connected &&
+                    device.Valid &&
+                    !string.IsNullOrWhiteSpace(device.Identity))
+                .GroupBy(device => device.Identity, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+            foreach (KeyValuePair<string, DeviceHistoryListItem> entry in _deviceHistoryItemsByPath)
+            {
+                if (!_deviceMotionStates.TryGetValue(entry.Key, out DeviceMotionState state))
+                {
+                    state = new DeviceMotionState();
+                    _deviceMotionStates.Add(entry.Key, state);
+                }
+                double linearSpeed = 0.0;
+                double angularSpeed = 0.0;
+                if (entry.Value.IsOnline &&
+                    devicesByPath.TryGetValue(entry.Key, out OpenVrSceneDevice device))
+                {
+                    linearSpeed = device.LinearVelocity.Length;
+                    angularSpeed = device.AngularVelocity.Length;
+                }
+                state.Intensity = DeviceMotionIntensityFilter.Update(
+                    state.Intensity,
+                    linearSpeed,
+                    angularSpeed,
+                    elapsedSeconds);
+                entry.Value.SetMotionIntensity(entry.Value.IsOnline ? state.Intensity : 0.0);
+            }
+        }
+
+        private void ClearDeviceMotionHighlights()
+        {
+            _lastDeviceMotionSampleTimestamp = 0;
+            _deviceMotionStates.Clear();
+            foreach (DeviceHistoryListItem item in _deviceHistoryItemsByPath.Values)
+            {
+                item.SetMotionIntensity(0.0);
             }
         }
 
@@ -1699,12 +1836,14 @@ namespace TrackSwap
         private void ShowSelectedRoute(RouteConfiguration route)
         {
             ClearRouteAutoApplyIssue();
+            bool wasManualPose = _selectedRoute?.PoseSourceKind == PoseSourceKind.Manual;
             _selectedRoute = route;
             _splitBasePreviewRotation = Quaternion.Identity;
             if (route == null)
             {
                 _gizmoVisible = false;
                 HidePreviewModel(_gizmoPreviewModel);
+                ClearManualPreviewContext();
                 UpdateContentVisibility();
                 return;
             }
@@ -1788,6 +1927,14 @@ namespace TrackSwap
             }
             UpdateRuntimeSelectionDetails();
             UpdateContentVisibility();
+            if (!wasManualPose && route.PoseSourceKind == PoseSourceKind.Manual)
+            {
+                ResetPreviewView();
+            }
+            else if (route.PoseSourceKind != PoseSourceKind.Manual)
+            {
+                ClearManualPreviewContext();
+            }
             _ = RefreshPreviewDeviceModelsAsync();
         }
 
@@ -2146,6 +2293,10 @@ namespace TrackSwap
                 CancelXInputCapture();
             }
             _settingsSection = section;
+            if (section != SettingsSection.Devices)
+            {
+                ClearDeviceMotionHighlights();
+            }
             if (enteringLanguageSection)
             {
                 SetLanguageIssuesExpanded(false);
@@ -3123,7 +3274,15 @@ namespace TrackSwap
             ExportDiagnosticsButton.IsEnabled = false;
             try
             {
-                _diagnosticsService.Export(dialog.FileName, _runtimeStatus);
+                _diagnosticsService.Export(
+                    dialog.FileName,
+                    _runtimeStatus,
+                    new DiagnosticsExportContext
+                    {
+                        OnlineDevices = _onlinePhysicalDevices,
+                        RuntimeLifecycleMode = _runtimeLifecycleMode,
+                        FollowSteamVrWithTrackSwap = _followSteamVrWithTrackSwap
+                    });
                 AppDialog.Show(
                     this,
                     Tr.Format("settings.runtime.export_completed_message", dialog.FileName),
@@ -3885,6 +4044,17 @@ namespace TrackSwap
                             ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand))
                             ? ProtocolConstants.GetOutputSerial(_selectedRoute.Mode, _selectedRoute.VirtualDeviceSlot)
                             : ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand);
+                    }
+                    if (nextSourceKind == PoseSourceKind.Manual)
+                    {
+                        if (previousSourceKind != nextSourceKind)
+                        {
+                            ResetPreviewView();
+                        }
+                    }
+                    else if (previousSourceKind != nextSourceKind)
+                    {
+                        ClearManualPreviewContext();
                     }
                 }
                 UpdateRuntimeSelectionDetails();
@@ -5099,16 +5269,19 @@ namespace TrackSwap
 
         private void InitializePosePreview()
         {
+            _manualPreviewFloorModel = DeviceViewerModelFactory.CreateFloorReferenceModel();
             _sourcePreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#F5A623"), TrackedDeviceKind.Unknown);
             _rotationSourcePreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#C084FC"), TrackedDeviceKind.Unknown);
             _proxyPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#5A9BFF"), TrackedDeviceKind.Tracker);
             _targetPreviewModel = CreateDeviceModel((Color)ColorConverter.ConvertFromString("#45D483"), TrackedDeviceKind.Unknown);
             _gizmoPreviewModel = new Model3DGroup();
+            PreviewSceneRoot.Children.Add(_manualPreviewFloorModel);
             PreviewSceneRoot.Children.Add(_sourcePreviewModel);
             PreviewSceneRoot.Children.Add(_rotationSourcePreviewModel);
             PreviewSceneRoot.Children.Add(_proxyPreviewModel);
             PreviewSceneRoot.Children.Add(_targetPreviewModel);
             PreviewSceneRoot.Children.Add(_gizmoPreviewModel);
+            HidePreviewModel(_manualPreviewFloorModel);
             HidePreviewModel(_sourcePreviewModel);
             HidePreviewModel(_rotationSourcePreviewModel);
             HidePreviewModel(_proxyPreviewModel);
@@ -5521,10 +5694,18 @@ namespace TrackSwap
         private void ResetPreviewViewButton_Click(object sender, RoutedEventArgs e)
         {
             EndPreviewDrag();
-            _previewCameraTarget = new Point3D(0, 0, 0);
+            ResetPreviewView();
+        }
+
+        private void ResetPreviewView()
+        {
+            bool manualPose = _selectedRoute?.PoseSourceKind == PoseSourceKind.Manual;
+            _previewCameraTarget = manualPose
+                ? new Point3D(0, 0.9, 0)
+                : new Point3D(0, 0, 0);
             _previewCameraYaw = 0.694;
-            _previewCameraPitch = 0.397;
-            _previewCameraDistance = 0.68;
+            _previewCameraPitch = manualPose ? 0.30 : 0.397;
+            _previewCameraDistance = manualPose ? 3.0 : 0.68;
             UpdatePreviewCamera();
         }
 
@@ -5721,11 +5902,268 @@ namespace TrackSwap
             return InferDeviceKind(targetPath);
         }
 
+        private async Task RefreshManualPreviewSceneAsync()
+        {
+            if (_manualPreviewSceneRefreshPending ||
+                !IsVisible ||
+                _showingSettings ||
+                _selectedRoute?.PoseSourceKind != PoseSourceKind.Manual)
+            {
+                return;
+            }
+
+            if (!_statusService.IsRunning())
+            {
+                _openVrSceneService.ResetCache();
+                ClearManualPreviewContext();
+                return;
+            }
+
+            _manualPreviewSceneRefreshPending = true;
+            int sceneVersion = _manualPreviewSceneVersion;
+            try
+            {
+                string runtimePath = _pathService.FindRuntimePath();
+                OpenVrSceneSnapshot snapshot = await Task.Run(() =>
+                    _openVrSceneService.Capture(runtimePath));
+                if (sceneVersion != _manualPreviewSceneVersion ||
+                    !IsVisible ||
+                    _showingSettings ||
+                    _selectedRoute?.PoseSourceKind != PoseSourceKind.Manual)
+                {
+                    return;
+                }
+
+                ApplyManualPreviewScene(snapshot);
+            }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is InvalidOperationException ||
+                exception is UnauthorizedAccessException ||
+                exception is System.ComponentModel.Win32Exception ||
+                exception is DllNotFoundException ||
+                exception is EntryPointNotFoundException)
+            {
+                Debug.WriteLine("Manual pose preview scene refresh failed: " + exception);
+                ClearManualPreviewContext();
+            }
+            finally
+            {
+                _manualPreviewSceneRefreshPending = false;
+            }
+        }
+
+        private void ApplyManualPreviewScene(OpenVrSceneSnapshot snapshot)
+        {
+            if (_selectedRoute?.PoseSourceKind != PoseSourceKind.Manual)
+            {
+                ClearManualPreviewContext();
+                return;
+            }
+
+            _manualPreviewContextVisible = true;
+            _manualPreviewFloorModel.Transform = Transform3D.Identity;
+            OpenVrSceneDevice outputDevice = snapshot.Devices.FirstOrDefault(device =>
+                device.Connected && device.Valid && IsCurrentRouteOutputDevice(device.Identity));
+            _manualPreviewSceneCorrection = CreateManualPreviewSceneCorrection(outputDevice);
+            List<OpenVrSceneDevice> devices = snapshot.Devices
+                .Where(IsManualPreviewContextDevice)
+                .ToList();
+            var currentIndices = new HashSet<uint>(devices.Select(device => device.DeviceIndex));
+            foreach (uint removed in _manualPreviewDeviceVisuals.Keys
+                .Where(index => !currentIndices.Contains(index))
+                .ToList())
+            {
+                PreviewSceneRoot.Children.Remove(_manualPreviewDeviceVisuals[removed].Model);
+                _manualPreviewDeviceVisuals.Remove(removed);
+            }
+
+            foreach (OpenVrSceneDevice device in devices)
+            {
+                if (!_manualPreviewDeviceVisuals.TryGetValue(
+                    device.DeviceIndex,
+                    out ManualPreviewDeviceVisual visual))
+                {
+                    visual = new ManualPreviewDeviceVisual(
+                        DeviceViewerModelFactory.CreateDeviceModel(null, device.DeviceKind),
+                        device.RenderModelName,
+                        device.DeviceKind);
+                    _manualPreviewDeviceVisuals.Add(device.DeviceIndex, visual);
+                    PreviewSceneRoot.Children.Add(visual.Model);
+                    _ = LoadManualPreviewDeviceModelAsync(
+                        device.DeviceIndex,
+                        device.RenderModelName,
+                        visual.Version,
+                        _manualPreviewSceneVersion);
+                }
+                else if (!string.Equals(
+                    visual.RenderModelName,
+                    device.RenderModelName,
+                    StringComparison.Ordinal) ||
+                    visual.DeviceKind != device.DeviceKind)
+                {
+                    visual.RenderModelName = device.RenderModelName;
+                    visual.DeviceKind = device.DeviceKind;
+                    visual.Version++;
+                    ReplacePreviewModelContents(
+                        visual.Model,
+                        DeviceViewerModelFactory.CreateDeviceModel(null, device.DeviceKind));
+                    _ = LoadManualPreviewDeviceModelAsync(
+                        device.DeviceIndex,
+                        device.RenderModelName,
+                        visual.Version,
+                        _manualPreviewSceneVersion);
+                }
+
+                visual.Model.Transform = new MatrixTransform3D(Matrix3D.Multiply(
+                    device.Transform,
+                    _manualPreviewSceneCorrection));
+            }
+        }
+
+        private Matrix3D CreateManualPreviewSceneCorrection(OpenVrSceneDevice outputDevice)
+        {
+            if (outputDevice == null || !_manualPreviewDriverOutputTransformAvailable)
+            {
+                return Matrix3D.Identity;
+            }
+
+            Matrix3D inverseObservedOutput = outputDevice.Transform;
+            if (!inverseObservedOutput.HasInverse)
+            {
+                return Matrix3D.Identity;
+            }
+
+            inverseObservedOutput.Invert();
+            return Matrix3D.Multiply(
+                inverseObservedOutput,
+                _manualPreviewDriverOutputTransform);
+        }
+
+        private bool IsManualPreviewContextDevice(OpenVrSceneDevice device)
+        {
+            if (device == null ||
+                !device.Connected ||
+                !device.Valid ||
+                device.DeviceClass == OpenVrSceneDeviceClass.Invalid ||
+                device.DeviceClass == OpenVrSceneDeviceClass.DisplayRedirect ||
+                IsCurrentRouteOutputDevice(device.Identity))
+            {
+                return false;
+            }
+
+            return !IsSelectedRouteTargetDevice(device);
+        }
+
+        private bool IsSelectedRouteTargetDevice(OpenVrSceneDevice device)
+        {
+            if (device == null || _selectedRoute?.Mode != RouteMode.ReplaceTarget)
+            {
+                return false;
+            }
+
+            string targetPath = _selectedRoute.TargetDevicePath;
+            return string.Equals(device.Identity, targetPath, StringComparison.Ordinal) ||
+                (string.Equals(targetPath, ProtocolConstants.HeadRolePath, StringComparison.Ordinal) &&
+                 device.DeviceClass == OpenVrSceneDeviceClass.Hmd) ||
+                (string.Equals(targetPath, ProtocolConstants.LeftHandRolePath, StringComparison.Ordinal) &&
+                 device.ControllerRole == OpenVrControllerRole.LeftHand) ||
+                (string.Equals(targetPath, ProtocolConstants.RightHandRolePath, StringComparison.Ordinal) &&
+                 device.ControllerRole == OpenVrControllerRole.RightHand);
+        }
+
+        private bool IsCurrentRouteOutputDevice(string devicePath)
+        {
+            if (_selectedRoute == null || string.IsNullOrWhiteSpace(devicePath))
+            {
+                return false;
+            }
+
+            string outputSerial = _selectedRoute.Mode == RouteMode.VirtualController
+                ? ProtocolConstants.GetControllerSerial(_selectedRoute.ControllerHand)
+                : ProtocolConstants.GetOutputSerial(
+                    _selectedRoute.Mode,
+                    _selectedRoute.VirtualDeviceSlot);
+            if (string.IsNullOrWhiteSpace(outputSerial))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                devicePath,
+                "/devices/trackswap/" + outputSerial,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private async Task LoadManualPreviewDeviceModelAsync(
+            uint deviceIndex,
+            string renderModelName,
+            int visualVersion,
+            int sceneVersion)
+        {
+            OpenVrRenderModel renderModel = await GetPreviewRenderModelAsync(renderModelName);
+            if (renderModel == null ||
+                sceneVersion != _manualPreviewSceneVersion ||
+                _selectedRoute?.PoseSourceKind != PoseSourceKind.Manual ||
+                !_manualPreviewDeviceVisuals.TryGetValue(deviceIndex, out ManualPreviewDeviceVisual visual) ||
+                visual.Version != visualVersion ||
+                !string.Equals(visual.RenderModelName, renderModelName, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            ReplacePreviewModelContents(
+                visual.Model,
+                DeviceViewerModelFactory.CreateDeviceModel(renderModel, visual.DeviceKind));
+        }
+
+        private void ClearManualPreviewContext()
+        {
+            if (!_manualPreviewContextVisible &&
+                !_manualPreviewDriverOutputTransformAvailable &&
+                _manualPreviewDeviceVisuals.Count == 0)
+            {
+                return;
+            }
+
+            _manualPreviewContextVisible = false;
+            _manualPreviewDriverOutputTransformAvailable = false;
+            _manualPreviewDriverOutputTransform = Matrix3D.Identity;
+            _manualPreviewSceneCorrection = Matrix3D.Identity;
+            _manualPreviewSceneVersion++;
+            HidePreviewModel(_manualPreviewFloorModel);
+            foreach (ManualPreviewDeviceVisual visual in _manualPreviewDeviceVisuals.Values)
+            {
+                PreviewSceneRoot.Children.Remove(visual.Model);
+            }
+            _manualPreviewDeviceVisuals.Clear();
+        }
+
+        private static void ReplacePreviewModelContents(Model3DGroup target, Model3DGroup source)
+        {
+            Transform3D transform = target.Transform;
+            target.Children.Clear();
+            foreach (Model3D child in source.Children)
+            {
+                target.Children.Add(child);
+            }
+            target.Transform = transform;
+        }
+
         private async Task RefreshTelemetryAsync()
         {
             if (_telemetryUpdatePending || !IsVisible || _showingSettings || _selectedRoute == null)
             {
                 return;
+            }
+
+            if (_selectedRoute.PoseSourceKind == PoseSourceKind.Manual)
+            {
+                _ = RefreshManualPreviewSceneAsync();
+            }
+            else
+            {
+                ClearManualPreviewContext();
             }
 
             _telemetryUpdatePending = true;
@@ -5811,9 +6249,11 @@ namespace TrackSwap
             bool splitSource = _selectedRoute?.SplitPoseSource == true;
             bool manualPose = _selectedRoute?.PoseSourceKind == PoseSourceKind.Manual;
             Matrix3D targetMatrix = Matrix3D.Identity;
-            bool targetVisible = IsRenderablePose(snapshot.Source) &&
-                IsRenderablePose(snapshot.Target) &&
-                TryGetRelativePoseMatrix(snapshot.Source, snapshot.Target, out targetMatrix);
+            bool targetVisible = manualPose
+                ? TryGetAbsolutePoseMatrix(snapshot.Target, out targetMatrix)
+                : IsRenderablePose(snapshot.Source) &&
+                    IsRenderablePose(snapshot.Target) &&
+                    TryGetRelativePoseMatrix(snapshot.Source, snapshot.Target, out targetMatrix);
             bool sourceVisible = !manualPose && IsRenderablePose(snapshot.Source);
             Matrix3D sourceMatrix = Matrix3D.Identity;
             Matrix3D rotationSourceMatrix = Matrix3D.Identity;
@@ -5827,9 +6267,18 @@ namespace TrackSwap
                     : Quaternion.Identity;
             Matrix3D proxyMatrix = Matrix3D.Identity;
             bool hasConfiguredOffset = TryReadOffset(out PoseOffset configuredOffset, out _);
-            bool hasOutputTransform = IsRenderablePose(snapshot.Source) &&
-                IsRenderablePose(snapshot.Output) &&
-                TryGetRelativePoseMatrix(snapshot.Source, snapshot.Output, out proxyMatrix);
+            bool hasOutputTransform = manualPose
+                ? TryGetAbsolutePoseMatrix(snapshot.Output, out proxyMatrix)
+                : IsRenderablePose(snapshot.Source) &&
+                    IsRenderablePose(snapshot.Output) &&
+                    TryGetRelativePoseMatrix(snapshot.Source, snapshot.Output, out proxyMatrix);
+            if (manualPose)
+            {
+                _manualPreviewDriverOutputTransformAvailable = hasOutputTransform;
+                _manualPreviewDriverOutputTransform = hasOutputTransform
+                    ? proxyMatrix
+                    : Matrix3D.Identity;
+            }
             if ((_gizmoPreviewOverrideActive || !hasOutputTransform) && hasConfiguredOffset)
             {
                 proxyMatrix = CreateConfiguredOutputMatrix(configuredOffset);
@@ -5864,10 +6313,12 @@ namespace TrackSwap
                 AddTransformedBounds(ref combined, _gizmoPreviewModel, gizmoMatrix);
             }
 
-            Vector3D centerOffset = _gizmoPreviewOverrideActive
+            Vector3D centerOffset = manualPose
+                ? new Vector3D()
+                : _gizmoPreviewOverrideActive
                 ? _previewCenterOffset
                 : new Vector3D();
-            if (!_gizmoPreviewOverrideActive && !combined.IsEmpty)
+            if (!manualPose && !_gizmoPreviewOverrideActive && !combined.IsEmpty)
             {
                 centerOffset = new Vector3D(
                     -(combined.X + (combined.SizeX / 2.0)),
@@ -6057,6 +6508,27 @@ namespace TrackSwap
             Vector3D relativeTranslation = RotateVector(inverseSource, worldDelta);
             matrix.Rotate(relativeRotation);
             matrix.Translate(relativeTranslation);
+            return true;
+        }
+
+        private static bool TryGetAbsolutePoseMatrix(PoseTelemetry pose, out Matrix3D matrix)
+        {
+            matrix = Matrix3D.Identity;
+            if (!IsRenderablePose(pose))
+            {
+                return false;
+            }
+
+            Quaternion rotation = NormalizeQuaternion(new Quaternion(
+                pose.RotationX,
+                pose.RotationY,
+                pose.RotationZ,
+                pose.RotationW));
+            matrix.Rotate(rotation);
+            matrix.Translate(new Vector3D(
+                pose.PositionX,
+                pose.PositionY,
+                pose.PositionZ));
             return true;
         }
 
@@ -7679,16 +8151,16 @@ namespace TrackSwap
 
         private enum SettingsSection
         {
-            Runtime,
-            SteamVr,
-            DeviceViewer,
-            ThirdPartyNotices,
-            Devices,
-            Files,
             Language,
+            DeviceViewer,
+            Devices,
             Osc,
             XInput,
-            Advanced
+            SteamVr,
+            Advanced,
+            Files,
+            Runtime,
+            ThirdPartyNotices
         }
 
         private sealed class LanguageIssueListItem
@@ -7738,8 +8210,10 @@ namespace TrackSwap
             public string ExistenceLabel { get; }
         }
 
-        private sealed class DeviceHistoryListItem
+        private sealed class DeviceHistoryListItem : System.ComponentModel.INotifyPropertyChanged
         {
+            private double _motionIntensity;
+
             public DeviceHistoryListItem(
                 ManagedDeviceRecord record,
                 bool isOnline)
@@ -7767,6 +8241,26 @@ namespace TrackSwap
             public string IdentityText { get; }
             public string NoteDisplay { get; }
             public string StateText => IsOnline ? Tr.Get("common.status.online") : Tr.Get("common.status.offline");
+            public double MotionIntensity => _motionIntensity;
+            public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+
+            public void SetMotionIntensity(double value)
+            {
+                double next = Math.Max(0.0, Math.Min(1.0, value));
+                if (Math.Abs(next - _motionIntensity) < 0.002)
+                {
+                    return;
+                }
+                _motionIntensity = next;
+                PropertyChanged?.Invoke(
+                    this,
+                    new System.ComponentModel.PropertyChangedEventArgs(nameof(MotionIntensity)));
+            }
+        }
+
+        private sealed class DeviceMotionState
+        {
+            public double Intensity { get; set; }
         }
 
         private sealed class ReceiverHistoryListItem
@@ -7833,6 +8327,24 @@ namespace TrackSwap
             {
                 return DisplayName;
             }
+        }
+
+        private sealed class ManualPreviewDeviceVisual
+        {
+            public ManualPreviewDeviceVisual(
+                Model3DGroup model,
+                string renderModelName,
+                TrackedDeviceKind deviceKind)
+            {
+                Model = model;
+                RenderModelName = renderModelName;
+                DeviceKind = deviceKind;
+            }
+
+            public Model3DGroup Model { get; }
+            public string RenderModelName { get; set; }
+            public TrackedDeviceKind DeviceKind { get; set; }
+            public int Version { get; set; }
         }
 
         private sealed class RouteModeOption

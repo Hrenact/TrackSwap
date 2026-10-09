@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Text;
 using System.Reflection;
 using TrackSwap.Protocol;
@@ -255,6 +256,130 @@ public sealed class OscInputServiceTests
     }
 
     [Fact]
+    public async Task TestHapticRequestDoesNotWaitForTransport()
+    {
+        using var sendStarted = new ManualResetEventSlim();
+        using var releaseSend = new ManualResetEventSlim();
+        using var service = new OscInputService(
+            new OscConfiguration
+            {
+                ListenAddress = "127.0.0.1",
+                Port = 9015,
+                SendPort = 9016
+            },
+            testHapticPacketSender: (_, _, _) =>
+            {
+                sendStarted.Set();
+                releaseSend.Wait(TimeSpan.FromSeconds(5));
+            });
+
+        try
+        {
+            Task request = service.SendTestHapticAsync(
+                ControllerHand.Left,
+                CancellationToken.None);
+
+            await request.WaitAsync(TimeSpan.FromSeconds(1));
+            Assert.True(sendStarted.Wait(TimeSpan.FromSeconds(1)));
+        }
+        finally
+        {
+            releaseSend.Set();
+        }
+    }
+
+    [Fact]
+    public async Task TestHapticPatternUsesAbsoluteDeadlines()
+    {
+        var sendTimes = new List<TimeSpan>();
+        using var allSent = new ManualResetEventSlim();
+        var timeline = Stopwatch.StartNew();
+        using var service = new OscInputService(
+            new OscConfiguration
+            {
+                ListenAddress = "127.0.0.1",
+                Port = 9015,
+                SendPort = 9016
+            },
+            testHapticPacketSender: (_, _, _) =>
+            {
+                lock (sendTimes)
+                {
+                    sendTimes.Add(timeline.Elapsed);
+                    if (sendTimes.Count == 5)
+                    {
+                        allSent.Set();
+                    }
+                }
+                Thread.Sleep(350);
+            });
+
+        await service.SendTestHapticAsync(ControllerHand.Right, CancellationToken.None);
+
+        Assert.True(allSent.Wait(TimeSpan.FromSeconds(5)));
+        TimeSpan[] captured;
+        lock (sendTimes)
+        {
+            captured = sendTimes.ToArray();
+        }
+        Assert.Equal(5, captured.Length);
+        Assert.InRange(captured[4] - captured[0], TimeSpan.FromSeconds(1.8), TimeSpan.FromSeconds(2.8));
+    }
+
+    [Fact]
+    public async Task BlockedDriverInputDoesNotDelayHapticSendOrPreviewHistory()
+    {
+        using var driverSendStarted = new ManualResetEventSlim();
+        using var releaseDriverSend = new ManualResetEventSlim();
+        using var hapticSent = new ManualResetEventSlim();
+        var routes = new[]
+        {
+            new RouteConfiguration
+            {
+                Enabled = true,
+                Mode = RouteMode.VirtualController,
+                ControllerHand = ControllerHand.Left,
+                ControlInputSource = ControlInputSource.Osc
+            }
+        };
+        using var service = new OscInputService(
+            new OscConfiguration
+            {
+                ListenAddress = "127.0.0.1",
+                Port = 9015,
+                SendPort = 9016
+            },
+            routes,
+            (_, _) =>
+            {
+                driverSendStarted.Set();
+                releaseDriverSend.Wait(TimeSpan.FromSeconds(5));
+            },
+            (_, _, _) => hapticSent.Set());
+
+        Task blockedDriverSend = Task.Run(() => ApplyValues(
+            service,
+            new OscValue("/trackswap/left/trigger/value", 1.0)));
+        try
+        {
+            Assert.True(driverSendStarted.Wait(TimeSpan.FromSeconds(1)));
+
+            await service.SendTestHapticAsync(ControllerHand.Left, CancellationToken.None);
+
+            Assert.True(hapticSent.Wait(TimeSpan.FromSeconds(1)));
+            OscRuntimeStatus status = await Task.Run(service.GetStatus)
+                .WaitAsync(TimeSpan.FromSeconds(1));
+            OscHapticPreviewSample sample = Assert.Single(status.LeftHapticHistory);
+            Assert.Equal(0.08f, sample.DurationSeconds);
+        }
+        finally
+        {
+            releaseDriverSend.Set();
+            await blockedDriverSend;
+        }
+    }
+
+    [Fact]
     public async Task NewHapticTruncatesThePreviousPreviewSegment()
     {
         using var receiver = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
@@ -268,7 +393,15 @@ public sealed class OscInputServiceTests
             });
 
         await service.SendTestHapticAsync(ControllerHand.Left, CancellationToken.None);
+        using (var firstTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+        {
+            await receiver.ReceiveAsync(firstTimeout.Token);
+        }
         await service.SendTestHapticAsync(ControllerHand.Left, CancellationToken.None);
+        using (var secondTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+        {
+            await receiver.ReceiveAsync(secondTimeout.Token);
+        }
 
         IReadOnlyList<OscHapticPreviewSample> history = service.GetStatus().LeftHapticHistory;
         Assert.Equal(2, history.Count);

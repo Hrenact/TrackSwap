@@ -55,8 +55,27 @@ namespace TrackSwap.Services
                 }
 
                 string model = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.ModelNumber);
+                string manufacturer = ReadStringProperty(
+                    getStringProperty,
+                    index,
+                    ETrackedDeviceProperty.ManufacturerName);
+                string trackingSystem = ReadStringProperty(
+                    getStringProperty,
+                    index,
+                    ETrackedDeviceProperty.TrackingSystemName);
                 string serial = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.SerialNumber);
                 string renderModel = ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.RenderModelName);
+                string controllerType = deviceClass == ETrackedDeviceClass.Controller
+                    ? ReadStringProperty(getStringProperty, index, ETrackedDeviceProperty.ControllerType)
+                    : null;
+                string hardwareRevision = ReadStringProperty(
+                    getStringProperty,
+                    index,
+                    ETrackedDeviceProperty.HardwareRevision);
+                string trackingFirmwareVersion = ReadStringProperty(
+                    getStringProperty,
+                    index,
+                    ETrackedDeviceProperty.TrackingFirmwareVersion);
                 string connectedWirelessDongleId = ReadStringProperty(
                     getStringProperty,
                     index,
@@ -75,7 +94,13 @@ namespace TrackSwap.Services
                     renderModel,
                     GetDeviceKind(deviceClass),
                     PoseSourceKind.Device,
-                    connectedWirelessDongleId));
+                    connectedWirelessDongleId,
+                    manufacturer,
+                    model,
+                    trackingSystem,
+                    controllerType,
+                    hardwareRevision,
+                    trackingFirmwareVersion));
             }
 
             return devices
@@ -221,11 +246,16 @@ namespace TrackSwap.Services
 
         private enum ETrackedDeviceProperty
         {
+            TrackingSystemName = 1000,
             ModelNumber = 1001,
             SerialNumber = 1002,
             RenderModelName = 1003,
+            ManufacturerName = 1005,
+            TrackingFirmwareVersion = 1006,
+            HardwareRevision = 1007,
             ConnectedWirelessDongle = 1009,
-            RegisteredDeviceType = 1036
+            RegisteredDeviceType = 1036,
+            ControllerType = 7000
         }
 
         private enum ETrackedPropertyError

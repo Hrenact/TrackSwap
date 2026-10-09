@@ -233,7 +233,13 @@ namespace TrackSwap.Services
                 device.RenderModelName,
                 device.DeviceKind,
                 device.PoseSourceKind,
-                device.ConnectedWirelessDongleId);
+                device.ConnectedWirelessDongleId,
+                device.ManufacturerName,
+                device.ModelNumber,
+                device.TrackingSystemName,
+                device.ControllerType,
+                device.HardwareRevision,
+                device.TrackingFirmwareVersion);
         }
 
         private static string NormalizeIdentifier(string value)

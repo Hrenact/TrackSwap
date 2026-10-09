@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using TrackSwap.Protocol;
@@ -8,6 +9,7 @@ internal sealed class OscInputService : IDisposable
 {
     private readonly object syncRoot = new();
     private readonly Action<ControllerHand, ControllerInputState> controllerInputSender;
+    private readonly Action<byte[], string, int>? testHapticPacketSender;
     private OscConfiguration configuration;
     private UdpClient? listener;
     private UdpClient? sender;
@@ -51,19 +53,23 @@ internal sealed class OscInputService : IDisposable
     public OscInputService(
         OscConfiguration initialConfiguration,
         IEnumerable<RouteConfiguration>? initialRoutes = null,
-        Action<ControllerHand, ControllerInputState>? controllerInputSender = null)
+        Action<ControllerHand, ControllerInputState>? controllerInputSender = null,
+        Action<byte[], string, int>? testHapticPacketSender = null)
     {
         this.controllerInputSender = controllerInputSender ?? ((hand, state) =>
             DriverControlClient.ApplyControllerInput(hand, state, TimeSpan.FromMilliseconds(250)));
+        this.testHapticPacketSender = testHapticPacketSender;
         configuration = Clone(initialConfiguration);
         configuration.Enabled = OscConfiguration.IsRequiredForRoutes(initialRoutes);
         UpdateActiveInputsLocked(initialRoutes);
-        ResetLocked(ControllerHand.Left, send: false);
-        ResetLocked(ControllerHand.Right, send: false);
+        ResetLocked(ControllerHand.Left);
+        ResetLocked(ControllerHand.Right);
     }
 
     public void Update(OscConfiguration value, IEnumerable<RouteConfiguration>? routes = null)
     {
+        ControllerInputState? leftReset = null;
+        ControllerInputState? rightReset = null;
         lock (syncRoot)
         {
             bool resetLeft = leftInputEnabled || HasOscInputRoute(routes, ControllerHand.Left);
@@ -81,9 +87,19 @@ internal sealed class OscInputService : IDisposable
             listening = false;
             receivePortInUse = false;
             lastSendError = string.Empty;
-            if (resetLeft) ResetLocked(ControllerHand.Left, send: true);
-            if (resetRight) ResetLocked(ControllerHand.Right, send: true);
+            if (resetLeft)
+            {
+                ResetLocked(ControllerHand.Left);
+                leftReset = Clone(leftState);
+            }
+            if (resetRight)
+            {
+                ResetLocked(ControllerHand.Right);
+                rightReset = Clone(rightState);
+            }
         }
+        if (leftReset != null) Send(ControllerHand.Left, leftReset);
+        if (rightReset != null) Send(ControllerHand.Right, rightReset);
     }
 
     public OscRuntimeStatus GetStatus()
@@ -125,7 +141,7 @@ internal sealed class OscInputService : IDisposable
             .ConfigureAwait(false);
     }
 
-    public async Task SendTestHapticAsync(
+    public Task SendTestHapticAsync(
         ControllerHand hand,
         CancellationToken cancellationToken)
     {
@@ -134,55 +150,40 @@ internal sealed class OscInputService : IDisposable
             throw new InvalidDataException("测试震动的手别无效。");
         }
 
-        var patternCancellation = new CancellationTokenSource();
+        var patternCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         lock (syncRoot)
         {
             CancelTestPatternLocked(hand);
             SetTestCancellationLocked(hand, patternCancellation);
         }
-
-        using var firstStepCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            patternCancellation.Token);
-        try
-        {
-            await SendTestStepAsync(hand, TestPattern[0], firstStepCancellation.Token)
-                .ConfigureAwait(false);
-        }
-        catch
-        {
-            CompleteTestPattern(hand, patternCancellation);
-            throw;
-        }
-        lock (syncRoot)
-        {
-            if (!string.IsNullOrWhiteSpace(lastSendError))
-            {
-                CompleteTestPatternLocked(hand, patternCancellation);
-                throw new IOException("无法发送 OSC 测试震动：" + lastSendError);
-            }
-        }
-
-        _ = ContinueTestPatternAsync(hand, patternCancellation);
+        _ = Task.Factory.StartNew(
+            () => RunTestPattern(hand, patternCancellation),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+        return Task.CompletedTask;
     }
 
-    private async Task ContinueTestPatternAsync(
+    private void RunTestPattern(
         ControllerHand hand,
         CancellationTokenSource patternCancellation)
     {
         try
         {
             CancellationToken cancellationToken = patternCancellation.Token;
-            await Task.Delay(TestPattern[0].DelayUntilNext, cancellationToken).ConfigureAwait(false);
-            for (int index = 1; index < TestPattern.Length; index++)
+            using var testSender = new UdpClient();
+            var timeline = Stopwatch.StartNew();
+            TimeSpan deadline = TimeSpan.Zero;
+            for (int index = 0; index < TestPattern.Length; index++)
             {
-                await SendTestStepAsync(hand, TestPattern[index], cancellationToken)
-                    .ConfigureAwait(false);
-                if (TestPattern[index].DelayUntilNext > TimeSpan.Zero)
+                TimeSpan remaining = deadline - timeline.Elapsed;
+                if (remaining > TimeSpan.Zero && cancellationToken.WaitHandle.WaitOne(remaining))
                 {
-                    await Task.Delay(TestPattern[index].DelayUntilNext, cancellationToken)
-                        .ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
+                cancellationToken.ThrowIfCancellationRequested();
+                SendTestStep(testSender, hand, TestPattern[index], cancellationToken);
+                deadline += TestPattern[index].DelayUntilNext;
             }
         }
         catch (OperationCanceledException) when (patternCancellation.IsCancellationRequested)
@@ -194,24 +195,59 @@ internal sealed class OscInputService : IDisposable
         }
     }
 
-    private Task SendTestStepAsync(
+    private void SendTestStep(
+        UdpClient testSender,
         ControllerHand hand,
         HapticTestStep step,
         CancellationToken cancellationToken)
     {
-        return SendHapticEventsCoreAsync(
-            new[]
+        string address;
+        string host;
+        int port;
+        lock (syncRoot)
+        {
+            address = hand == ControllerHand.Left
+                ? LeftAddresses.Haptic
+                : RightAddresses.Haptic;
+            host = configuration.ListenAddress;
+            port = configuration.SendPort;
+        }
+
+        var feedback = NormalizeHapticFeedback(new HapticFeedbackEvent
+        {
+            Hand = hand,
+            DurationSeconds = step.DurationSeconds,
+            Frequency = step.Frequency,
+            Amplitude = step.Amplitude
+        });
+        byte[] packet = OscPacketWriter.BuildHapticMessage(
+            address,
+            feedback.DurationSeconds,
+            feedback.Frequency,
+            feedback.Amplitude);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (testHapticPacketSender is null)
             {
-                new HapticFeedbackEvent
-                {
-                    Hand = hand,
-                    DurationSeconds = step.DurationSeconds,
-                    Frequency = step.Frequency,
-                    Amplitude = step.Amplitude
-                }
-            },
-            requireOwnedRoute: false,
-            cancellationToken);
+                testSender.Send(packet, packet.Length, host, port);
+            }
+            else
+            {
+                testHapticPacketSender(packet, host, port);
+            }
+            RecordHapticSend(feedback);
+        }
+        catch (Exception exception) when (
+            exception is SocketException ||
+            exception is ObjectDisposedException ||
+            exception is ArgumentException)
+        {
+            lock (syncRoot)
+            {
+                lastSendError = exception.Message;
+            }
+        }
     }
 
     private async Task SendHapticEventsCoreAsync(
@@ -244,54 +280,17 @@ internal sealed class OscInputService : IDisposable
                 activeSender = sender;
             }
 
-            float duration = float.IsFinite(feedback.DurationSeconds)
-                ? Math.Clamp(feedback.DurationSeconds, 0.0f, 10.0f)
-                : 0.0f;
-            float frequency = float.IsFinite(feedback.Frequency)
-                ? Math.Max(0.0f, feedback.Frequency)
-                : 0.0f;
-            float amplitude = float.IsFinite(feedback.Amplitude)
-                ? Math.Clamp(feedback.Amplitude, 0.0f, 1.0f)
-                : 0.0f;
+            HapticFeedbackEvent normalized = NormalizeHapticFeedback(feedback);
             byte[] packet = OscPacketWriter.BuildHapticMessage(
                 address,
-                duration,
-                frequency,
-                amplitude);
+                normalized.DurationSeconds,
+                normalized.Frequency,
+                normalized.Amplitude);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await activeSender.SendAsync(packet, packet.Length, host, port).ConfigureAwait(false);
-                lock (syncRoot)
-                {
-                    var snapshot = new HapticFeedbackEvent
-                    {
-                        Sequence = feedback.Sequence,
-                        Hand = feedback.Hand,
-                        DurationSeconds = duration,
-                        Frequency = frequency,
-                        Amplitude = amplitude
-                    };
-                    DateTimeOffset now = DateTimeOffset.UtcNow;
-                    if (feedback.Hand == ControllerHand.Left)
-                    {
-                        leftHaptic = snapshot;
-                        leftHapticAtUtc = now;
-                        AppendHapticPreviewSampleLocked(
-                            leftHapticHistory,
-                            CreatePreviewSample(snapshot, now));
-                    }
-                    else
-                    {
-                        rightHaptic = snapshot;
-                        rightHapticAtUtc = now;
-                        AppendHapticPreviewSampleLocked(
-                            rightHapticHistory,
-                            CreatePreviewSample(snapshot, now));
-                    }
-                    PruneHapticHistoryLocked(now);
-                    lastSendError = string.Empty;
-                }
+                RecordHapticSend(normalized);
             }
             catch (Exception exception) when (
                 exception is SocketException ||
@@ -303,6 +302,50 @@ internal sealed class OscInputService : IDisposable
                     lastSendError = exception.Message;
                 }
             }
+        }
+    }
+
+    private static HapticFeedbackEvent NormalizeHapticFeedback(HapticFeedbackEvent feedback)
+    {
+        return new HapticFeedbackEvent
+        {
+            Sequence = feedback.Sequence,
+            Hand = feedback.Hand,
+            DurationSeconds = float.IsFinite(feedback.DurationSeconds)
+                ? Math.Clamp(feedback.DurationSeconds, 0.0f, 10.0f)
+                : 0.0f,
+            Frequency = float.IsFinite(feedback.Frequency)
+                ? Math.Max(0.0f, feedback.Frequency)
+                : 0.0f,
+            Amplitude = float.IsFinite(feedback.Amplitude)
+                ? Math.Clamp(feedback.Amplitude, 0.0f, 1.0f)
+                : 0.0f
+        };
+    }
+
+    private void RecordHapticSend(HapticFeedbackEvent feedback)
+    {
+        lock (syncRoot)
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            if (feedback.Hand == ControllerHand.Left)
+            {
+                leftHaptic = feedback;
+                leftHapticAtUtc = now;
+                AppendHapticPreviewSampleLocked(
+                    leftHapticHistory,
+                    CreatePreviewSample(feedback, now));
+            }
+            else
+            {
+                rightHaptic = feedback;
+                rightHapticAtUtc = now;
+                AppendHapticPreviewSampleLocked(
+                    rightHapticHistory,
+                    CreatePreviewSample(feedback, now));
+            }
+            PruneHapticHistoryLocked(now);
+            lastSendError = string.Empty;
         }
     }
 
@@ -382,6 +425,8 @@ internal sealed class OscInputService : IDisposable
 
     private void HandlePacket(IReadOnlyList<OscValue> values)
     {
+        ControllerInputState? leftToSend = null;
+        ControllerInputState? rightToSend = null;
         lock (syncRoot)
         {
             ControllerInputFingerprint leftBefore = ControllerInputFingerprint.Capture(
@@ -416,20 +461,22 @@ internal sealed class OscInputService : IDisposable
                 leftThumbTouchAssist,
                 leftIndexTouchAssist))
             {
-                Send(ControllerHand.Left, leftState);
+                leftToSend = Clone(leftState);
             }
             if (rightRecognized && rightBefore != ControllerInputFingerprint.Capture(
                 rightState,
                 rightThumbTouchAssist,
                 rightIndexTouchAssist))
             {
-                Send(ControllerHand.Right, rightState);
+                rightToSend = Clone(rightState);
             }
             if (leftRecognized || rightRecognized)
             {
                 lastMessage = DateTimeOffset.UtcNow;
             }
         }
+        if (leftToSend != null) Send(ControllerHand.Left, leftToSend);
+        if (rightToSend != null) Send(ControllerHand.Right, rightToSend);
     }
 
     private void UpdateActiveInputsLocked(IEnumerable<RouteConfiguration>? routes)
@@ -514,7 +561,7 @@ internal sealed class OscInputService : IDisposable
             route.ControlInputSource == ControlInputSource.Osc) == true;
     }
 
-    private void ResetLocked(ControllerHand hand, bool send)
+    private void ResetLocked(ControllerHand hand)
     {
         if (hand == ControllerHand.Left)
         {
@@ -532,7 +579,6 @@ internal sealed class OscInputService : IDisposable
             leftHaptic = new HapticFeedbackEvent();
             leftHapticAtUtc = null;
             leftHapticHistory.Clear();
-            if (send) Send(hand, leftState);
         }
         else
         {
@@ -550,20 +596,22 @@ internal sealed class OscInputService : IDisposable
             rightHaptic = new HapticFeedbackEvent();
             rightHapticAtUtc = null;
             rightHapticHistory.Clear();
-            if (send) Send(hand, rightState);
         }
     }
 
     private void Send(ControllerHand hand, ControllerInputState state)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-        if (hand == ControllerHand.Left)
+        lock (syncRoot)
         {
-            leftInputSentAtUtc = now;
-        }
-        else
-        {
-            rightInputSentAtUtc = now;
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            if (hand == ControllerHand.Left)
+            {
+                leftInputSentAtUtc = now;
+            }
+            else
+            {
+                rightInputSentAtUtc = now;
+            }
         }
         try
         {
@@ -571,24 +619,31 @@ internal sealed class OscInputService : IDisposable
         }
         catch (Exception exception) when (exception is IOException || exception is TimeoutException || exception is UnauthorizedAccessException)
         {
-            lastError = exception.Message;
+            lock (syncRoot)
+            {
+                lastError = exception.Message;
+            }
         }
     }
 
     private void RefreshControllerInputsIfDue()
     {
+        ControllerInputState? leftToSend = null;
+        ControllerInputState? rightToSend = null;
         lock (syncRoot)
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
             if (leftInputEnabled && now - leftInputSentAtUtc >= TimeSpan.FromSeconds(1))
             {
-                Send(ControllerHand.Left, leftState);
+                leftToSend = Clone(leftState);
             }
             if (rightInputEnabled && now - rightInputSentAtUtc >= TimeSpan.FromSeconds(1))
             {
-                Send(ControllerHand.Right, rightState);
+                rightToSend = Clone(rightState);
             }
         }
+        if (leftToSend != null) Send(ControllerHand.Left, leftToSend);
+        if (rightToSend != null) Send(ControllerHand.Right, rightToSend);
     }
 
     private static bool Apply(
@@ -757,17 +812,29 @@ internal sealed class OscInputService : IDisposable
 
     public void Dispose()
     {
+        ControllerInputState? leftReset = null;
+        ControllerInputState? rightReset = null;
         lock (syncRoot)
         {
             CancelTestPatternLocked(ControllerHand.Left);
             CancelTestPatternLocked(ControllerHand.Right);
-            if (leftInputEnabled) ResetLocked(ControllerHand.Left, send: true);
-            if (rightInputEnabled) ResetLocked(ControllerHand.Right, send: true);
+            if (leftInputEnabled)
+            {
+                ResetLocked(ControllerHand.Left);
+                leftReset = Clone(leftState);
+            }
+            if (rightInputEnabled)
+            {
+                ResetLocked(ControllerHand.Right);
+                rightReset = Clone(rightState);
+            }
             listener?.Dispose();
             listener = null;
             sender?.Dispose();
             sender = null;
         }
+        if (leftReset != null) Send(ControllerHand.Left, leftReset);
+        if (rightReset != null) Send(ControllerHand.Right, rightReset);
     }
 
     private readonly record struct HapticTestStep(

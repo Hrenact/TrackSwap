@@ -177,7 +177,7 @@ namespace TrackSwap.Localization
                 Locale = "en-US",
                 DisplayName = "English",
                 Author = string.Empty,
-                TargetTrackSwapVersion = "v012",
+                TargetTrackSwapVersion = "v013",
                 Strings = _catalog.ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal)
             };
             string fullPath = Path.GetFullPath(path);

@@ -23,6 +23,49 @@ namespace TrackSwap.Tests
         }
 
         [Fact]
+        public void MotionIntensityIgnoresTrackingNoiseAndScalesWithMovement()
+        {
+            double idle = DeviceMotionIntensityFilter.Update(
+                0.0,
+                DeviceMotionIntensityFilter.LinearDeadZoneMetresPerSecond * 0.5,
+                DeviceMotionIntensityFilter.AngularDeadZoneRadiansPerSecond * 0.5,
+                1.0 / 30.0);
+            double gentle = DeviceMotionIntensityFilter.Update(
+                0.0,
+                0.35,
+                0.0,
+                1.0 / 30.0);
+            double vigorous = DeviceMotionIntensityFilter.Update(
+                0.0,
+                1.25,
+                0.0,
+                1.0 / 30.0);
+            double rotation = DeviceMotionIntensityFilter.Update(
+                0.0,
+                0.0,
+                6.0,
+                1.0 / 30.0);
+
+            Assert.Equal(0.0, idle, 6);
+            Assert.InRange(gentle, 0.0, vigorous);
+            Assert.InRange(vigorous, 0.4, 1.0);
+            Assert.Equal(vigorous, rotation, 6);
+        }
+
+        [Fact]
+        public void MotionIntensityAttacksQuicklyAndDecaysSmoothly()
+        {
+            double first = DeviceMotionIntensityFilter.Update(0.0, 1.25, 0.0, 1.0 / 30.0);
+            double second = DeviceMotionIntensityFilter.Update(first, 1.25, 0.0, 1.0 / 30.0);
+            double released = DeviceMotionIntensityFilter.Update(second, 0.0, 0.0, 1.0 / 30.0);
+
+            Assert.True(second > first);
+            Assert.True(released < second);
+            Assert.True(released > 0.0);
+            Assert.True(second - first > second - released);
+        }
+
+        [Fact]
         public void ConvertsOpenVrColumnTransformToWpfMatrix()
         {
             var source = new OpenVrSceneService.HmdMatrix34

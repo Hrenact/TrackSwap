@@ -111,7 +111,7 @@ namespace TrackSwap.Services
             string executable = FindRuntimeExecutablePath();
             if (executable == null)
             {
-                error = Tr.Get("service.runtime_control.try_start_runtime.program_directory_trackswap_runtime_exe_complete_v012");
+                error = Tr.Get("service.runtime_control.try_start_runtime.program_directory_trackswap_runtime_exe_complete_version");
                 return false;
             }
 

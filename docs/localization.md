@@ -24,7 +24,7 @@ TrackSwap\UserData\i18n
   "locale": "en-US",
   "displayName": "English",
   "author": "",
-  "targetTrackSwapVersion": "v012",
+  "targetTrackSwapVersion": "v013",
   "strings": {
     "route.empty": "No configurations. Create one to begin."
   }

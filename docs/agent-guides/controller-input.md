@@ -23,9 +23,10 @@ Read this guide before changing the fixed `TRKSWAP-CONTROLLER-L` / `TRKSWAP-CONT
 - Send haptics to `/trackswap/left/haptic` and `/trackswap/right/haptic` with OSC tag `,fff`: duration seconds, frequency hertz, normalized amplitude.
 - Keep a three-second right-to-left timeline above each hand card. Amplitude controls height, duration span, and frequency bounded/log-scaled stripe density. New same-hand events replace/truncate the prior envelope. Runtime retains short history so polling cannot miss pulses.
 - Poll Runtime haptic history around 30 Hz, but animate cached timelines at WPF composition cadence only while visible and detach callbacks afterward. Put the read-only address below each preview.
-- Per-hand `测试` asks Runtime to asynchronously play a fixed recognition pattern ending in a double tap, even without an OSC route. Repeating cancels/restarts that hand's pattern. The UI never sends UDP or blocks for the pattern.
+- Per-hand `测试` asks Runtime to asynchronously play a fixed recognition pattern ending in a double tap, even without an OSC route. Repeating cancels/restarts that hand's pattern. The UI never sends UDP or blocks for the pattern. Runtime schedules the steps against monotonic absolute deadlines on isolated background work; driver IPC, transport latency, and earlier sends must not stretch later intervals.
 - Keep the phone diagnostic under `tools/` and out of packages. It must receive real Runtime UDP before relaying to a token-protected local WebSocket page. Label browser vibration as approximate and report UDP receipt, browser receipt, and API acceptance separately.
 - OSC networking and driver IPC may be asynchronous, but pending components are applied only in the normal driver frame loop. Never do UDP or synchronous pipe work in `RunFrame`.
+- Never hold OSC state or haptic-history locks while calling driver IPC. A disconnected driver may block until timeout, but must not delay OSC packet reception, test-pattern sends, or preview-history publication.
 
 ## XInput
 

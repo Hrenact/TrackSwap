@@ -17,6 +17,8 @@ namespace TrackSwap.Protocol
             "device-history.json",
             "ui-preferences.json",
             "runtime-ui-launch.log",
+            "runtime-events.log",
+            "runtime-events.previous.log",
             "ui-lifecycle.log"
         };
 

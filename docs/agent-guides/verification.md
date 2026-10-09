@@ -29,6 +29,7 @@ Before a release, document hardening for install, upgrade, disable, uninstall, S
 - Log state transitions and actionable errors, not high-frequency poses by default.
 - Keep generated binaries, machine SteamVR paths, captures, and machine configuration out of Git.
 - Add focused tests for transform math, migration/validation, IPC parsing, telemetry batching, slot routing, route conflicts, and interleaved snapshot ownership.
+- Treat the support bundle as a hardware-independent reproduction input: test that stable aliases preserve device/route relationships and that device class/fingerprint, feature state, route topology, and bounded transition logs are sufficient to construct a synthetic case. Seed tests with unique paths, serials, route names, usernames, local paths, language-pack names, and network addresses, then assert that none survive export.
 - Verify proportionally: build affected projects, run automated tests, and state which SteamVR/hardware checks remain for the maintainer.
 - Compilation and automated tests are necessary but never sufficient evidence of tracking correctness or UI readability.
 

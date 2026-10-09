@@ -101,7 +101,9 @@ namespace TrackSwap.Services
                             Connected = pose.DeviceIsConnected,
                             Valid = pose.PoseIsValid && IsFinite(pose.DeviceToAbsoluteTracking),
                             TrackingResult = (OpenVrTrackingResult)pose.TrackingResult,
-                            Transform = ToMatrix3D(pose.DeviceToAbsoluteTracking)
+                            Transform = ToMatrix3D(pose.DeviceToAbsoluteTracking),
+                            LinearVelocity = ToVector3D(pose.Velocity),
+                            AngularVelocity = ToVector3D(pose.AngularVelocity)
                         });
                     }
 
@@ -250,6 +252,13 @@ namespace TrackSwap.Services
                 value.M01, value.M11, value.M21, 0,
                 value.M02, value.M12, value.M22, 0,
                 value.M03, value.M13, value.M23, 1);
+        }
+
+        private static Vector3D ToVector3D(HmdVector3 value)
+        {
+            return IsFinite(value.X) && IsFinite(value.Y) && IsFinite(value.Z)
+                ? new Vector3D(value.X, value.Y, value.Z)
+                : new Vector3D();
         }
 
         private static bool IsFinite(HmdMatrix34 value)
